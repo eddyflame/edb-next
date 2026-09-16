@@ -47,7 +47,9 @@
 - 🗄️ **逆向分析成果无感持久化 (`.edb_db`)**：标准化 JSON 数据库持久化存储所有注释、书签、高级条件断点、动态监视表、内存补丁与随手记草稿；重载相同目标时毫秒级自动恢复。
 - 🎯 **经典 4 象限黄金工作台**：反汇编、寄存器、4路独立转储（Dump 1~4）以及专有 64 位 QWORD 栈视图四维同屏联动。
 - 🔍 **原生 Linux 深度内省与漏洞利用工具**：内置 Glibc ptmalloc 堆链解析器（`malloc_chunk` 与 `A|M|P` 标志）、ROP Gadget 滑动窗口搜寻与 Python `p64(...)` 利用脚本导出、交互式基本块控制流图 (CFG)、跨模块动态库 API 外呼搜索、以及 `/proc/<pid>/fd/` 句柄分类。
-- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `mprotect`, `alloc`, `dumpstate` 等指令，并向插件全面开放扩展接口。
+- 📖 **DWARF 源码级调试与反汇编混合渲染**：基于 `libdw` 原生解析 `.debug_info` 与 `.debug_line`，实现地址与源码行号双向瞬时映射；支持反汇编与原始 C/C++ 源码混合排版（`Ctrl+Shift+S`），内置独立源码浏览器 `SourceView`（`Alt+S`），支持源码行双击断点与源码级单步。
+- 🐍 **嵌入式 Python 3 & Lua 5.4 双脚本自动化引擎**：原生嵌入 CPython 3 与 Lua 5.4 解释器，统一由 `ScriptEngineManager` 调度；内置 `edb` 模块向脚本全面暴露内存读写、寄存器控制、断点管理、单步执行与表达式求值，配备独立暗黑极客 Script Console（`Alt+P`）与 CommandBar 行内执行（`py <code...>` / `lua <code...>`）。
+- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
 ---
@@ -62,6 +64,8 @@
 | **内存转储能力** | 单一 Hex Dump | 标配 Dump 1~5 | **4路独立 MultiDumpWidget (Dump 1~4)** |
 | **只读内存修改** | 报错拒绝写入 | VirtualProtect 模拟 | **原生远程系统调用注入 (`SYS_mprotect`)** |
 | **脱壳补丁落盘** | 无此功能 (仅内存补丁) | 导出 Patched EXE | **创新 `patchFileToDisk` (直接导出 ELF)** |
+| **源码级调试** | 仅纯反汇编 | 需外部工具 | **内置 DWARF 源码映射与混合渲染 (`libdw`)** |
+| **自动化脚本引擎**| 无内嵌脚本 | 需第三方插件 | **原生 Python 3 & Lua 5.4 双脚本引擎 (`Alt+P`)** |
 | **项目成果持久化** | 退出全盘丢失 | 标配 `.dd64` 数据库 | **`.edb_db` JSON 项目自动恢复** |
 | **命令行交互** | 无交互 CLI | 标配底栏命令行 | **x64dbg 风格 CommandBar 极客交互栏** |
 | **Linux 堆分析** | 插件支持较旧 | 不适用 (Windows) | **原生 Glibc ptmalloc 分析器 (Tab 9)** |
@@ -74,7 +78,18 @@
 ### 1. 安装构建依赖 (Ubuntu / Debian)
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git pkg-config qtbase5-dev libqt5widgets5 libcapstone-dev
+sudo apt install -y \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    qtbase5-dev \
+    libqt5widgets5 \
+    libcapstone-dev \
+    libdw-dev \
+    libelf-dev \
+    python3-dev \
+    liblua5.4-dev
 ```
 
 ### 2. 源码编译构建
@@ -90,7 +105,9 @@ cmake --build build -j$(nproc)
 ### 3. 运行全量验证测试套件
 ```bash
 ./build/test_core       # 核心测试 (断点、单步、多线程、ELF解析等)
+./build/test_dwarf      # DWARF 源码级调试与行号双向映射测试
 ./build/test_advanced   # 进阶测试 (补丁落盘、Trace、CFG、远程系统调用注入等)
+./build/test_scripting  # Python 3 & Lua 5.4 嵌入式双引擎测试
 ./build/test_exit       # 析构安全压力测试
 ```
 
@@ -125,6 +142,8 @@ cmake --build build -j$(nproc)
 | **Ctrl+F2** | Restart (重启会话) | **X** | Show Cross References (交叉引用) |
 | **Ctrl+\*** | Set RIP (设置指令指针) | **Ctrl+E** | Modify Hex Bytes (就地编辑内存) |
 | **F2** | Toggle Breakpoint (切换断点) | **Ctrl+P** | Patch Manager (补丁管理与落盘) |
+| **Alt+P** | Script Console (Python/Lua 控制台) | **Alt+S** | Focus Source View (聚焦源码浏览器) |
+| **Ctrl+Shift+S** | Toggle Mixed ASM/Source (混合渲染切换) | **Alt+C** | Focus CPU / Disassembly (聚焦反汇编) |
 | **Ctrl+S** | Save Project (.edb_db 项目保存) | **Ctrl+D** | Dump CPU State (导出机器状态快照) |
 | **Shift+S** | Toggle Stack View (折叠/展开栈) | **Shift+F7/F8/F9** | 透传信号执行 (Pass Signal Step/Run) |
 

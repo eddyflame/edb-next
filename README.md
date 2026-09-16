@@ -45,23 +45,25 @@ Built from scratch using **C++20**, **Qt 5.15+**, and the **Capstone Disassembly
 - ⚡ **In-Target Remote Syscall Injection (`executeRemoteSyscall`)**: Break through read-only memory barriers by dynamically injecting `SYS_mprotect` in the target process (RWX elevation), allocating isolated executable pages (`SYS_mmap`), and freeing memory (`SYS_munmap`).
 - 💾 **One-Click Physical ELF Disk Patching (`patchFileToDisk`)**: Translates Virtual Memory Addresses to ELF Program Header physical offsets ($VAddr \to FileOffset$), exporting standalone executable patched binaries directly to disk.
 - 🗄️ **Automatic Project Database (`.edb_db`)**: Seamlessly preserves and restores all user instruction comments, bookmarks, conditional breakpoints, watch expressions, memory patches, and scratchpad notes across sessions.
-- 🎯 **Classic 4-Quadrant Golden Workspace**: Disassembly, Registers, Multi-Tab Dump (Dump 1~4), and a dedicated 64-bit QWORD Stack view displayed simultaneously in real time.
-- 🔍 **Native Linux Introspection**: Built-in glibc ptmalloc heap analyzer (`malloc_chunk` layout & `A|M|P` flags), ROP gadget scanner with Python `p64(...)` export, basic-block interactive CFG graph, intermodular PLT/GOT API call finder, and `/proc/<pid>/fd/` handle classification (Sockets, Pipes, PTYs).
-- ⌨️ **Interactive CommandBar CLI**: Bottom x64dbg-style CLI console supporting `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `mprotect`, `alloc`, and plugin command extensions.
-- 🧩 **Decoupled Modern C++20 Plugin Architecture**: Pure virtual `IPlugin` and `IPluginContext` contract supporting dynamic `.so` hot-loading, menu injection, CLI command registration, and breakpoint hooks.
+- 📖 **DWARF Source-Level Debugging & Mixed-Mode Disassembly**: Parses `.debug_info` and `.debug_line` with `libdw` for bidirectional address-to-source mapping. Inline source banner rendering in `DisassemblyView` (`Ctrl+Shift+S`), dedicated `SourceView` browser (`Alt+S`), source line breakpoints, and source stepping.
+- 🐍 **Embedded Dual Scripting Engine (Python 3 & Lua 5.4)**: Native embedded CPython 3 and Lua 5.4 engines managed by `ScriptEngineManager`. Rich `edb` module exposing memory/registers/breakpoints/stepping/eval APIs, dark geek Script Console (`Alt+P`), and inline CommandBar execution (`py <code...>` / `lua <code...>`).
+- ⌨️ **x64dbg-Style Bottom CommandBar**: Interactive bottom CLI supporting `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, and plugin commands.
+- 🧩 **Modern C++20 Decoupled Plugin Gateway**: Pure virtual `IPlugin` and `IPluginContext` contract supporting dynamic `.so` hot-loading, menu injection, CLI registration, and event hooks.
 
 ---
 
-## Feature Comparison Matrix
+## Comparison Matrix
 
-| Feature | Original edb (Linux) | x64dbg (Windows) | edb-next (Modern Linux) |
+| Dimension / Feature | Original edb (Linux) | x64dbg (Windows) | edb-next (Modern Linux Rewrite) |
 | :--- | :---: | :---: | :---: |
-| **Language Standard** | C++11 | C++14/17 | **Modern C++20** |
+| **Language Standard** | C++11 | C++14/17 | **Modern C++20 Standard** |
 | **Event Concurrency** | 0ms QTimer (prone to hangs) | Complex sync | **Decoupled `EventLoopThread` (0% UI Freeze)** |
 | **Workspace Layout** | Single bottom drawer | 4 Quadrants | **4-Quadrant Golden Workspace** |
 | **Memory Dumps** | Single Dump view | Dump 1 ~ Dump 5 | **4-Way MultiDumpWidget (Dump 1~4)** |
 | **Read-Only Patching** | Rejected / Errors | VirtualProtect | **Remote Syscall Injection (`mprotect`)** |
 | **Physical Disk Patch** | None (Memory-only) | Patched EXE | **Innovative `patchFileToDisk` (ELF Export)** |
+| **Source-Level Debug** | None (Disasm-only) | External tools | **Integrated DWARF Source Mapping & Mixed-Mode (`libdw`)** |
+| **Scripting Automation**| None | Plugins | **Native Python 3 & Lua 5.4 Dual Engines (`Alt+P`)** |
 | **Session Persistence** | Lost on exit | `.dd64` Database | **`.edb_db` JSON Project Database** |
 | **Interactive CLI** | None | CommandBar | **x64dbg-Style Bottom CommandBar** |
 | **Linux Heap Analysis** | Outdated plugin | N/A (Windows) | **Native Glibc ptmalloc Analyzer (Tab 9)** |
@@ -74,7 +76,18 @@ Built from scratch using **C++20**, **Qt 5.15+**, and the **Capstone Disassembly
 ### 1. Prerequisites (Ubuntu / Debian)
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git pkg-config qtbase5-dev libqt5widgets5 libcapstone-dev
+sudo apt install -y \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    qtbase5-dev \
+    libqt5widgets5 \
+    libcapstone-dev \
+    libdw-dev \
+    libelf-dev \
+    python3-dev \
+    liblua5.4-dev
 ```
 
 ### 2. Build from Source
@@ -90,7 +103,9 @@ cmake --build build -j$(nproc)
 ### 3. Run Verification Tests
 ```bash
 ./build/test_core       # Validates engine, breakpoints, stepping, and unwinding
+./build/test_dwarf      # Validates DWARF source-level debugging & line mapping
 ./build/test_advanced   # Validates patching, disk export, remote syscalls, and plugins
+./build/test_scripting  # Validates Python 3 & Lua 5.4 dual scripting automation
 ./build/test_exit       # Validates clean process teardown without crashes
 ```
 
@@ -125,6 +140,8 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 | **Ctrl+F2** | Restart Debug Session | **X** | Show Cross References (XREFs) |
 | **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+E** | Modify Hex Bytes In-Place |
 | **F2** | Toggle Software Breakpoint | **Ctrl+P** | Patch Manager & Disk File Export |
+| **Alt+P** | Script Console (Python/Lua) | **Alt+S** | Focus Source View |
+| **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | **Alt+C** | Focus CPU / Disassembly |
 | **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump Formatted CPU State Snapshot |
 | **Shift+S** | Toggle Stack View | **Shift+F7/F8/F9** | Pass Signal Step / Run |
 

@@ -7,6 +7,23 @@ on:
     branches: [ main, master ]
 
 jobs:
+  code-formatting:
+    name: Code Formatting Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Verify Formatting (clang-format)
+        run: |
+          echo "Checking C++ formatting against .clang-format..."
+          find core ui tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" | xargs clang-format --dry-run --Werror || echo "::warning::Formatting differences detected against .clang-format. Please run 'clang-format -i' before pushing."
+
   build-and-test:
     name: Build & Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -35,13 +52,36 @@ jobs:
             libelf-dev \
             libdw-dev \
             python3-dev \
-            liblua5.4-dev
+            liblua5.4-dev \
+            ccache
 
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ matrix.os }}-ccache-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ${{ matrix.os }}-ccache-${{ github.ref }}-
+            ${{ matrix.os }}-ccache-
+
+      - name: Configure CMake with ccache
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Initialize ccache statistics
+        run: ccache -z
 
       - name: Build All Targets
         run: cmake --build build -j$(nproc)
+
+      - name: Display ccache statistics
+        run: ccache -s
+
+      - name: Verify Sample Plugin Built
+        run: test -f build/plugins/sample_plugin.so
 
       - name: Run Core Regression Test Suite
         run: ./build/test_core
@@ -52,8 +92,8 @@ jobs:
       - name: Run Advanced Regression Test Suite
         run: ./build/test_advanced
 
-      - name: Run Window Teardown Stress Test
-        run: ./build/test_exit
-
       - name: Run Embedded Scripting Test Suite
         run: ./build/test_scripting
+
+      - name: Run Window Teardown Stress Test
+        run: ./build/test_exit

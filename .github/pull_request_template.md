@@ -11,7 +11,9 @@ Briefly describe the changes introduced in this PR. Mention if it addresses an e
 ## Verification & Testing
 Describe the tests you ran to verify your changes:
 - [ ] `./build/test_core` passed
+- [ ] `./build/test_dwarf` passed
 - [ ] `./build/test_advanced` passed
+- [ ] `./build/test_scripting` passed
 - [ ] `./build/test_exit` passed
 - [ ] Added new unit tests in `tests/` covering this change
 - [ ] Manual testing with GUI (`./build/edb_next`)
