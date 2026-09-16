@@ -220,6 +220,25 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - Bottom CommandBar supports `pageguard` (alias `guard`), `unpageguard` (`unguard`), and `pageguards` (`guards`).
 - **Project Persistence (`.edb_db`)**: All active page guards are saved and restored seamlessly via `DatabaseManager`.
 
+### 3.17 Automated Shared Library Interception & Hot-Reloading (_r_debug Rendezvous & Pending Breakpoints)
+- **Linux glibc `_r_debug` Rendezvous Dual-Track Discovery**:
+  - The dynamic linker (`ld-linux.so`) maintains a runtime singleton `struct r_debug` (`TargetRDebug64`) tracking library loading state `r_state` (`RT_CONSISTENT`, `RT_ADD`, `RT_DELETE`), the double-linked `link_map` chain (`TargetLinkMap64`), and the break function pointer `r_brk` (`_dl_debug_state`).
+  - `RendezvousManager` locates `_r_debug` via the primary track (`PT_DYNAMIC` -> `DT_DEBUG` entry in the main executable) with fallback to parsing `ld-linux.so`'s exported `.dynsym` table from `/proc/<pid>/maps`.
+  - Installs an invisible internal trap breakpoint (`is_internal = true`) at `r_brk` (`_dl_debug_state`) to eliminate UI clutter while maintaining zero-overhead event interception.
+- **Differential Module Traversal & Multi-Subsystem Hot-Merging**:
+  - When the target hits `_dl_debug_state`, the engine verifies `_r_debug.r_state == RT_CONSISTENT`.
+  - `detectChanges()` crawls the `link_map` chain to extract newly loaded `.so` base addresses (`l_addr`), library names, absolute filepaths (`l_name`), and dynamic segment pointers (`l_ld`).
+  - **Symbol Table Merging (`ElfParser::addSharedLibrary`)**: Parses `.symtab` and `.dynsym` from newly loaded shared libraries, relocates addresses by `l_addr`, demangles C++ symbols, and rebuilds binary search and hash lookup tables.
+  - **DWARF Line Mapping Extension (`DwarfParser::addModule`)**: Extends DWARF compilation units on the fly, unlocking cross-shared-library source-level debugging and mixed assembly/source views immediately upon loading.
+  - **Seamless Stepping vs. Catching**: By default, the engine steps over the internal rendezvous breakpoint and resumes execution in microseconds without UI lag. Users can toggle `catch load` / `catch dlopen` to pause on module loads.
+- **Pending Breakpoints (Deferred Resolution)**:
+  - Supports defining breakpoints on symbols inside libraries that have not yet been loaded via CLI `bpp <symbol>` (or prompted when `bp <symbol>` fails to resolve).
+  - Tracked in `BreakpointManager` and rendered in `BreakpointManagerView` with cyan `[Pending]` indicators and amber status badges.
+  - Resolved and bound automatically as real software/hardware breakpoints the instant the corresponding `.so` is mapped by the dynamic linker.
+- **Visualization & CLI Ergonomics**:
+  - `BinaryInfoView` (Tab 17) includes a dedicated 5th tab: **"Loaded Shared Libraries (`_r_debug`)"**, displaying load bases, sonames, filepaths, and dynamic headers with double-click navigation to Disassembly or Hex Dump.
+  - Bottom CommandBar CLI adds `modules` / `libs` / `solist` and `catch load` / `catch dlopen`.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -237,7 +256,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 6. **GDB Remote Serial Protocol (RSP) Support**:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
 7. **Automated Shared Library Loading Interception (`_r_debug` Rendezvous)**:
-   - Hook glibc's `struct r_debug.r_brk` (`_dl_debug_state`) to capture runtime `dlopen()` and `dlclose()` events, automatically re-enumerating memory regions and reloading symbols/DWARF.
+   - **Completed in §3.17 (v1.0)**. Full glibc `_r_debug` rendezvous protocol support, differential `link_map` scanning, automatic symbol table and DWARF merging, and pending breakpoint auto-binding.
 9. **Independent Thread Freeze & Thaw Execution Control**:
    - Enable thread-isolated stepping by freezing non-target threads (`SIGSTOP` / event-loop masking) to prevent state corruption in complex multithreaded race conditions.
 10. **Differential Memory Pattern & Value Scanner**:
@@ -255,7 +274,7 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 | **Fine-Grained Hardware Watchpoint UI** | ★★★★☆ | Low | **Completed (v1.0)** | **Fully implemented in §3.14**. 1/2/4/8-byte read/write watchpoint assignment and cell highlights in Hex Dumps. |
 | **Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.15**. Python 3 & Lua 5.4 dynamic hooks with `return false` silent bypass. |
 | **Memory Page-Guard Breakpoints** | ★★★★★ | Medium | **Completed (v1.0)** | **Fully implemented in §3.16**. Breaks 4-register limit, zero-0xCC stealth execution, and sub-microsecond step over. |
-| **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Solves runtime `dlopen()` symbol omission; aligns with GDB core debug capabilities. |
+| **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.17**. Solves runtime `dlopen()` symbol omission; internal trap, symbol/DWARF hot reload & pending breakpoints. |
 | **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **P2 (Advanced)** | Essential for Linux daemons and multiprocess CTF challenges via `PTRACE_O_TRACEFORK`. |
 | **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **P2 (Advanced)** | Eliminates race condition interference during multithreaded step-through analysis. |
 | **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
@@ -309,6 +328,8 @@ edb-next/
 │   ├── PythonScriptEngine.hpp/cpp# Embedded Python 3 interpreter and edb module exporter
 │   ├── LuaScriptEngine.hpp/cpp # Embedded Lua 5.4 interpreter and global edb table binding
 │   ├── ScriptEngineManager.hpp/cpp# Multi-engine lifecycle and language routing manager
+│   ├── PageGuardManager.hpp/cpp# 4KB virtual memory page protection manager & stealth breakpoint state machine
+│   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug protocol, link_map crawler & shared library hot-reloader
 │   ├── DebugSession.hpp/cpp    # Facade aggregating engine, breakpoints, symbols, and thread control
 │   └── SessionManager.hpp/cpp  # Multi-session container and active session dispatcher
 ├── ui/                         # Qt5 Presentation Layer

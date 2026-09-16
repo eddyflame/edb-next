@@ -34,6 +34,7 @@
    - 4.7 底部动态分支预测 (Dynamic Branch Prediction)
    - 4.8 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
    - 4.9 CPU 机器状态全景快照导出 (StateDumper)
+   - 4.10 动态库全自动拦截、热重载与延迟待决断点 (Shared Libraries & Pending Breakpoints)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -480,6 +481,35 @@ cmake --build build -j$(nproc)
 
 ---
 
+### 4.10 动态库全自动拦截、热重载与延迟待决断点 (Shared Libraries & Pending Breakpoints)
+
+在分析带有插件架构、动态加壳或者延迟通过 `dlopen()` 加载核心 `.so` 模块的现代程序时，传统调试器无法在模块加载前下断点，且加载后往往需要手动刷新符号。`edb-next` 基于 Linux glibc `_r_debug` Rendezvous 协议彻底解决了这一痛点：
+
+#### 1. 延迟待决断点 (Pending Breakpoints - `bpp <symbol>`)
+当目标尚未加载某个插件库时（例如 `plugin_calc.so`），其导出函数（如 `plugin_calc_magic`）的虚拟地址在当前进程中尚不存在：
+- 在底栏命令行执行：
+  ```text
+  bpp plugin_calc_magic
+  ```
+  或在普通断点命令 `bp plugin_calc_magic` 找不到符号时，确认将其转换为待决断点；
+- 在 **Breakpoints** 抽屉（Tab 5）中，待决断点将以醒目的青色 `[Pending]` 标识与琥珀色状态呈现；
+- 一旦目标在后续执行中调用 `dlopen()` 将该 `.so` 映射入内存，`edb-next` 的 Rendezvous 引擎将**瞬间自动捕捉并解析出其重定位基址**，无缝将其升级绑定为硬件/软件断点；
+- 当目标代码执行进入 `plugin_calc_magic` 时，断点精确命中并暂停，供逆向人员审查第一现场！
+
+#### 2. 模块加载捕获开关 (`catch load` / `catch dlopen`)
+- 默认情况下，调试器对动态库装载与符号热重载过程采取**微秒级无感透明放行**（自动更新内部符号表与 DWARF，目标不暂停）；
+- 若需要在任意 `.so` 刚映射入内存的瞬间暂停目标（例如观察其 `.init` / `.init_array` 初始化构造函数执行）：
+  ```text
+  catch load       # 开启模块加载拦截
+  catch dlopen     # 别名，效果相同
+  ```
+- 再次输入该命令即可快速切回无感静默模式。
+
+#### 3. 已加载共享库查询 (`modules` / `libs` / `solist`)
+- 在底栏命令行随时输入 `modules`、`libs` 或 `solist`，控制台将格式化打印出当前已装载的所有共享库列表（包含基地址、库名称、绝对物理路径与动态段头指针）。
+
+---
+
 ## 5. 高级逆向分析工具箱实战 (Advanced Reverse Engineering)
 
 在主工作台左下角，内置了 18 个按需切换的高级分析抽屉：
@@ -538,7 +568,8 @@ cmake --build build -j$(nproc)
   - **ELF Header**：架构、入口点、程序头/节头偏移；
   - **Program Headers (Segments)**：段权限（R/W/X）、物理偏移与虚拟内存映射；
   - **Section Headers**：`.text`, `.rodata`, `.data`, `.bss`, `.plt`, `.got` 大小与地址；
-  - **Dynamic Tags**：展开所有 `DT_NEEDED` 依赖的 `.so` 动态库。
+  - **Dynamic Tags**：展开所有 `DT_NEEDED` 依赖的 `.so` 动态库；
+  - **Loaded Shared Libraries (`_r_debug`)（第 5 标签页）**：实时追踪 Linux glibc `link_map`，呈现所有已加载动态库的装载基址、名称、物理文件路径与动态段地址；支持双击任意行直达反汇编或内存转储。
 
 ---
 
@@ -669,6 +700,9 @@ cmake --build build -j$(nproc)
 | `pageguard <addr> [sz] [type]` | `guard` | 设置页保护软内存断点（type: `none`/`ro`/`xo`）。例：`guard 0x401000 8 ro` |
 | `unpageguard <addr>` | `unguard` | 移除指定地址上的页保护断点。例：`unguard 0x401000` |
 | `pageguards` | `guards` | 打印当前所有激活的页保护断点清单 |
+| `modules` / `libs` / `solist` | `libs` | 打印目标进程当前所有已加载的共享库及基址与路径 |
+| `catch load` / `catch dlopen` | `catch load` | 切换是否在目标加载/卸载共享库时中断暂停执行 |
+| `bpp <symbol>` | `bpp` | 设定延迟待决断点 (Pending Breakpoint)，在目标动态加载该符号时自动绑定 |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
 | `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |

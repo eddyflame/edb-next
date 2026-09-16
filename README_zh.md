@@ -52,6 +52,7 @@
 - 🏷️ **C++ 符号智能反混淆 (Demangling)**：原生集成 Itanium ABI `abi::__cxa_demangle`，全局符号浏览器、调用栈、反汇编行指示、寄存器与栈区智能解引用全线呈现清晰的 `calculate_fib(int)`，搜索过滤双向匹配，悬停保留原始 Mangled 名。
 - 🎯 **转储区细粒度硬件读写监视点 (Hardware Watchpoints Context Menu)**：在 HexDump 单元格右键一键部署 1/2/4/8 字节硬件写监视点（Write Watchpoint）、硬件读写监视点与硬件执行断点，单元格深红背景醒目高亮指示活动断点。
 - 🛡️ **内存页保护断点与零 0xCC 隐匿执行断点 (Page-Guard / Anti-Anti-Debugging)**：突破 x86_64 硬件寄存器仅 4 处的物理极限，基于 `PROT_NONE` / `PROT_READ` 虚拟页保护提供无限槽位软监视点；对代码段实施零 `0xCC` 注入的纯内存断点，完美绕过加固壳与混淆样本的 CRC32/Hash 代码段自检测反调试；内置内核级假阳性透明放行状态机，微秒级越过同页其他变量访问。
+- 📦 **动态库加载全自动拦截与热重载 (_r_debug Rendezvous & Pending Breakpoints)**：深度接入 Linux glibc `_r_debug` Rendezvous 协议与 `_dl_debug_state` 内部陷阱，全自动捕获运行时 `dlopen()` 与 `dlclose()` 共享库装载事件；动态差分 `link_map`、合并 ELF 符号表并扩展 DWARF 源码映射；提供待决延迟断点（Pending Breakpoints，`bpp <symbol>`），在新模块装载瞬间自动绑定物理断点，支持 `catch load` / `catch dlopen` 模块加载中断与 `BinaryInfoView` 动态库实时面板。
 - ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
@@ -72,6 +73,7 @@
 | **项目成果持久化** | 退出全盘丢失 | 标配 `.dd64` 数据库 | **`.edb_db` JSON 项目自动恢复** |
 | **命令行交互** | 无交互 CLI | 标配底栏命令行 | **x64dbg 风格 CommandBar 极客交互栏** |
 | **Linux 堆分析** | 插件支持较旧 | 不适用 (Windows) | **原生 Glibc ptmalloc 分析器 (Tab 9)** |
+| **动态库热加载 / dlopen 拦截** | 需手动刷新符号 | 支持 DLL 事件 | **原生 glibc _r_debug 协议自动捕获 + Pending 待决断点** |
 | **漏洞利用辅助** | 基础 ROP 插件 | 需第三方插件 | **内置 ROP 工具箱与 Python `p64()` 导出** |
 
 ---

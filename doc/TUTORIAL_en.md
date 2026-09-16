@@ -34,6 +34,7 @@
    - 4.7 Dynamic Branch Prediction
    - 4.8 Hit Trace (Code Coverage) and Run Trace (Time-Travel Navigation)
    - 4.9 CPU Machine State Snapshot (StateDumper)
+   - 4.10 Automated Shared Library Interception & Pending Breakpoints
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -293,6 +294,32 @@ Build outputs in `build/`:
 ### 4.9 CPU Machine State Snapshot (StateDumper)
 - Press **Ctrl+D** or menu `Debug -> Dump CPU State` to export registers, stack memory, and disassembly context to log and clipboard.
 
+### 4.10 Automated Shared Library Interception & Pending Breakpoints
+
+When debugging modern software with modular plugin architectures, dynamically unpacked payloads, or delayed `dlopen()` invocations, traditional debuggers cannot resolve symbols beforehand and often require manual re-enumeration after modules load. `edb-next` addresses this through the Linux glibc `_r_debug` Rendezvous protocol:
+
+#### 1. Pending Breakpoints (`bpp <symbol>`)
+When a plugin or shared library has not yet been loaded (e.g. `plugin_calc.so`), its exported functions (`plugin_calc_magic`) do not yet have a valid memory address:
+- In the bottom CommandBar, execute:
+  ```text
+  bpp plugin_calc_magic
+  ```
+  (or confirm conversion when `bp <symbol>` reports an unresolved symbol);
+- The **Breakpoints** drawer (Tab 5) highlights the entry with a distinctive cyan `[Pending]` tag and amber status;
+- Once the target invokes `dlopen()`, `edb-next` traps the rendezvous event, resolves the relocations immediately, and seamlessly upgrades the pending breakpoint into an active physical breakpoint;
+- Execution halts precisely on the entry of the newly loaded library function!
+
+#### 2. Module Load Catching (`catch load` / `catch dlopen`)
+- By default, the engine steps over the internal rendezvous trap silently in microseconds without UI pauses;
+- If you need to inspect constructor initialization (`.init` / `.init_array`):
+  ```text
+  catch load       # Toggle pause on shared library mapping
+  catch dlopen     # Alias for catch load
+  ```
+
+#### 3. Querying Loaded Modules (`modules` / `libs` / `solist`)
+- Run `modules`, `libs`, or `solist` in CommandBar to print a formatted table of all active shared libraries, base addresses, paths, and dynamic headers.
+
 ---
 
 ## 5. Advanced Reverse Engineering Toolset
@@ -302,7 +329,7 @@ Build outputs in `build/`:
 - **Control Flow Graph (Tab 14)**: Hierarchical basic-block directed graph with color-coded branch edges.
 - **Intermodular Calls (Tab 18)**: Identifies external library API calls (PLT/GOT) with fuzzy search.
 - **Opcode Searcher (Tab 19)**: Scans memory for preset sequences (`JMP reg`, `Syscall`) or custom regex.
-- **Binary Info (Tab 17)**: ELF headers, segments, sections, and `DT_NEEDED` dependencies.
+- **Binary Info (Tab 17)**: ELF headers, segments, sections, `DT_NEEDED` dependencies, and a dedicated **Loaded Shared Libraries (`_r_debug`)** 5th tab tracking the live dynamic linker `link_map` with double-click jumps to Disassembly and Hex Dump.
 - **Process Properties (Tab 8)**: `/proc/<pid>/fd/` classification into Sockets, Pipes, and PTYs.
 - **Symbol Viewer with C++ Demangling (Tab 6 / Alt+E)**: Full global symbol browser automatically resolving GCC/Clang mangled identifiers into clean C++ signatures via `<cxxabi.h>`, with raw symbol tooltips, bidirectional name filtering, and double-click disassembly jump.
 - **Notes (Tab 15)**: Integrated scratchpad supporting quick RIP and timestamp injection.
@@ -354,6 +381,9 @@ flowchart LR
 | `pageguard <addr> [sz] [type]` | Set Page-Guard memory protection breakpoint (`guard`). Ex: `guard 0x401000 8 ro` |
 | `unpageguard <addr>` | Remove Page-Guard breakpoint (`unguard`). Ex: `unguard 0x401000` |
 | `pageguards` | List all active Page-Guard breakpoints (`guards`) |
+| `modules` / `libs` / `solist` | Print all currently loaded shared libraries, base addresses, and paths (`libs`) |
+| `catch load` / `catch dlopen` | Toggle execution halt upon shared library load/unload (`catch load`) |
+| `bpp <symbol>` | Set a deferred Pending Breakpoint that binds automatically upon module load |
 | `dumpstate` | Format and copy full CPU state snapshot to clipboard |
 | `py <code...>` | Directly evaluate Python 3 statement or expression. Ex: `py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | Directly evaluate Lua 5.4 statement or expression. Ex: `lua print(string.format('0x%x', edb.get_reg('rip')))` |
