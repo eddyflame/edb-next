@@ -35,6 +35,11 @@
    - 4.4 Multi-Process Follow-Fork & IPC Tracing
    - 4.5 Fine-Grained Hardware Watchpoint UI & Page-Guard Traps
    - 4.6 GDB Remote Serial Protocol (RSP) Client Support
+   - 4.7 Automated Shared Library Loading Interception (_r_debug Rendezvous)
+   - 4.8 Script-Driven Breakpoint Actions & High-Frequency Hooking
+   - 4.9 Independent Thread Freeze & Thaw Execution Control
+   - 4.10 Differential Memory Pattern & Value Scanner
+   - 4.11 Priority & Importance Evaluation Matrix
 5. [Codebase Structure & Module Architecture](#5-codebase-structure--module-architecture)
    - 5.1 Complete Source Tree & Responsibilities
    - 5.2 Layered System Topology
@@ -198,6 +203,33 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
    - Context-menu based 1/2/4/8-byte read/write watchpoint assignment in Hex Dumps, with DR6 status register hit reporting.
 6. **GDB Remote Serial Protocol (RSP) Support**:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
+7. **Automated Shared Library Loading Interception (`_r_debug` Rendezvous)**:
+   - Hook glibc's `struct r_debug.r_brk` (`_dl_debug_state`) to capture runtime `dlopen()` and `dlclose()` events, automatically re-enumerating memory regions and reloading symbols/DWARF.
+8. **Script-Driven Breakpoint Actions & High-Frequency Hooking**:
+   - Allow breakpoints to attach Python or Lua callback hooks (`on_hit_script`). Perform microsecond-latency memory modifications and register checks without GUI suspension or user interruption.
+9. **Independent Thread Freeze & Thaw Execution Control**:
+   - Enable thread-isolated stepping by freezing non-target threads (`SIGSTOP` / event-loop masking) to prevent state corruption in complex multithreaded race conditions.
+10. **Differential Memory Pattern & Value Scanner**:
+    - Implement a CheatEngine-style multi-pass differential scanner over readable/writable heap/data pages (initial search, increased, decreased, changed, unchanged value convergence).
+
+---
+
+### 4.11 Priority & Importance Evaluation Matrix
+
+To guide engineering milestones effectively, each unimplemented roadmap capability is quantitatively prioritized:
+
+| Roadmap Capability | Impact | Complexity | Priority | Recommended Target Milestone |
+| :--- | :---: | :---: | :---: | :--- |
+| **4.3 C++ Symbol Demangling** | ★★★★★ | Low | **P0 (Immediate)** | **Execute immediately**. Zero external deps via `<cxxabi.h>`, instantly improves readability across all views. |
+| **4.5 Fine-Grained Hardware Watchpoint UI** | ★★★★☆ | Low | **P0 (Immediate)** | **Execute immediately**. Backend DR0-7 support already complete; expose right-click context menu in Hex Dumps. |
+| **4.2 Advanced Anti-Anti-Debugging (Page-Guard)** | ★★★★★ | Medium | **P1 (Core Moat)** | **Upcoming Priority**. Closes Linux stealth gap, neutralizing CRC checks and `/proc/self/status` `TracerPid`. |
+| **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Upcoming Priority**. Solves runtime `dlopen()` symbol omission; aligns with GDB core debug capabilities. |
+| **4.8 Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Upcoming Priority**. Unlocks embedded Python/Lua engine potential for zero-overhead dynamic instrumentation. |
+| **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **P2 (Advanced)** | Essential for Linux daemons and multiprocess CTF challenges via `PTRACE_O_TRACEFORK`. |
+| **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **P2 (Advanced)** | Eliminates race condition interference during multithreaded step-through analysis. |
+| **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
+| **4.1 Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
+| **4.6 GDB Remote Serial Protocol (RSP) Client** | ★★★☆☆ | High | **P3 (Long-Term)** | Extends edb-next UI as a universal frontend for QEMU, Android, and embedded targets. |
 
 ---
 
