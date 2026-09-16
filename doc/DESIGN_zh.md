@@ -410,6 +410,34 @@
 
 ---
 
+### 3.17 动态库加载全自动拦截与热重载系统 (_r_debug Rendezvous & Pending Breakpoints)
+
+在现代 Linux 逆向工程、大型插件系统以及 CTF/加固防护分析中，目标通过 `dlopen()` / `dlsym()` 运行时动态装载共享库（`.so`）已是标配。若调试器仅在启动之初静态解析符号，一旦目标动态拉起新模块，将出现“符号无法识别、断点无法提前下达、新库源码无法单步”等严重脱节问题。`edb-next` 深度接入 Linux glibc 动态链接器内部 Rendezvous 协议，构建了全自动动态库拦截热重载与待决断点系统：
+
+1. **Linux glibc `_r_debug` Rendezvous 协议双轨发现与内部挂钩**：
+   - Linux ELF 动态链接器（`ld-linux.so`）在装载目标时，会在其进程空间维护全局单例结构体 `struct r_debug`（64 位系统下严格匹配 `TargetRDebug64` 内存布局），包含加载状态 `r_state`（`RT_CONSISTENT`, `RT_ADD`, `RT_DELETE`）、动态库双向链表头 `r_map`（`struct link_map`）以及事件陷阱函数指针 `r_brk`（指向内部函数 `_dl_debug_state`）；
+   - **双轨鲁棒定位机制**：
+     - **首选轨**：直接从目标 ELF 主执行文件的 `PT_DYNAMIC` 段检索 `DT_DEBUG` 条目，提取其指向的 `_r_debug` 绝对虚拟地址；
+     - **备选轨**：若目标加固壳在早期未写入 `DT_DEBUG`，`RendezvousManager` 自动检索 `/proc/<pid>/maps` 中 `ld-linux.so` 的运行时映射基址，并从其 ELF `.dynsym` 符号表提取 `_dl_debug_state` 与 `_r_debug`；
+   - 在 `r_brk` 地址安装不可见的调试器内部陷阱断点（`is_internal = true`），既不占用用户硬件断点槽位，亦不在断点管理表格中产生视觉干扰。
+
+2. **动态库差分扫描与跨子系统热合流**：
+   - 目标命中 `_dl_debug_state` 时，调试引擎读取 `_r_debug.r_state`。在动态链接器完成映射达到 `RT_CONSISTENT` 一致性瞬态时，立即触发 `detectChanges()` 差分算法深度遍历 `link_map` 单向链表（提取新模块基址 `l_addr`、库名、绝对路径 `l_name` 与动态段指针 `l_ld`）；
+   - **符号表热合并 (`ElfParser::addSharedLibrary`)**：解析新增 `.so` 的 `.symtab` 与 `.dynsym`，叠加动态重定位基址 `l_addr` 并应用 C++ Demangle，将导出符号、函数与全局变量无缝合并至主会话符号索引表并重建二分与哈希索引；
+   - **DWARF 源码映射热扩展 (`DwarfParser::addModule`)**：自动为新增 `.so` 挂载 DWARF 编译单元，确保跨动态库的源码级单步跟踪与反汇编混合显示即刻生效；
+   - **平滑事件控制与透明越过**：默认模式下，调试器在数微秒内完成差分热重载后自动单步越过陷阱断点并继续全速运行，用户无感知；用户亦可通过 `catch load` / `catch dlopen` 开启加载中断模式，在模块装载瞬间自动暂停目标以便分析。
+
+3. **延迟待决断点 (Pending Breakpoints)**：
+   - 针对尚未被目标加载的动态库中的符号（例如插件中的 `calculate_magic`），允许逆向人员提前声明待决断点（CLI 命令 `bpp <symbol>`，或在 `bp <symbol>` 无法解析时根据用户提示自动转入）；
+   - `BreakpointManager` 与 `BreakpointManagerView` 将其标注为 `[Pending]` 青色指示与琥珀色待决状态；
+   - 一旦 Rendezvous 机制检测到对应 `.so` 装载且符号解析成功，调试器自动将其无缝提升并绑定为真实物理断点（写入 `0xCC` 软断点或硬件槽位），并在日志控制台输出 `[Pending BP] Resolved '<symbol>' -> 0x...`，实现 100% 精准拦截！
+
+4. **可视化与极客交互**：
+   - `BinaryInfoView`（Tab 17）新增第 5 个专属标签页：**"Loaded Shared Libraries (`_r_debug`)"**，以表格实时展现当前进程所有已装载共享库的基地址、库名、文件系统路径与动态段信息，支持双击任意行直达反汇编与内存转储；
+   - CommandBar CLI 增加 `modules` / `libs` / `solist` 快速输出已加载库，`catch load` / `catch dlopen` 随时开关加载中断。
+
+---
+
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
 作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。本章梳理出当前版本尚未实现或待进阶完善的功能，作为后续版本的官方演进路线图 (Roadmap)。
@@ -452,10 +480,10 @@
   2. **跨平台远程逆向**：使 edb-next 成为通用的 GUI 前端，既可调试本地 Linux 二进制，亦可远程附加 Android、路由器固件或车载系统。
 
 ### 4.7 动态库加载全自动拦截与热重载 (_r_debug Rendezvous 机制 / catch dlopen)
-- **当前状态**：当前版本在目标进程初始化阶段解析已加载的主模块与动态库，当目标运行时通过 `dlopen()` 动态装载新的 `.so` 共享库时，调试器无法主动感知并捕获加载事件。
-- **待完善方案**：
-  1. **Linux `_r_debug` Rendezvous 协议接入**：Linux glibc 动态链接器（`ld-linux.so`）维护了全局单例 `struct r_debug` 结构体，其函数指针 `r_brk`（指向 `_dl_debug_state()`）在每次动态库映射（`RT_ADD`）或解映射（`RT_DELETE`）时均会被内核调用；
-  2. **内部安全陷阱与符号自动热重载**：在 `r_brk` 地址打下调试器内部断点，捕获到链接事件后立即重新扫描目标进程的内存段，自动解析新加载 `.so` 的 ELF 符号表与 DWARF 调试信息，无缝刷新反汇编与符号列表。
+- **当前状态**：**已在 3.17 节全景实现 (v1.0)**。深度接入 Linux glibc `_r_debug` Rendezvous 协议与 `_dl_debug_state` 内部陷阱断点，实现动态库差分扫描、符号表与 DWARF 热合流、Pending 待决断点自动绑定，以及 `BinaryInfoView` 专属可视化。
+- **后续进阶方向**：
+  1. **多命名空间与 Android 仿生链接器 (Bionic linker) 扩展**：适配 Android `dlopen` 命名空间隔离机制；
+  2. **卸载清理与局部符号回滚 (`dlclose`)**：在 `RT_DELETE` 触发时按需注销并回滚对应 `.so` 的局部符号。
 
 ### 4.9 多线程独立冻结与解冻控制 (Thread Freeze / Thaw)
 - **当前状态**：当前支持列出目标全部轻量级线程（TID）并支持切换活动线程，但恢复执行（`resume`）或单步步进时，其他并发工作线程依然会并发向前推进。
@@ -481,7 +509,7 @@
 | **细粒度硬件读写监视点 UI** | ★★★★☆ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.14 节全景实现**。HexDump 单元格右键菜单 1/2/4/8 字节硬件读写监视点与高亮标记。 |
 | **断点绑定 Python/Lua 脚本打桩** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.15 节全景实现**。支持 Python 3/Lua 5.4 脚本打桩与 `return false` 无感动态 Hook。 |
 | **内存页保护断点 (Page-Guard)** | ★★★★★ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.16 节全景实现**。打破 DR0~DR3 数量限制，实现零 0xCC 代码段自校验绕过与微秒级单步放行。 |
-| **4.7 动态库加载自动拦截 (`_r_debug`)** | ★★★★☆ | 中等 (Medium) | **P1 (核心壁垒)** | **当前最优先攻坚**。解决动态 `dlopen()` 模块符号丢失问题，对齐 GDB 核心基础设施。 |
+| **4.7 动态库加载自动拦截 (`_r_debug`)** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.17 节全景实现**。解决动态 `dlopen()` 模块符号丢失问题，实现内部陷阱拦截、符号/DWARF 热重载与 Pending 待决断点。 |
 | **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **P2 (高阶进阶)** | 针对 Linux 后端守护进程与 CTF Pwn 题的强力扩展，基于 `PTRACE_O_TRACEFORK` 拦截。 |
 | **4.9 多线程独立冻结与解冻 (Freeze/Thaw)** | ★★★☆☆ | 中等 (Medium) | **P2 (高阶进阶)** | 解决高并发竞态调试干扰，专为复杂后台多线程应用设计。 |
 | **4.10 动态内存特征差分扫描器** | ★★★☆☆ | 较高 (High) | **P2 (高阶进阶)** | 专为游戏外挂逆向、密钥动态搜索打造，多轮差分内存搜索算法。 |
@@ -535,6 +563,8 @@ edb-next/
 │   ├── PythonScriptEngine.hpp/cpp# 嵌入式 Python 3 解释器与 edb 模块导出引擎
 │   ├── LuaScriptEngine.hpp/cpp # 嵌入式 Lua 5.4 解释器与全局 edb 表绑定引擎
 │   ├── ScriptEngineManager.hpp/cpp# 多脚本引擎生命周期调度与语言路由管理器
+│   ├── PageGuardManager.hpp/cpp# 4KB 虚拟内存页保护权限管理、PROT 变更与隐匿断点状态机
+│   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug 协议、link_map 遍历与动态库热重载
 │   ├── DebugSession.hpp/cpp    # 独立调试会话高阶门面 (外观模式，聚合引擎、断点、线程与解析器)
 │   └── SessionManager.hpp/cpp  # 多会话容器与活动会话调度器
 ├── ui/                         # 现代 Qt5 GUI 表现层

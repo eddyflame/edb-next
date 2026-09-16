@@ -50,6 +50,7 @@ Built from scratch using **C++20**, **Qt 5.15+**, and the **Capstone Disassembly
 - 🏷️ **Intelligent C++ Symbol Demangling**: Integrated GNU `<cxxabi.h>` `abi::__cxa_demangle` across global Symbol Viewer, call stack backtraces, disassembly banners, register smart dereferences, and stack memory annotations, displaying clean `calculate_fib(int)` with tooltip mangled string preservation and bidirectional search.
 - 🎯 **Fine-Grained Hardware Watchpoint UI**: Right-click any byte cell in Hex Dumps to instantly set 1/2/4/8-byte hardware write watchpoints, read/write watchpoints, or execution breakpoints, complete with prominent deep red cell highlighting (`QColor(160, 40, 40, 160)`).
 - 🛡️ **Memory Page-Guard Breakpoints & Stealth Execution (Anti-Anti-Debugging)**: Eliminates the 4-register limitation of DR0~DR3 with unlimited soft watchpoints via virtual memory page protection (`PROT_NONE` / `PROT_READ`); zero-`0xCC` stealth execution breakpoints completely defeat CRC32/Hash binary self-integrity checks; kernel-level sub-microsecond false-positive state machine ensures smooth execution without UI stutter.
+- 📦 **Automated Shared Library Interception & Hot-Reloading (`_r_debug` Rendezvous & Pending Breakpoints)**: Seamlessly hooks the Linux glibc `_r_debug` rendezvous protocol and `_dl_debug_state` internal trap to capture runtime `dlopen()` and `dlclose()` events. Dynamically traverses `link_map`, merges newly loaded shared library symbol tables, and extends DWARF line tables on the fly. Introduces pending breakpoints (`bpp <symbol>`) that automatically bind and activate the instant a deferred library is mapped into memory, complete with `catch load` / `catch dlopen` triggers and the real-time `BinaryInfoView` Shared Libraries tab.
 - ⌨️ **x64dbg-Style Bottom CommandBar**: Interactive bottom CLI supporting `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, and plugin commands.
 - 🧩 **Modern C++20 Decoupled Plugin Gateway**: Pure virtual `IPlugin` and `IPluginContext` contract supporting dynamic `.so` hot-loading, menu injection, CLI registration, and event hooks.
 
@@ -70,6 +71,7 @@ Built from scratch using **C++20**, **Qt 5.15+**, and the **Capstone Disassembly
 | **Session Persistence** | Lost on exit | `.dd64` Database | **`.edb_db` JSON Project Database** |
 | **Interactive CLI** | None | CommandBar | **x64dbg-Style Bottom CommandBar** |
 | **Linux Heap Analysis** | Outdated plugin | N/A (Windows) | **Native Glibc ptmalloc Analyzer (Tab 9)** |
+| **Shared Lib Hot-Reload / dlopen** | Manual reload | DLL events supported | **Native glibc _r_debug rendezvous + Pending Breakpoints** |
 | **Exploit Tooling** | Basic ROP plugin | 3rd-party | **Built-in ROP Engine & Python `p64()` Export** |
 
 ---
