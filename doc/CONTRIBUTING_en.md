@@ -13,7 +13,7 @@ Thank you for your interest in contributing to **edb-next**! We warmly welcome c
 ## 2. Branching & Git Workflow
 
 ### 2.1 Branching Strategy
-- **`main` / `master`**: Production-ready branch. All commits must pass continuous integration.
+- **`main`**: Production-ready branch. All commits must pass continuous integration.
 - **`develop`**: Integration branch for upcoming minor releases.
 - **`feature/<name>`**: Feature branches.
 - **`fix/<issue-id>`**: Bugfix branches.
