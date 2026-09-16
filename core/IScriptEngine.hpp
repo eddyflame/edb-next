@@ -29,6 +29,7 @@ public:
 
     virtual ScriptResult executeString(const std::string& code) = 0;
     virtual ScriptResult executeFile(const std::string& filepath) = 0;
+    virtual bool executeHook(const std::string& code) = 0;
 };
 
 } // namespace edb_next

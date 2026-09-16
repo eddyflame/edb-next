@@ -35,6 +35,8 @@ bool BreakpointManager::addBreakpoint(Address addr, bool is_internal, const std:
         .condition = {},
         .isLogOnly = false,
         .logFormat = {},
+        .scriptCode = {},
+        .scriptLanguage = "python",
         .type = BreakpointType::Software,
         .hardwareSlot = -1,
         .symbol = symbol
@@ -82,6 +84,8 @@ bool BreakpointManager::addHardwareBreakpoint(Address addr, HardwareBpType type,
         .condition = {},
         .isLogOnly = false,
         .logFormat = {},
+        .scriptCode = {},
+        .scriptLanguage = "python",
         .type = bp_type,
         .hardwareSlot = free_slot,
         .symbol = symbol
@@ -217,6 +221,14 @@ bool BreakpointManager::setBreakpointLogOnly(Address addr, bool isLogOnly, const
     if (!bp) return false;
     bp->isLogOnly = isLogOnly;
     bp->logFormat = format;
+    return true;
+}
+
+bool BreakpointManager::setBreakpointScript(Address addr, const std::string& code, const std::string& language) {
+    auto* bp = getBreakpointMutable(addr);
+    if (!bp) return false;
+    bp->scriptCode = code;
+    bp->scriptLanguage = language.empty() ? "python" : language;
     return true;
 }
 

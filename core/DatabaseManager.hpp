@@ -16,6 +16,8 @@ struct DatabaseBreakpointData {
     std::string condition;
     std::string logFormat;
     uint32_t ignoreCount{0};
+    std::string scriptCode;
+    std::string scriptLanguage{"python"};
 };
 
 struct DatabasePatchData {

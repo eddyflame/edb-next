@@ -34,6 +34,7 @@ public:
     bool setBreakpointCondition(Address addr, const std::string& condition);
     bool setBreakpointIgnoreCount(Address addr, uint32_t ignoreCount);
     bool setBreakpointLogOnly(Address addr, bool isLogOnly, const std::string& format);
+    bool setBreakpointScript(Address addr, const std::string& code, const std::string& language = "python");
     [[nodiscard]] std::vector<Breakpoint> allBreakpoints() const;
     void clear();
 

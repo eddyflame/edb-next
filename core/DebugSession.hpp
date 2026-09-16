@@ -89,6 +89,7 @@ public:
     bool setBreakpointCondition(Address addr, const std::string& cond);
     bool setBreakpointIgnoreCount(Address addr, uint32_t count);
     bool setBreakpointLogOnly(Address addr, bool logOnly, const std::string& fmt);
+    bool setBreakpointScript(Address addr, const std::string& code, const std::string& language = "python");
 
     // Assembly & Analysis
     Result<std::vector<uint8_t>> assemble(const std::string& insn, Address origin = Address(0));

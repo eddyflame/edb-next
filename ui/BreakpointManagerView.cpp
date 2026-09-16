@@ -8,6 +8,11 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QColor>
+#include <QComboBox>
+#include <QPlainTextEdit>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QDialog>
 
 namespace edb_next {
 
@@ -36,17 +41,21 @@ void BreakpointManagerView::setupUi() {
     auto* btn_cond = new QPushButton("Edit Condition / Log...", this);
     connect(btn_cond, &QPushButton::clicked, this, &BreakpointManagerView::onEditConditionClicked);
 
+    auto* btn_script = new QPushButton("Edit Script Action...", this);
+    connect(btn_script, &QPushButton::clicked, this, &BreakpointManagerView::onEditScriptActionClicked);
+
     top_bar->addWidget(btn_add);
     top_bar->addWidget(btn_toggle);
     top_bar->addWidget(btn_del);
     top_bar->addWidget(btn_cond);
+    top_bar->addWidget(btn_script);
     top_bar->addStretch();
     layout->addLayout(top_bar);
 
     // Table
     table_ = new QTableWidget(this);
-    table_->setColumnCount(7);
-    table_->setHorizontalHeaderLabels({"State", "Address", "Symbol / Label", "Type", "Hits", "Condition", "Log Format"});
+    table_->setColumnCount(8);
+    table_->setHorizontalHeaderLabels({"State", "Address", "Symbol / Label", "Type", "Hits", "Condition", "Log Format", "Script Action"});
 
     table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -55,6 +64,7 @@ void BreakpointManagerView::setupUi() {
     table_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Interactive);
     table_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Interactive);
+    table_->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Interactive);
 
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -155,6 +165,19 @@ void BreakpointManagerView::refresh() {
         auto* item_log = new QTableWidgetItem(logStr);
         item_log->setForeground(QColor(230, 200, 100));
 
+        // 7: Script Action
+        QString scriptSummary;
+        if (!bp.scriptCode.empty()) {
+            int lineCount = QString::fromStdString(bp.scriptCode).split('\n').size();
+            QString langUpper = QString::fromStdString(bp.scriptLanguage).toUpper();
+            scriptSummary = QString("[%1] %2 line(s)").arg(langUpper).arg(lineCount);
+        }
+        auto* item_script = new QTableWidgetItem(scriptSummary);
+        if (!bp.scriptCode.empty()) {
+            item_script->setForeground(QColor(198, 120, 221));
+            item_script->setToolTip(QString::fromStdString(bp.scriptCode));
+        }
+
         table_->setItem(r, 0, item_state);
         table_->setItem(r, 1, item_addr);
         table_->setItem(r, 2, item_sym);
@@ -162,14 +185,20 @@ void BreakpointManagerView::refresh() {
         table_->setItem(r, 4, item_hits);
         table_->setItem(r, 5, item_cond);
         table_->setItem(r, 6, item_log);
+        table_->setItem(r, 7, item_script);
     }
     isUpdatingTable_ = false;
 }
 
 void BreakpointManagerView::handleCellDoubleClicked(int row, int col) {
-    Q_UNUSED(col);
     if (row >= 0 && row < static_cast<int>(currentBreakpoints_.size())) {
-        Q_EMIT jumpToAddressRequested(currentBreakpoints_[row].address);
+        if (col == 5 || col == 6) {
+            onEditConditionClicked();
+        } else if (col == 7) {
+            onEditScriptActionClicked();
+        } else {
+            Q_EMIT jumpToAddressRequested(currentBreakpoints_[row].address);
+        }
     }
 }
 
@@ -199,6 +228,7 @@ void BreakpointManagerView::handleContextMenu(const QPoint& pos) {
         const auto& bp = currentBreakpoints_[row];
         menu.addAction(bp.enabled ? "Disable Breakpoint" : "Enable Breakpoint", this, &BreakpointManagerView::onToggleBreakpointClicked);
         menu.addAction("Edit Condition & Log...", this, &BreakpointManagerView::onEditConditionClicked);
+        menu.addAction("Edit Script Action...", this, &BreakpointManagerView::onEditScriptActionClicked);
         menu.addAction("Delete Breakpoint", this, &BreakpointManagerView::onDeleteBreakpointClicked);
         menu.addAction("Goto Address in Disassembly", this, [this, bp]() {
             Q_EMIT jumpToAddressRequested(bp.address);
@@ -313,6 +343,74 @@ void BreakpointManagerView::onDeleteBreakpointClicked() {
         auto session = session_.lock();
         if (!session) return;
         session->removeBreakpoint(currentBreakpoints_[row].address);
+        refresh();
+    }
+}
+
+void BreakpointManagerView::onEditScriptActionClicked() {
+    int row = table_->currentRow();
+    if (row < 0 || row >= static_cast<int>(currentBreakpoints_.size())) {
+        QMessageBox::information(this, "Script Action", "Please select a breakpoint row first.");
+        return;
+    }
+
+    auto session = session_.lock();
+    if (!session) return;
+
+    const auto& bp = currentBreakpoints_[row];
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QString("Breakpoint Script Action - %1").arg(QString::fromStdString(bp.address.toHex())));
+    dlg.resize(550, 420);
+
+    auto* layout = new QVBoxLayout(&dlg);
+
+    // Language selector
+    auto* langLayout = new QHBoxLayout();
+    auto* langLabel = new QLabel("Script Language:", &dlg);
+    auto* langCombo = new QComboBox(&dlg);
+    langCombo->addItem("Python 3", "python");
+    langCombo->addItem("Lua 5.4", "lua");
+    if (bp.scriptLanguage == "lua") {
+        langCombo->setCurrentIndex(1);
+    } else {
+        langCombo->setCurrentIndex(0);
+    }
+    langLayout->addWidget(langLabel);
+    langLayout->addWidget(langCombo);
+    langLayout->addStretch();
+    layout->addLayout(langLayout);
+
+    // Hint / Help
+    auto* tipLabel = new QLabel(
+        "Hint: Return false (e.g. 'return False' in Python, 'return false' in Lua) to silently step over without halting execution.\n"
+        "Returning True, None, or having no return statement will pause the target normally.",
+        &dlg);
+    tipLabel->setStyleSheet("color: #abb2bf; font-size: 11px; padding: 6px; background: #21252b; border: 1px solid #3e4451; border-radius: 4px;");
+    tipLabel->setWordWrap(true);
+    layout->addWidget(tipLabel);
+
+    // Script editor
+    auto* editor = new QPlainTextEdit(&dlg);
+    QFont mono_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    mono_font.setPointSize(10);
+    editor->setFont(mono_font);
+    editor->setPlainText(QString::fromStdString(bp.scriptCode));
+    editor->setPlaceholderText("# Python example:\n# if edb.get_reg('rdi') == 7:\n#     edb.set_reg('rax', 42)\n#     return False\n# return True");
+    layout->addWidget(editor);
+
+    // Button box
+    auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    auto* btnClear = btnBox->addButton("Clear Script", QDialogButtonBox::ResetRole);
+    connect(btnClear, &QPushButton::clicked, editor, &QPlainTextEdit::clear);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(btnBox);
+
+    if (dlg.exec() == QDialog::Accepted) {
+        std::string code = editor->toPlainText().toStdString();
+        std::string lang = langCombo->currentData().toString().toStdString();
+        session->setBreakpointScript(bp.address, code, lang);
         refresh();
     }
 }

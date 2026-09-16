@@ -3,7 +3,12 @@
 #include "PythonScriptEngine.hpp"
 #include "LuaScriptEngine.hpp"
 #include "ScriptConsoleView.hpp"
+#include "BreakpointManagerView.hpp"
+#include <QTableWidget>
 #include <QApplication>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <iostream>
 #include <fstream>
@@ -174,6 +179,77 @@ static void test_session_interaction() {
     std::cout << "  -> test_session_interaction PASSED" << std::endl;
 }
 
+static void test_script_driven_breakpoints() {
+    std::cout << "[TEST] Running test_script_driven_breakpoints..." << std::endl;
+
+    auto session = std::make_shared<DebugSession>("sess-hook", "ScriptHookTestSession");
+    bool launched = session->launch("./build/test_target", {});
+    if (!launched) {
+        launched = session->launch("./test_target", {});
+    }
+    assert(launched && "Failed to launch test_target");
+
+    Address rip = session->registers().rip();
+    assert(!rip.isNull() && "RIP must be valid");
+
+    // 1. Test Python executeHook returning False (silent bypass)
+    auto* pyEng = session->scriptEngines().engine("python");
+    assert(pyEng != nullptr && "Python engine must exist");
+    pyEng->setSession(session.get());
+    bool pyPause = pyEng->executeHook(
+        "val = edb.get_reg('rdi')\n"
+        "edb.set_reg('rax', 7777)\n"
+        "return False\n"
+    );
+    assert(!pyPause && "Python hook returning False must signal silent bypass (no pause)");
+    assert(session->registers().rax() == 7777 && "Python hook must successfully set register rax to 7777");
+
+    // 2. Test Python executeHook returning True (pause)
+    bool pyPause2 = pyEng->executeHook("return True\n");
+    assert(pyPause2 && "Python hook returning True must signal pause");
+
+    // 3. Test Lua executeHook returning false (silent bypass)
+    auto* luaEng = session->scriptEngines().engine("lua");
+    assert(luaEng != nullptr && "Lua engine must exist");
+    luaEng->setSession(session.get());
+    bool luaPause = luaEng->executeHook(
+        "local val = edb.get_reg('rdi')\n"
+        "edb.set_reg('rbx', 8888)\n"
+        "return false\n"
+    );
+    assert(!luaPause && "Lua hook returning false must signal silent bypass (no pause)");
+    assert(session->registers().rbx() == 8888 && "Lua hook must successfully set register rbx to 8888");
+
+    // 4. Test Lua executeHook returning true (pause)
+    bool luaPause2 = luaEng->executeHook("return true\n");
+    assert(luaPause2 && "Lua hook returning true must signal pause");
+
+    // 5. Test setBreakpointScript integration
+    bool bpSet = session->addBreakpoint(rip);
+    assert(bpSet && "addBreakpoint must succeed");
+
+    bool scriptSet = session->setBreakpointScript(rip, "if edb.get_reg('rax') == 7777:\n    return False\nreturn True\n", "python");
+    assert(scriptSet && "setBreakpointScript must succeed");
+
+    const auto* bp = session->breakpointManager().getBreakpoint(rip);
+    assert(bp != nullptr && "Breakpoint must exist");
+    assert(bp->scriptLanguage == "python" && "Breakpoint scriptLanguage must be python");
+    assert(bp->scriptCode.find("7777") != std::string::npos && "Breakpoint scriptCode must match");
+
+    // 6. Test BreakpointManagerView UI rendering of script column
+    BreakpointManagerView bpView;
+    bpView.setSession(session);
+    auto* table = bpView.findChild<QTableWidget*>();
+    assert(table != nullptr && "Table widget must exist");
+    assert(table->columnCount() == 8 && "Table must have 8 columns including Script Action");
+    QTableWidgetItem* scriptItem = table->item(0, 7);
+    assert(scriptItem != nullptr && "Script Action table item must exist");
+    assert(scriptItem->text().contains("[PYTHON]") && "Script Action text must display language");
+
+    session->terminate();
+    std::cout << "  -> test_script_driven_breakpoints PASSED" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -185,6 +261,7 @@ int main(int argc, char* argv[]) {
     test_standalone_lua();
     test_engine_manager_and_files();
     test_session_interaction();
+    test_script_driven_breakpoints();
 
     std::cout << "==========================================" << std::endl;
     std::cout << "  ALL SCRIPTING TESTS PASSED (100%)" << std::endl;
