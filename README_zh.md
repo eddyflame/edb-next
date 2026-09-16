@@ -48,7 +48,7 @@
 - 🎯 **经典 4 象限黄金工作台**：反汇编、寄存器、4路独立转储（Dump 1~4）以及专有 64 位 QWORD 栈视图四维同屏联动。
 - 🔍 **原生 Linux 深度内省与漏洞利用工具**：内置 Glibc ptmalloc 堆链解析器（`malloc_chunk` 与 `A|M|P` 标志）、ROP Gadget 滑动窗口搜寻与 Python `p64(...)` 利用脚本导出、交互式基本块控制流图 (CFG)、跨模块动态库 API 外呼搜索、以及 `/proc/<pid>/fd/` 句柄分类。
 - 📖 **DWARF 源码级调试与反汇编混合渲染**：基于 `libdw` 原生解析 `.debug_info` 与 `.debug_line`，实现地址与源码行号双向瞬时映射；支持反汇编与原始 C/C++ 源码混合排版（`Ctrl+Shift+S`），内置独立源码浏览器 `SourceView`（`Alt+S`），支持源码行双击断点与源码级单步。
-- 🐍 **嵌入式 Python 3 & Lua 5.4 双脚本自动化引擎**：原生嵌入 CPython 3 与 Lua 5.4 解释器，统一由 `ScriptEngineManager` 调度；内置 `edb` 模块向脚本全面暴露内存读写、寄存器控制、断点管理、单步执行与表达式求值，配备独立暗黑极客 Script Console（`Alt+P`）与 CommandBar 行内执行（`py <code...>` / `lua <code...>`）。
+- 🐍 **嵌入式 Python 3 & Lua 5.4 双脚本自动化引擎**：原生嵌入 CPython 3 与 Lua 5.4 解释器，统一由 `ScriptEngineManager` 调度；内置 `edb` 模块向脚本全面暴露内存读写、寄存器控制、断点管理、单步执行与表达式求值，配备独立暗黑极客 Script Console（`Alt+P`）与 CommandBar 行内执行（`py <code...>` / `lua <code...>`）；支持在任意断点绑定脚本动作，结合 `return False` / `return false` 契约实现微秒级无感动态打桩（Silent Hooking）。
 - 🏷️ **C++ 符号智能反混淆 (Demangling)**：原生集成 Itanium ABI `abi::__cxa_demangle`，全局符号浏览器、调用栈、反汇编行指示、寄存器与栈区智能解引用全线呈现清晰的 `calculate_fib(int)`，搜索过滤双向匹配，悬停保留原始 Mangled 名。
 - 🎯 **转储区细粒度硬件读写监视点 (Hardware Watchpoints Context Menu)**：在 HexDump 单元格右键一键部署 1/2/4/8 字节硬件写监视点（Write Watchpoint）、硬件读写监视点与硬件执行断点，单元格深红背景醒目高亮指示活动断点。
 - ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate` 等指令，并向插件全面开放扩展接口。

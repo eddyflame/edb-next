@@ -366,6 +366,23 @@
    - 存在断点的单元格自动以深红底色 (`QColor(160, 40, 40, 160)`) 与高亮白字醒目呈现，鼠标悬浮自动显示 `Breakpoint active at 0x...` 提示信息；
    - 保留未断点单元格原有的 0 字节暗灰、可打印字符亮灰及非可打印字符暗金十六进制语法高亮。
 
+### 3.15 断点绑定 Python/Lua 脚本自动化动作与微秒级无感打桩系统
+1. **断点动作脚本引擎打通**：
+   - 扩充 `Breakpoint` 模型，支持挂载自定义 `scriptCode` 与 `scriptLanguage`（`"python"` / `"lua"`）；
+   - 在 `core/IScriptEngine` 中规范 `executeHook(const std::string& code)` 纯虚接口：
+     - **Python 3**：运行时自动将用户代码封装进 `def __edb_bp_hook__(): ...` 保护作用域，若显式 `return False` 则标记放行；异常时捕获 Traceback 并自动转储；
+     - **Lua 5.4**：运行时自动将用户代码编译为局部调用闭包，若显式 `return false` 则标记放行；
+2. **微秒级无感知动态打桩 (Silent Dynamic Hooking)**：
+   - 断点命中时，引擎内部直接交给 `ScriptEngineManager` 对应语言引擎执行；
+   - 脚本中可自由调用内置 `edb` 模块的全部 API（如 `edb.get_reg`, `edb.set_reg`, `edb.read_memory`, `edb.write_memory`, `edb.log` 等）；
+   - 执行完成后自动同步刷新寄存器状态；若脚本返回 `false`（无感放行），则状态机自动单步并继续全速推进（`prepareStepOver` -> `singleStep` -> `finishStepOver` -> `continueExecution`），**0 界面卡顿、0 弹窗打扰**，完美胜任高频解密、解包转储与数据篡改；
+   - 若脚本返回 `true`、未返回或抛出异常，则正常暂停目标并更新 GUI；
+3. **断点管理器 (`BreakpointManagerView`) 交互闭环**：
+   - 表格新增专有第 8 列 `"Script Action"`，直观呈现脚本语言与行数统计（如 `[PYTHON] 3 line(s)` / `[LUA] 1 line(s)`），悬浮 Tooltip 呈现完整代码；
+   - 顶部提供 **"Edit Script Action..."** 按钮，支持在表格内双击第 8 列或右键直达编辑弹窗；弹窗内置语言切换、等宽编辑器与清空重置；
+4. **工程数据库持久化 (`.edb_db`)**：
+   - `DatabaseManager` 完整序列化/反序列化每个断点的 `script_code` 与 `script_lang`，重启调试自动还原。
+
 ---
 
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
@@ -416,12 +433,6 @@
   1. **Linux `_r_debug` Rendezvous 协议接入**：Linux glibc 动态链接器（`ld-linux.so`）维护了全局单例 `struct r_debug` 结构体，其函数指针 `r_brk`（指向 `_dl_debug_state()`）在每次动态库映射（`RT_ADD`）或解映射（`RT_DELETE`）时均会被内核调用；
   2. **内部安全陷阱与符号自动热重载**：在 `r_brk` 地址打下调试器内部断点，捕获到链接事件后立即重新扫描目标进程的内存段，自动解析新加载 `.so` 的 ELF 符号表与 DWARF 调试信息，无缝刷新反汇编与符号列表。
 
-### 4.8 断点绑定 Python/Lua 脚本自动化动作 (Script-Driven Breakpoint Actions / 无感动态打桩)
-- **当前状态**：当前断点命中后仅能选择暂停目标并触发 GUI 更新，或输出简单日志；脚本控制台与断点子系统处于松散解耦状态。
-- **待完善方案**：
-  1. **断点脚本回调钩子 (`on_hit_script`)**：允许在断点属性中绑定自定义 Python 脚本片段或 Lua 函数（例如：`edb.write_memory(reg("rsi"), b"patch"); return false;`）；
-  2. **微秒级无感知条件打桩**：断点命中后由内部引擎直接交给 `ScriptEngineManager` 执行脚本，若脚本返回 `false`（不暂停），则引擎自动单步并无感恢复执行，实现对高频循环或网络数据包的微秒级动态数据脱敏、解密捕获与无锁打桩。
-
 ### 4.9 多线程独立冻结与解冻控制 (Thread Freeze / Thaw)
 - **当前状态**：当前支持列出目标全部轻量级线程（TID）并支持切换活动线程，但恢复执行（`resume`）或单步步进时，其他并发工作线程依然会并发向前推进。
 - **待完善方案**：
@@ -444,9 +455,9 @@
 | :--- | :---: | :---: | :---: | :--- |
 | **C++ 符号反混淆 (Demangling)** | ★★★★★ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.13 节全景实现**。基于 `abi::__cxa_demangle`，符号、调用栈、反汇编指示全面可读化。 |
 | **细粒度硬件读写监视点 UI** | ★★★★☆ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.14 节全景实现**。HexDump 单元格右键菜单 1/2/4/8 字节硬件读写监视点与高亮标记。 |
+| **断点绑定 Python/Lua 脚本打桩** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.15 节全景实现**。支持 Python 3/Lua 5.4 脚本打桩与 `return false` 无感动态 Hook。 |
 | **4.2 高级反反调试与隐蔽断点 (Page-Guard)** | ★★★★★ | 中等 (Medium) | **P1 (核心壁垒)** | **当前最优先攻坚**。填补 Linux 平台反反调试工具空白，解决恶意样本 CRC 自校验与 `TracerPid` 检测。 |
 | **4.7 动态库加载自动拦截 (`_r_debug`)** | ★★★★☆ | 中等 (Medium) | **P1 (核心壁垒)** | **当前最优先攻坚**。解决动态 `dlopen()` 模块符号丢失问题，对齐 GDB 核心基础设施。 |
-| **4.8 断点绑定 Python/Lua 脚本打桩** | ★★★★☆ | 中等 (Medium) | **P1 (核心壁垒)** | **当前最优先攻坚**。盘活新引入的双脚本引擎，实现无需重启、无需源码的超高速无感 Hook。 |
 | **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **P2 (高阶进阶)** | 针对 Linux 后端守护进程与 CTF Pwn 题的强力扩展，基于 `PTRACE_O_TRACEFORK` 拦截。 |
 | **4.9 多线程独立冻结与解冻 (Freeze/Thaw)** | ★★★☆☆ | 中等 (Medium) | **P2 (高阶进阶)** | 解决高并发竞态调试干扰，专为复杂后台多线程应用设计。 |
 | **4.10 动态内存特征差分扫描器** | ★★★☆☆ | 较高 (High) | **P2 (高阶进阶)** | 专为游戏外挂逆向、密钥动态搜索打造，多轮差分内存搜索算法。 |

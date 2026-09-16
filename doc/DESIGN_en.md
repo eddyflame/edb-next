@@ -197,8 +197,11 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - **Set Hardware Write Watchpoint**: 1, 2, 4, or 8 bytes.
   - **Set Hardware Read/Write Watchpoint**: 1, 2, 4, or 8 bytes.
   - **Set Hardware Execute Breakpoint**: 1 byte.
-  - **Toggle / Remove Breakpoint**: Software `0xCC` breakpoint toggle and removal.
-- **Prominent Visual Indication**: Active breakpoint cells render with a deep red background (`QColor(160, 40, 40, 160)`), bright white text, and hovering tooltips displaying `Breakpoint active at 0x...`. Normal byte color syntax highlighting (zero bytes, ASCII characters, non-printable bytes) is preserved on non-breakpoint cells.
+### 3.15 Script-Driven Breakpoint Actions & Silent Dynamic Hooking
+- **Unified Breakpoint Script Hooks**: Extended `Breakpoint` with `scriptCode` and `scriptLanguage` (`python` / `lua`). Defined `executeHook(const std::string& code)` across `IScriptEngine`, `PythonScriptEngine` (protecting user code inside `def __edb_bp_hook__(): ...`), and `LuaScriptEngine` (wrapping in local closure).
+- **Microsecond Silent Hooking Bypass**: When a breakpoint is hit, the corresponding scripting engine executes the attached script. If the script explicitly returns `false` (e.g. `return False` in Python, `return false` in Lua), the engine executes an automatic single-step and resumes execution at full speed with 0 UI freeze and 0 interruptions, ideal for high-frequency unpackers, key loggers, and fuzzing payloads. If `true` or no value is returned, execution halts and updates the GUI.
+- **Breakpoint Manager UI Integration (`BreakpointManagerView`)**: Added 8th table column "Script Action" displaying language and line counts with tooltips; added top bar and context menu action "Edit Script Action..." presenting an interactive modal editor with language selection and syntax help.
+- **Database Persistence (`.edb_db`)**: Breakpoint script payloads and language selections are serialized and deserialized automatically by `DatabaseManager`.
 
 ---
 
@@ -218,8 +221,6 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
 7. **Automated Shared Library Loading Interception (`_r_debug` Rendezvous)**:
    - Hook glibc's `struct r_debug.r_brk` (`_dl_debug_state`) to capture runtime `dlopen()` and `dlclose()` events, automatically re-enumerating memory regions and reloading symbols/DWARF.
-8. **Script-Driven Breakpoint Actions & High-Frequency Hooking**:
-   - Allow breakpoints to attach Python or Lua callback hooks (`on_hit_script`). Perform microsecond-latency memory modifications and register checks without GUI suspension or user interruption.
 9. **Independent Thread Freeze & Thaw Execution Control**:
    - Enable thread-isolated stepping by freezing non-target threads (`SIGSTOP` / event-loop masking) to prevent state corruption in complex multithreaded race conditions.
 10. **Differential Memory Pattern & Value Scanner**:
@@ -235,9 +236,9 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 | :--- | :---: | :---: | :---: | :--- |
 | **C++ Symbol Demangling** | ★★★★★ | Low | **Completed (v1.0)** | **Fully implemented in §3.13**. `<cxxabi.h>` demangling active across symbols, stack, registers, and disassembler. |
 | **Fine-Grained Hardware Watchpoint UI** | ★★★★☆ | Low | **Completed (v1.0)** | **Fully implemented in §3.14**. 1/2/4/8-byte read/write watchpoint assignment and cell highlights in Hex Dumps. |
+| **Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.15**. Python 3 & Lua 5.4 dynamic hooks with `return false` silent bypass. |
 | **4.2 Advanced Anti-Anti-Debugging (Page-Guard)** | ★★★★★ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Closes Linux stealth gap, neutralizing CRC checks and `/proc/self/status` `TracerPid`. |
 | **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Solves runtime `dlopen()` symbol omission; aligns with GDB core debug capabilities. |
-| **4.8 Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Unlocks embedded Python/Lua engine potential for zero-overhead dynamic instrumentation. |
 | **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **P2 (Advanced)** | Essential for Linux daemons and multiprocess CTF challenges via `PTRACE_O_TRACEFORK`. |
 | **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **P2 (Advanced)** | Eliminates race condition interference during multithreaded step-through analysis. |
 | **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
