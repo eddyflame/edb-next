@@ -585,4 +585,10 @@ bool LinuxDebugEngine::remoteMunmap(Address addr, size_t size) {
     return ret == 0;
 }
 
+bool LinuxDebugEngine::getSigInfo(Tid tid, siginfo_t* siginfo) {
+    if (tid <= 0 || !siginfo) return false;
+    long res = ::ptrace(PTRACE_GETSIGINFO, tid, nullptr, siginfo);
+    return res == 0;
+}
+
 } // namespace edb_next

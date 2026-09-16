@@ -116,6 +116,14 @@ void MemoryHexView::refresh() {
                     item_byte->setBackground(QColor(160, 40, 40, 160));
                     item_byte->setForeground(Qt::white);
                     item_byte->setToolTip(QString("Breakpoint active at %1").arg(QString::fromStdString(cell_addr.toHex())));
+                } else if (session->isAddressPageWatched(cell_addr)) {
+                    item_byte->setBackground(QColor(180, 110, 20, 160));
+                    item_byte->setForeground(Qt::white);
+                    item_byte->setToolTip(QString("Page-Guard Watched: %1").arg(QString::fromStdString(cell_addr.toHex())));
+                } else if (session->isPageGuarded(cell_addr)) {
+                    item_byte->setBackground(QColor(140, 90, 20, 90));
+                    item_byte->setForeground(QColor(240, 220, 160));
+                    item_byte->setToolTip(QString("Guarded Page at %1").arg(QString::fromStdString(cell_addr.toHex())));
                 } else if (byte_val == 0) {
                     item_byte->setForeground(QColor(100, 100, 100));
                 } else if (std::isprint(byte_val)) {
@@ -408,6 +416,36 @@ void MemoryHexView::handleCustomContextMenu(const QPoint& pos) {
             session->addHardwareBreakpoint(sel_addr, HardwareBpType::Execute, HardwareBpSize::Byte1);
             refresh();
         });
+
+        bpMenu->addSeparator();
+        auto* pgMenu = bpMenu->addMenu("Page-Guard Breakpoint (Memory Protection)");
+        if (session->hasPageGuard(sel_addr)) {
+            pgMenu->addAction("Remove Page-Guard", [session, sel_addr, this]() {
+                session->removePageGuard(sel_addr);
+                refresh();
+            });
+        } else {
+            pgMenu->addAction("Set Page-Guard: No Access (Read/Write/Exec) [PROT_NONE]", [session, sel_addr, this]() {
+                session->addPageGuard(sel_addr, 1, PageGuardAccess::NoAccess);
+                refresh();
+            });
+            pgMenu->addAction("Set Page-Guard: Write Only (Watch Writes) [PROT_READ]", [session, sel_addr, this]() {
+                session->addPageGuard(sel_addr, 1, PageGuardAccess::ReadOnly);
+                refresh();
+            });
+            pgMenu->addAction("Set Page-Guard: Execute Only (Watch Reads/Writes) [PROT_EXEC]", [session, sel_addr, this]() {
+                session->addPageGuard(sel_addr, 1, PageGuardAccess::ExecuteOnly);
+                refresh();
+            });
+            pgMenu->addAction("Custom Page-Guard Range...", [session, sel_addr, this]() {
+                bool ok = false;
+                int size = QInputDialog::getInt(this, "Page-Guard Range", "Number of bytes to guard:", 1, 1, 1024 * 1024, 1, &ok);
+                if (ok) {
+                    session->addPageGuard(sel_addr, static_cast<size_t>(size), PageGuardAccess::ReadOnly);
+                    refresh();
+                }
+            });
+        }
     }
 
     menu.addSeparator();

@@ -75,6 +75,23 @@ bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProj
     }
     root["breakpoints"] = bp_arr;
 
+    // Page Guards
+    QJsonArray pg_arr;
+    for (const auto& pg : project.pageGuards) {
+        QJsonObject pg_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << pg.address;
+        pg_obj["address"] = QString::fromStdString(ss.str());
+        pg_obj["size"] = static_cast<int>(pg.size);
+        pg_obj["access"] = QString::fromStdString(pg.access);
+        pg_obj["comment"] = QString::fromStdString(pg.comment);
+        pg_obj["condition"] = QString::fromStdString(pg.condition);
+        pg_obj["script_code"] = QString::fromStdString(pg.scriptCode);
+        pg_obj["script_lang"] = QString::fromStdString(pg.scriptLanguage);
+        pg_arr.append(pg_obj);
+    }
+    root["page_guards"] = pg_arr;
+
     // Watches
     QJsonArray w_arr;
     for (const auto& w : project.watches) {
@@ -160,6 +177,23 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
         project.breakpoints.push_back(bp);
     }
 
+    // Page Guards
+    project.pageGuards.clear();
+    QJsonArray pg_arr = root["page_guards"].toArray();
+    for (const auto& val : pg_arr) {
+        QJsonObject obj = val.toObject();
+        DatabasePageGuardData pg;
+        pg.address = obj["address"].toString().toULongLong(nullptr, 16);
+        pg.size = static_cast<size_t>(obj["size"].toInt(1));
+        pg.access = obj["access"].toString().toStdString();
+        pg.comment = obj["comment"].toString().toStdString();
+        pg.condition = obj["condition"].toString().toStdString();
+        pg.scriptCode = obj["script_code"].toString().toStdString();
+        pg.scriptLanguage = obj["script_lang"].toString().toStdString();
+        if (pg.scriptLanguage.empty()) pg.scriptLanguage = "python";
+        project.pageGuards.push_back(pg);
+    }
+
     // Watches
     project.watches.clear();
     QJsonArray w_arr = root["watches"].toArray();
@@ -222,6 +256,19 @@ bool DatabaseManager::exportSession(std::shared_ptr<DebugSession> session,
             .ignoreCount = bp.ignoreCount,
             .scriptCode = bp.scriptCode,
             .scriptLanguage = bp.scriptLanguage
+        });
+    }
+
+    // Page Guards
+    for (const auto& pg : session->pageGuardManager().allGuards()) {
+        proj.pageGuards.push_back(DatabasePageGuardData{
+            .address = pg.address.value(),
+            .size = pg.size,
+            .access = pageGuardAccessToString(pg.access),
+            .comment = pg.comment,
+            .condition = pg.condition,
+            .scriptCode = pg.scriptCode,
+            .scriptLanguage = pg.scriptLanguage
         });
     }
 
@@ -288,6 +335,18 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
         }
         if (!bp.scriptCode.empty()) {
             session->breakpointManager().setBreakpointScript(addr, bp.scriptCode, bp.scriptLanguage);
+        }
+    }
+
+    // Restore page guards
+    for (const auto& pg : proj.pageGuards) {
+        Address addr(pg.address);
+        session->addPageGuard(addr, pg.size, pageGuardAccessFromString(pg.access), pg.comment);
+        auto* g = session->pageGuardManager().getGuardMutable(addr);
+        if (g) {
+            g->condition = pg.condition;
+            g->scriptCode = pg.scriptCode;
+            g->scriptLanguage = pg.scriptLanguage;
         }
     }
 

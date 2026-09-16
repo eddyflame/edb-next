@@ -26,12 +26,23 @@ struct DatabasePatchData {
     std::string patchedHex;
 };
 
+struct DatabasePageGuardData {
+    uint64_t address{0};
+    size_t size{1};
+    std::string access{"NoAccess"};
+    std::string comment;
+    std::string condition;
+    std::string scriptCode;
+    std::string scriptLanguage{"python"};
+};
+
 struct DatabaseProject {
     std::string binaryPath;
     std::string notes;
     std::vector<std::pair<uint64_t, std::string>> comments;
     std::vector<uint64_t> bookmarks;
     std::vector<DatabaseBreakpointData> breakpoints;
+    std::vector<DatabasePageGuardData> pageGuards;
     std::vector<std::string> watches;
     std::vector<DatabasePatchData> patches;
 };
