@@ -271,6 +271,28 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - `freeze <tid|all>`: Freezes a specific thread or all non-focus threads.
   - `thaw <tid|all>`: Unfreezes a specific thread or thaws all threads.
 
+### 3.20 Differential Memory Scanner & Multi-Pass Value Convergence (CheatEngine Style)
+- **Multi-Type Parsing & Dynamic Alignment (`ScanDataType`)**:
+  - Native support for 8 core data types: `Int8`, `Int16`, `Int32` (default 4 bytes), `Int64` (8 bytes), `Float` (with $10^{-4}$ tolerance), `Double`, `String`, and `ByteArray` (hex bytes with `??` wildcards).
+  - Configurable memory alignment (1, 2, 4, 8 bytes) to guarantee boundary precision and maximize scanning throughput.
+- **Differential Multi-Pass Convergence (`ScanCompareType`)**:
+  - **First Scan**: `ExactValue` (exact numerical/string/hex matching) or `UnknownInitialValue` (captures initial baseline snapshot of all memory).
+  - **Next Differential Scans**: `ExactValue`, `IncreasedValue`, `DecreasedValue`, `ChangedValue`, `UnchangedValue`, `IncreasedBy` (+Delta), and `DecreasedBy` (-Delta).
+  - Rapidly converges millions of candidate addresses down to the exact variable location in 2~3 passes.
+- **High-Throughput Streamed Memory Scanning**:
+  - Scans readable/writable memory regions (`rw-p`, heap, stack, data sections) by default, skipping hundreds of MBs of static system shared libraries and completing full-pass scans in tens of milliseconds.
+  - 1MB chunked streaming I/O minimizes kernel ptrace overhead.
+- **UI & In-Place Memory Modification (`MemoryScannerView` - Tab 21)**:
+  - Integrated in bottom drawer **Tab 21: "Memory Scanner"**.
+  - Candidate table presents Address, Data Type, Previous Value, Current Value, and color-coded Delta (green for increase, red for decrease).
+  - Double-click jumps to address in Hex Dump (`MultiDumpWidget`).
+  - Context menu includes `Follow in Hex Dump`, `Follow in Disassembly`, `Copy Address`, and `Edit / Write Value...` to write new values directly to the target process.
+- **CommandBar CLI Integration**:
+  - `scan <value|unknown> [type]`: First scan (e.g. `scan 100 int32`, `scan "admin" str`).
+  - `nextscan <compare> [val]`: Next differential pass (e.g. `nextscan >`, `nextscan 105`, `nextscan + 10`).
+  - `scanresults [limit]`: Inspect top candidate addresses.
+  - `scanreset`: Reset memory scanner state.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -292,7 +314,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 9. **Independent Thread Freeze & Thaw Execution Control**:
    - **Completed in §3.19 (v1.0)**. Full kernel `SYS_tgkill` + `SIGSTOP` signal blocking and event-loop masking, isolated stepping, ice-blue `❄ FROZEN` badges, toolbar actions, and `freeze` / `thaw` / `threads` CLI commands.
 10. **Differential Memory Pattern & Value Scanner**:
-    - Implement a CheatEngine-style multi-pass differential scanner over readable/writable heap/data pages (initial search, increased, decreased, changed, unchanged value convergence).
+    - **Completed in §3.20 (v1.0)**. Full 8-type support, first scan baseline capture, multi-pass differential convergence (> / < / != / == / +/- delta), streamed rw-p chunk scanning, Tab 21 interactive UI with in-place memory editing, and `scan` / `nextscan` / `scanresults` / `scanreset` CLI commands.
 
 ---
 
@@ -309,7 +331,7 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 | **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.17**. Solves runtime `dlopen()` symbol omission; internal trap, symbol/DWARF hot reload & pending breakpoints. |
 | **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.18**. Tri-state follow-fork, ptrace fork event trapping, child session tree & inferior CLI switching. |
 | **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.19**. Single/batch thread freeze & thaw, ice-blue status badges, isolated stepping, and CLI commands. |
-| **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
+| **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **Completed (v1.0)** | **Fully implemented in §3.20**. Multi-pass convergence, 8 data types, streamed chunk scan, Tab 21 panel & CLI. |
 | **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **P2 (Advanced)** | Format memory views using custom C struct definitions. |
 | **4.1 Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
 | **4.6 GDB Remote Serial Protocol (RSP) Client** | ★★★☆☆ | High | **P3 (Long-Term)** | Extends edb-next UI as a universal frontend for QEMU, Android, and embedded targets. |

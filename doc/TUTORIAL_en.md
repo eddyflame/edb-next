@@ -37,6 +37,7 @@
    - 4.10 Automated Shared Library Interception & Pending Breakpoints
    - 4.11 Follow-Fork Mode & Multi-Process Inferiors
    - 4.12 Independent Thread Freeze & Thaw (Freeze / Thaw & Isolated Stepping)
+   - 4.13 Differential Memory Scanner (CheatEngine-Style Convergence)
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -408,6 +409,62 @@ thaw all           # Thaw all threads
 
 ---
 
+### 4.13 Differential Memory Scanner (CheatEngine-Style Convergence)
+
+When conducting vulnerability research, game reverse engineering, or analyzing malware packers, critical variables (such as dynamic session tokens, encryption keys, player health/currency, or unpacked payload buffers) reside dynamically on heap allocations or uninitialized data sections. Static byte pattern searches are insufficient when hunting for live changing data.
+
+`edb-next` incorporates a native, CheatEngine-grade multi-pass differential memory scanner (Tab 21: "Memory Scanner"):
+
+#### 1. Scanner Panel Overview (Tab 21)
+Open the **Memory Scanner** tab in the bottom drawer (Tab 21):
+- **Scan Controls**:
+  - **Value**: Enter integer (`100`, `0x1337`), float (`3.1415`), double, string, or hex bytes (`48 89 ?? 55`).
+  - **Delta (+/-)**: Input value difference for `Increased By...` or `Decreased By...`.
+  - **Data Type**: `Int32 (4 Bytes)`, `Int64 (8 Bytes)`, `Int16 (2 Bytes)`, `Int8 (1 Byte)`, `Float (Single)`, `Double`, `String (Text)`, `Hex Bytes (ByteArray)`.
+  - **Scan Type**:
+    - `Exact Value`: Match input value.
+    - `Increased Value` (`>`): Value grew compared to previous pass.
+    - `Decreased Value` (`<`): Value shrank compared to previous pass.
+    - `Changed Value` (`!=`): Any change.
+    - `Unchanged Value` (`==`): Exactly identical.
+    - `Increased By...`: Value increased by specified Delta.
+    - `Decreased By...`: Value decreased by specified Delta.
+    - `Unknown Initial Value`: Capture baseline snapshot of all memory.
+  - **Writable Memory Only**: Checked by default; scans `rw-p` sections (heap, stack, data), completing in tens of milliseconds.
+  - **Alignment**: 4 bytes (default), 1 byte, 2 bytes, or 8 bytes.
+
+#### 2. Multi-Pass Differential Convergence Workflow
+- **Pass 1 (First Scan)**:
+  1. Input current observed value (e.g. `100`);
+  2. Click **`🔍 First Scan`** (or CommandBar: `scan 100 int32`);
+  3. Establishes thousands of baseline candidates.
+- **Pass 2 (Next Scan)**:
+  1. Resume target program (F9) to let the value change (e.g. taken damage down to `85`, or simply "decreased");
+  2. Pause execution; select `Decreased Value` (or input `85` directly);
+  3. Click **`⚡ Next Scan`** (or CommandBar: `nextscan <` / `nextscan 85`);
+  4. Candidate count drops dramatically to dozens.
+- **Pass 3 (Pinpoint Target)**:
+  1. Repeat another modification and click `⚡ Next Scan`;
+  2. Candidate list converges cleanly to the exact target physical address!
+
+#### 3. Candidate Interactions & In-Place Memory Editing
+- **Delta Color Coding**: Increased values highlighted in light green (`+15`), decreased values in light red (`-15`).
+- **Hex Dump Sync**: Double-click any row to jump directly to that address in the Hex Dump.
+- **Context Menu**:
+  - `Follow in Hex Dump` / `Follow in Disassembly`
+  - `Copy Address`
+  - **`Edit / Write Value...`**: Pop up an input dialog to write new values directly to the target process memory (e.g. freeze or lock value), refreshing live candidates immediately.
+
+#### 4. CommandBar CLI Commands
+```text
+scan <value|unknown> [type]   # Initiate first pass (e.g. scan 100 int32, scan 0x1337 int64, scan "admin" str)
+nextscan <compare> [val]      # Next differential pass (e.g. nextscan >, nextscan <, nextscan ==, nextscan 105)
+scanresults [limit]           # Print top candidate addresses from current scan
+scanreset                     # Reset scanner and clear candidate list
+```
+
+---
+
 ## 5. Advanced Reverse Engineering Toolset
 
 - **Heap Analyzer (Tab 9)**: Traverses glibc `malloc_chunk` structures, parsing chunk size, flags (`A|M|P`), and allocated/free state.
@@ -478,6 +535,10 @@ flowchart LR
 | `thread <tid>` | Switch active thread focus to specified TID |
 | `freeze <tid|all>` | Freeze specific thread or all non-focus threads |
 | `thaw <tid|all>` | Thaw specific thread or all threads |
+| `scan <val> [type]` | Initiate first memory scan pass (CheatEngine style). Ex: `scan 100 int32`, `scan unknown` |
+| `nextscan <cmp> [val]` | Execute next differential scan pass. Ex: `nextscan >`, `nextscan <`, `nextscan ==`, `nextscan 105` |
+| `scanresults [limit]` | Print top candidate addresses from current scan |
+| `scanreset` | Reset memory scanner and clear candidate list |
 | `inferiors` / `processes` | List all active debug sessions and PIDs (`inferiors`) |
 | `inferior <id\|pid>` | Switch active debugging session and workspace tab (`inferior 2`, `inferior 12347`) |
 | `process <id\|pid>` | Switch active session (alias for `inferior`) |
