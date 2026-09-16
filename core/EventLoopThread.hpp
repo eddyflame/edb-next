@@ -1,0 +1,45 @@
+#pragma once
+
+#include "Types.hpp"
+#include <QThread>
+#include <atomic>
+#include <functional>
+
+namespace edb_next {
+
+class LinuxDebugEngine;
+class BreakpointManager;
+
+class EventLoopThread : public QThread {
+    Q_OBJECT
+
+public:
+    using EventFilter = std::function<DebugEvent(int status, Pid pid)>;
+
+    explicit EventLoopThread(LinuxDebugEngine& engine, BreakpointManager& bp_mgr, QObject* parent = nullptr);
+    ~EventLoopThread() override;
+
+    void startLoop();
+    void stopLoop();
+    [[nodiscard]] bool isRunningLoop() const noexcept { return running_.load(); }
+    void setSuspended(bool s) noexcept { suspended_.store(s); }
+    [[nodiscard]] bool isSuspended() const noexcept { return suspended_.load(); }
+
+Q_SIGNALS:
+    void eventReceived(const edb_next::DebugEvent& event);
+
+protected:
+    void run() override;
+
+private:
+    DebugEvent processWaitStatus(int status, Pid pid);
+
+    LinuxDebugEngine& engine_;
+    BreakpointManager& bpMgr_;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> suspended_{false};
+};
+
+} // namespace edb_next
+
+Q_DECLARE_METATYPE(edb_next::DebugEvent)
