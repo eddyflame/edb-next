@@ -28,10 +28,11 @@
    - 4.1 Stepping (Step Into, Step Over, Step Out, Run to Selection)
    - 4.2 Software, Hardware, and Conditional Breakpoints
    - 4.3 Ignore Counts and Log-Only Tracepoints
-   - 4.4 POSIX Signal Interception and Pass-Through Execution
-   - 4.5 Dynamic Branch Prediction
-   - 4.6 Hit Trace (Code Coverage) and Run Trace (Time-Travel Navigation)
-   - 4.7 CPU Machine State Snapshot (StateDumper)
+   - 4.4 Script-Driven Breakpoint Actions & Silent Hooking
+   - 4.5 POSIX Signal Interception and Pass-Through Execution
+   - 4.6 Dynamic Branch Prediction
+   - 4.7 Hit Trace (Code Coverage) and Run Trace (Time-Travel Navigation)
+   - 4.8 CPU Machine State Snapshot (StateDumper)
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -61,6 +62,7 @@
    - 10.4 Lua 5.4 Fast Condition Hooks & API Reference
    - 10.5 Running External Script Files & Automated Unpacking
    - 10.6 Inline CommandBar Script Evaluation (`py ...` / `lua ...`)
+   - 10.7 Script-Driven Breakpoint Actions & Silent Hooking Hands-on
 11. [Modern C++20 Plugin Development Guide](#11-modern-c20-plugin-development-guide)
    - 11.1 Architecture & Gateway Pattern
    - 11.2 Plugin Directory & CMake Structure
@@ -245,20 +247,36 @@ Build outputs in `build/`:
 - **Software Breakpoints (`F2`)**: INT3 (`0xCC`) injection with automatic single-step-restore state machine.
 - **Hardware Breakpoints (DR0~DR3)**: Right-click -> Hardware Breakpoint -> Execute, Write (1/2/4/8B), Read/Write (1/2/4/8B).
 - **Conditional Breakpoints**: Right-click breakpoint in Tab 4 -> Set Condition (e.g. `rdi == 7`, `[rbp-8] > 0`). Evaluated via recursive descent parser.
-- **Ignore Count & Log-Only**: Ignore the first $N$ hits, or format strings to output data directly to system log without halting execution.
 
-### 4.4 POSIX Signal Management
+### 4.3 Ignore Counts and Log-Only Tracepoints
+- **Ignore Count**: Right-click breakpoint -> Set Ignore Count. The debugger ignores the first $N$ hits before breaking.
+- **Log-Only Tracepoints**: Check "Log Only" and provide a format string (e.g. `Hit func! RAX={rax}`). Prints to system log without halting execution.
+
+### 4.4 Script-Driven Breakpoint Actions & Silent Hooking
+- **Action Configuration**:
+  - In Tab 4 **Breakpoint Manager**, select any breakpoint and click **"Edit Script..."** on the toolbar, or right-click -> **"Edit Script Action..."**.
+  - Choose between **Python 3** or **Lua 5.4** and enter automation logic.
+- **Silent Hooking Protocol**:
+  - **Silent Bypass**: If the script finishes and explicitly returns false (`return False` in Python, `return false` in Lua), `edb-next` **does NOT halt the UI or target threads**. Instead, the debugging engine executes a single-step over the breakpoint instruction and resumes full-speed execution automatically! This provides zero-overhead, microsecond-level runtime instrumentation and non-intrusive telemetry without modifying binary source code or recompiling.
+  - **Normal Pause**: If the script returns `True` / `true` or does not return a boolean false, the debugger pauses normally and shifts focus to the disassembly view.
+  - **Crash-Resistant Guard**: Uncaught script exceptions produce clean tracebacks in the console and log, safely pausing the target without crashing the debugger host.
+  - **Project Persistence**: Script actions and language preferences are serialized into the `.edb_db` reverse engineering database.
+
+### 4.5 POSIX Signal Management
 - Configure signals 1-64 under `Options -> Preferences -> Signals`.
 - Use **Shift+F7/F8/F9** to pass signals directly to the target's signal handlers.
 
-### 4.5 Dynamic Branch Prediction
+### 4.6 Dynamic Branch Prediction
 - Bottom bar indicates whether the current branch will be followed:
   - **`[JUMP TAKEN]`** (Green)
   - **`[JUMP NOT TAKEN]`** (Gray)
 
-### 4.6 Hit Trace & Run Trace
+### 4.7 Hit Trace & Run Trace
 - **Hit Trace**: Real-time code coverage tracking in disassembly.
 - **Run Trace**: History recorder enabling step back (**`< Step Back`**) and step forward (**`Step Forward >`**) time-travel inspection.
+
+### 4.8 CPU Machine State Snapshot (StateDumper)
+- Press **Ctrl+D** or menu `Debug -> Dump CPU State` to export registers, stack memory, and disassembly context to log and clipboard.
 
 ---
 
@@ -443,6 +461,45 @@ end
 Evaluate one-liners directly from the bottom CommandBar without switching tabs:
 - Python: `py print("Hex RAX:", hex(edb.get_reg('rax')))`
 - Lua: `lua print('PID is: ' .. edb.pid())`
+
+### 10.7 Script-Driven Breakpoint Actions & Silent Hooking Hands-on
+
+When reversing obfuscated binaries, malware, or complex multithreaded network daemons, setting interactive breakpoints frequently interrupts time-sensitive communication or anti-analysis watchdogs.
+
+By combining Breakpoint Manager **Script Actions** with the `return False` (Python) / `return false` (Lua) protocol, `edb-next` transforms breakpoints into non-intrusive microsecond-level runtime hooks (dynamic probes):
+
+#### Scenario 1: Python Buffer Decryption & Silent Telemetry
+Set a breakpoint at the entry point of a cryptographic function (e.g. `decrypt_payload`, where `RDI` holds the buffer address and `RSI` holds the byte length). In Breakpoint Manager, bind the following Python script:
+```python
+import edb
+
+buf_addr = edb.get_reg("rdi")
+length = min(edb.get_reg("rsi") or 0, 64)
+
+if buf_addr and length > 0:
+    data = edb.read_memory(buf_addr, length)
+    edb.log(f"[Crypto Hook] Decrypted payload preview: {data.hex()}")
+
+# Returning False bypasses the pause: single-steps over original opcode and resumes at full speed!
+return False
+```
+
+#### Scenario 2: Lua High-Frequency Dynamic Patching
+Set a breakpoint on a frequently invoked authentication or license check routine, and bind this ultra-fast Lua script:
+```lua
+-- Microsecond-level zero-overhead Lua execution
+local uid = edb.get_reg("rdi")
+
+if uid ~= 0 then
+    -- Patch UID argument dynamically to 0 (root) in registers
+    edb.set_reg("rdi", 0)
+    edb.log(string.format("[Lua Patch] Altered UID %d to 0 (root)!", uid))
+end
+
+-- Returning false ensures silent execution without halting the UI or threads
+return false
+```
+If manual inspection is required only when an anomaly occurs (e.g. `uid == 1000`), simply omit `return false` or `return true`, and `edb-next` will pause execution cleanly and navigate the disassembly view to the target.
 
 ---
 

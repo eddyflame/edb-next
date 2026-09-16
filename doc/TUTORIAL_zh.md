@@ -28,10 +28,11 @@
    - 4.1 步入、步过、跳出与运行到光标
    - 4.2 软件断点、硬件断点与递归下降条件断点
    - 4.3 命中间隔 (Ignore Count) 与仅日志断点 (Log Only)
-   - 4.4 POSIX 信号拦截、放行与透传执行
-   - 4.5 底部动态分支预测 (Dynamic Branch Prediction)
-   - 4.6 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
-   - 4.7 CPU 机器状态全景快照导出 (StateDumper)
+   - 4.4 断点绑定 Python/Lua 脚本动作与微秒级无感打桩 (Script Actions)
+   - 4.5 POSIX 信号拦截、放行与透传执行
+   - 4.6 底部动态分支预测 (Dynamic Branch Prediction)
+   - 4.7 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
+   - 4.8 CPU 机器状态全景快照导出 (StateDumper)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -61,6 +62,7 @@
    - 10.4 Lua 5.4 极速条件 Hook 编写与 API 参考
    - 10.5 运行外部脚本文件与批量脱壳/内存转储实战
    - 10.6 CommandBar 行内快速脚本求值 (`py ...` / `lua ...`)
+   - 10.7 断点绑定脚本自动化动作与无感打桩实战 (Script-Driven Breakpoint Hooking)
 11. [现代化 C++20 插件编写与使用全指南 (Plugin Development)](#11-现代化-c20-插件编写与使用全指南-plugin-development)
    - 11.1 插件架构与工作原理
    - 11.2 插件工程目录与 CMakeLists.txt 规范
@@ -363,7 +365,21 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.4 POSIX 信号拦截、放行与透传执行
+### 4.4 断点绑定 Python/Lua 脚本动作与微秒级无感打桩 (Script Actions)
+
+`edb-next` 支持在任意软件断点或硬件断点上绑定原生自动化脚本代码，支持 **Python 3** 或 **Lua 5.4** 双引擎：
+- **配置脚本动作**：
+  - 切换至 Tab 4 **Breakpoint Manager**，选中断点后点击顶部 **"Edit Script..."**，或直接右键断点选择 **"Edit Script Action..."**；
+  - 在弹出的交互式脚本对话框中选择编程语言（`Python` 或 `Lua`），录入自动化脚本逻辑。
+- **核心无感打桩契约 (Silent Hooking Protocol)**：
+  - **静默放行 (Bypass)**：若脚本执行结束并显式返回布尔假值——Python 中为 `return False`，Lua 中为 `return false`，调试引擎在完成脚本动作后**绝不挂起 UI、不暂停任何线程**，而是通过内部高精状态机自动调度“单步越过断点原指令并恢复全速运行”！这实现了微秒级的动态无感打桩探针，无需重启进程或重新编译二进制即可任意嗅探、修改程序行为；
+  - **常规中断 (Pause)**：若脚本显式返回 `True` / `true`，或未显式返回假值，调试器在执行完脚本后将正常挂起被调试进程，并自动定位反汇编视图至命中行；
+  - **异常安全防护**：若脚本存在语法错误或运行时抛出未捕获异常，调试引擎自动将完整的异常栈追踪（Traceback）转储至控制台与调试日志，并安全挂起目标供逆向人员介入，绝不导致宿主崩溃；
+  - **项目持久化支持**：所有绑定的脚本代码及语言配置均完整序列化存储在 `.edb_db` 项目工程库中，重载工程即刻还原。
+
+---
+
+### 4.5 POSIX 信号拦截、放行与透传执行
 
 - **全局信号策略配置**：
   - 打开 **Options -> Preferences -> Signals**；
@@ -376,7 +392,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.5 底部动态分支预测 (Dynamic Branch Prediction)
+### 4.6 底部动态分支预测 (Dynamic Branch Prediction)
 
 在调试条件跳转指令（如 `je`, `jne`, `jg`, `jle`）时，主工作台底部常驻有动态预测状态条：
 - `InstructionInspector` 实时解算当前条件跳转依赖的 EFLAGS 标志位（ZF, SF, OF, CF）；
@@ -387,7 +403,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.6 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
+### 4.7 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
 
 切换至 Tab 13 **Trace** 选项卡：
 - **Hit Trace (代码覆盖率)**：
@@ -400,7 +416,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.7 CPU 机器状态全景快照导出 (StateDumper)
+### 4.8 CPU 机器状态全景快照导出 (StateDumper)
 
 在任何调试中断时刻，按下快捷键 **Ctrl+D**（或菜单 `Debug -> Dump CPU State (DumpState)`）：
 - 系统将瞬间生成当前时刻的精细报告，输出至系统日志并自动复制到剪贴板：
@@ -759,6 +775,45 @@ end
 - 执行 Python 表达式：`py print("Hex RAX:", hex(edb.get_reg('rax')))`
 - 执行 Lua 语句：`lua print('PID is: ' .. edb.pid())`
 执行结果与可能产生的异常 Traceback 将即时打印在系统日志与状态栏中。
+
+### 10.7 断点绑定脚本自动化动作与无感打桩实战 (Script-Driven Breakpoint Hooking)
+
+在逆向分析恶意软件或调试高并发网络服务时，常常需要针对关键系统调用或业务函数进行动态参数脱敏、解密捕获或无感修改。传统断点会频繁中断程序执行，破坏并发时序。
+
+结合断点管理器的 **Script Action** 与 `return False` / `return false` 契约，可实现真正的零干扰动态打桩：
+
+#### 场景 1：Python 动态解密关键缓冲区并无感放行
+在加密处理函数入口（如 `encrypt_buffer`，假定 `RDI` 为缓冲区指针，`RSI` 为长度）下达断点，并在断点管理器中为其绑定如下 Python 脚本：
+```python
+import edb
+
+buf_addr = edb.get_reg("rdi")
+length = min(edb.get_reg("rsi") or 0, 64)
+
+if buf_addr and length > 0:
+    raw = edb.read_memory(buf_addr, length)
+    edb.log(f"[Crypto Probe] Outgoing packet ({length} bytes): {raw.hex()}")
+
+# 显式返回 False：静默单步放行，目标全速运行不暂停！
+return False
+```
+
+#### 场景 2：Lua 极速高频条件计数器与动态提权打桩
+在频繁调用的权限鉴权函数中下达断点，绑定如下轻量级 Lua 脚本：
+```lua
+-- Lua 5.4 超轻量微秒级执行
+local uid = edb.get_reg("rdi")
+
+if uid ~= 0 then
+    -- 动态篡改 RDI 为 0 (Root 权限) 并记录日志
+    edb.set_reg("rdi", 0)
+    edb.log(string.format("[Lua Patch] Escalated UID %d to root (0)!", uid))
+end
+
+-- 显式返回 false：目标进程微秒级放行全速执行，不产生任何 UI 顿挫
+return false
+```
+若仅在特定敏感条件（如 `uid == 1000`）发生时希望人工接管，则条件命中时不执行 `return false`（或执行 `return true`），调试器即刻精准挂起目标并定位反汇编视图！
 
 ---
 
