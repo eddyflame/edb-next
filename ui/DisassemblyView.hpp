@@ -34,6 +34,9 @@ public Q_SLOTS:
     void followSelectedBranch();
     void navigateHistoryBack();
     void navigateHistoryForward();
+    void toggleMixedSourceMode();
+    void setMixedSourceMode(bool enabled);
+    [[nodiscard]] bool isMixedSourceMode() const noexcept { return showMixedSource_; }
 
 Q_SIGNALS:
     void breakpointToggled(Address addr);
@@ -46,12 +49,24 @@ private Q_SLOTS:
     void onCurrentCellChanged(int currentRow, int currentColumn, int previousRow, int previousColumn);
 
 private:
+    enum class RowType {
+        Instruction,
+        SourceBanner
+    };
+
+    struct DisplayRow {
+        RowType type{RowType::Instruction};
+        size_t insnIndex{0};
+    };
+
     void setupUi();
     [[nodiscard]] std::optional<Address> addressAtRow(int row) const;
     [[nodiscard]] const DisassembledInstruction* instructionAtRow(int row) const;
 
     std::weak_ptr<DebugSession> session_;
     std::vector<DisassembledInstruction> currentInstructions_;
+    std::vector<DisplayRow> displayRows_;
+    bool showMixedSource_{true};
     Address viewAddress_{0};
     bool followRip_{true};
     std::vector<Address> navHistory_;

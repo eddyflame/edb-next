@@ -16,6 +16,16 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CAPSTONE REQUIRED capstone)
 
+find_library(LIBDW_LIBRARIES NAMES dw libdw.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+find_library(LIBELF_LIBRARIES NAMES elf libelf.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+
+find_path(LIBDW_INCLUDE_DIRS elfutils/libdw.h
+    PATHS
+    /usr/include
+    /usr/local/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libdw/include
+)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -25,6 +35,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/core
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
     ${CAPSTONE_INCLUDE_DIRS}
+    ${LIBDW_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libdw/include
 )
 
 # Core Library
@@ -33,6 +45,8 @@ set(CORE_SOURCES
     core/LinuxDebugEngine.cpp
     core/EventLoopThread.cpp
     core/ElfParser.cpp
+    core/DwarfParser.cpp
+    core/SourceFileManager.cpp
     core/CallStackUnwinder.cpp
     core/StringScanner.cpp
     core/AnnotationManager.cpp
@@ -63,12 +77,15 @@ target_link_libraries(edb_core
     Qt5::Core
     Qt5::Widgets
     ${CAPSTONE_LIBRARIES}
+    ${LIBDW_LIBRARIES}
+    ${LIBELF_LIBRARIES}
     pthread
 )
 
 # UI & Executable
 set(UI_SOURCES
     ui/DisassemblyView.cpp
+    ui/SourceView.cpp
     ui/RegisterView.cpp
     ui/MemoryHexView.cpp
     ui/MemoryRegionsView.cpp
@@ -168,3 +185,16 @@ target_link_libraries(test_exit
     ${CAPSTONE_LIBRARIES}
     pthread
 )
+
+# DWARF & Source-Level Debugging test executable
+add_executable(test_dwarf tests/test_dwarf.cpp ${UI_SOURCES})
+target_link_libraries(test_dwarf
+    PRIVATE
+    edb_core
+    Qt5::Widgets
+    Qt5::Gui
+    Qt5::Core
+    ${CAPSTONE_LIBRARIES}
+    pthread
+)
+add_dependencies(test_dwarf build_test_target)

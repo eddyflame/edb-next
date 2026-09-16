@@ -332,4 +332,13 @@ std::optional<Address> ElfParser::findSymbolAddress(const std::string& name) con
     return std::nullopt;
 }
 
+bool ElfParser::hasDebugInfo() const noexcept {
+    for (const auto& sec : sections_) {
+        if (sec.name == ".debug_info" || sec.name == ".debug_line") {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace edb_next

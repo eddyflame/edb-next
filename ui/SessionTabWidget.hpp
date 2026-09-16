@@ -23,6 +23,7 @@
 #include "MultiDumpWidget.hpp"
 #include "OpcodeSearcherView.hpp"
 #include "StackView.hpp"
+#include "SourceView.hpp"
 #include "core/TraceEngine.hpp"
 #include <QWidget>
 #include <QSplitter>
@@ -43,6 +44,11 @@ public:
     void refreshAll();
 
     DisassemblyView* disasmView() const noexcept { return disasmView_; }
+    SourceView* sourceView() const noexcept { return sourceView_; }
+    QTabWidget* codeTabWidget() const noexcept { return codeTabs_; }
+    void showSourceView();
+    void showDisassemblyView();
+
     RegisterView* registerView() const noexcept { return regView_; }
     MemoryHexView* memoryDumpView() const noexcept { return memDumpView_; }
     StackView* stackView() const noexcept { return stackView_; }
@@ -87,6 +93,8 @@ private:
     TraceEngine traceEngine_;
 
     DisassemblyView* disasmView_{nullptr};
+    SourceView* sourceView_{nullptr};
+    QTabWidget* codeTabs_{nullptr};
     RegisterView* regView_{nullptr};
     QLabel* insnStatusBar_{nullptr};
 
