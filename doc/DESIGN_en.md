@@ -254,6 +254,23 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - `MainWindow` dynamically generates workspace tabs for each inferior.
   - CLI control via `inferiors` / `processes` (list all active sessions and state) and `inferior <id|pid>` / `process <id|pid>` (switch active session tab).
 
+### 3.19 Independent Thread Freeze & Thaw Control and Isolated Stepping
+- **Kernel Signal & Event Loop Double Masking**:
+  - `LinuxDebugEngine::pauseThread(Tid tid)` dispatches `SIGSTOP` directly to targeted threads via `::syscall(SYS_tgkill, pid_, tid, SIGSTOP)`.
+  - `DebugSession` maintains a dedicated `frozenThreads_` set. When global execution resumes (`resume()`), the engine strictly filters out frozen threads from `PTRACE_CONT`, keeping them suspended.
+  - Bypass prevention: Single-stepping routines, `isStepOverBreak_` restoration, and `ThreadCreated` event hooks check `isThreadFrozen(t)` to ensure frozen threads are never unintentionally resumed.
+- **Isolated Single-Stepping**:
+  - Reverse engineers can freeze all non-target threads (`freezeAllOtherThreads()`). Only the active focus thread is driven forward during F7/F8 single-stepping while all background worker threads remain strictly frozen, eliminating race condition interference and state corruption.
+- **ThreadsView Visual Indicators & Quick Actions**:
+  - Expanded `ThreadsView` to an 8-column layout (TID, Thread Name, State, Frozen, Current RIP, Function Symbol, RSP, Active).
+  - Frozen threads are highlighted with prominent ice-blue `❄ FROZEN` badges.
+  - Added toolbar buttons and context menu items: `❄ Freeze / Thaw`, `❄ Freeze Others`, `🔥 Thaw All`.
+- **CommandBar CLI Integration**:
+  - `threads`: Prints all lightweight threads with RIP, symbol, and `[FROZEN]` status.
+  - `thread <tid>`: Shifts active thread focus immediately.
+  - `freeze <tid|all>`: Freezes a specific thread or all non-focus threads.
+  - `thaw <tid|all>`: Unfreezes a specific thread or thaws all threads.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -273,7 +290,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 7. **Automated Shared Library Loading Interception (`_r_debug` Rendezvous)**:
    - **Completed in §3.17 (v1.0)**. Full glibc `_r_debug` rendezvous protocol support, differential `link_map` scanning, automatic symbol table and DWARF merging, and pending breakpoint auto-binding.
 9. **Independent Thread Freeze & Thaw Execution Control**:
-   - Enable thread-isolated stepping by freezing non-target threads (`SIGSTOP` / event-loop masking) to prevent state corruption in complex multithreaded race conditions.
+   - **Completed in §3.19 (v1.0)**. Full kernel `SYS_tgkill` + `SIGSTOP` signal blocking and event-loop masking, isolated stepping, ice-blue `❄ FROZEN` badges, toolbar actions, and `freeze` / `thaw` / `threads` CLI commands.
 10. **Differential Memory Pattern & Value Scanner**:
     - Implement a CheatEngine-style multi-pass differential scanner over readable/writable heap/data pages (initial search, increased, decreased, changed, unchanged value convergence).
 
@@ -291,7 +308,7 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 | **Memory Page-Guard Breakpoints** | ★★★★★ | Medium | **Completed (v1.0)** | **Fully implemented in §3.16**. Breaks 4-register limit, zero-0xCC stealth execution, and sub-microsecond step over. |
 | **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.17**. Solves runtime `dlopen()` symbol omission; internal trap, symbol/DWARF hot reload & pending breakpoints. |
 | **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.18**. Tri-state follow-fork, ptrace fork event trapping, child session tree & inferior CLI switching. |
-| **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **P2 (Advanced)** | Eliminates race condition interference during multithreaded step-through analysis. |
+| **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.19**. Single/batch thread freeze & thaw, ice-blue status badges, isolated stepping, and CLI commands. |
 | **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
 | **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **P2 (Advanced)** | Format memory views using custom C struct definitions. |
 | **4.1 Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
