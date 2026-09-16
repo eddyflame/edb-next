@@ -15,6 +15,9 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04]
 
+    env:
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 #include <memory>
+#include <optional>
 #include <QObject>
 
 namespace edb_next {

@@ -503,7 +503,8 @@ std::optional<Address> DebugSession::searchMemory(Address start, size_t max_byte
     const size_t chunk_size = 4096;
     size_t scanned = 0;
     while (scanned < max_bytes) {
-        size_t to_read = std::min(chunk_size + pattern.size(), max_bytes - scanned + pattern.size());
+        size_t remaining = max_bytes - scanned;
+        size_t to_read = std::min(chunk_size + pattern.size() - 1, remaining);
         auto chunk = readMemory(start + scanned, to_read);
         if (chunk.empty()) {
             scanned += chunk_size;
