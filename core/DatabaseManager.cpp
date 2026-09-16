@@ -69,6 +69,8 @@ bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProj
         bp_obj["condition"] = QString::fromStdString(bp.condition);
         bp_obj["log_format"] = QString::fromStdString(bp.logFormat);
         bp_obj["ignore_count"] = static_cast<int>(bp.ignoreCount);
+        bp_obj["script_code"] = QString::fromStdString(bp.scriptCode);
+        bp_obj["script_lang"] = QString::fromStdString(bp.scriptLanguage);
         bp_arr.append(bp_obj);
     }
     root["breakpoints"] = bp_arr;
@@ -152,6 +154,9 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
         bp.condition = obj["condition"].toString().toStdString();
         bp.logFormat = obj["log_format"].toString().toStdString();
         bp.ignoreCount = static_cast<uint32_t>(obj["ignore_count"].toInt());
+        bp.scriptCode = obj["script_code"].toString().toStdString();
+        bp.scriptLanguage = obj["script_lang"].toString().toStdString();
+        if (bp.scriptLanguage.empty()) bp.scriptLanguage = "python";
         project.breakpoints.push_back(bp);
     }
 
@@ -214,7 +219,9 @@ bool DatabaseManager::exportSession(std::shared_ptr<DebugSession> session,
             .type = type_str,
             .condition = bp.condition,
             .logFormat = bp.logFormat,
-            .ignoreCount = bp.ignoreCount
+            .ignoreCount = bp.ignoreCount,
+            .scriptCode = bp.scriptCode,
+            .scriptLanguage = bp.scriptLanguage
         });
     }
 
@@ -278,6 +285,9 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
         }
         if (!bp.logFormat.empty()) {
             session->breakpointManager().setBreakpointLogOnly(addr, true, bp.logFormat);
+        }
+        if (!bp.scriptCode.empty()) {
+            session->breakpointManager().setBreakpointScript(addr, bp.scriptCode, bp.scriptLanguage);
         }
     }
 

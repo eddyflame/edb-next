@@ -514,4 +514,45 @@ ScriptResult PythonScriptEngine::executeFile(const std::string& filepath) {
     return executeString(code);
 }
 
+bool PythonScriptEngine::executeHook(const std::string& code) {
+    if (!initialized_) {
+        if (!initialize(session_)) {
+            return true;
+        }
+    }
+
+    s_currentEngine = this;
+
+    // Wrap user code in a function so "return False" / "return True" is valid syntax
+    std::string wrapped = "def __edb_bp_hook__():\n";
+    std::istringstream stream(code);
+    std::string line;
+    while (std::getline(stream, line)) {
+        wrapped += "    " + line + "\n";
+    }
+    wrapped += "__edb_hook_ret__ = __edb_bp_hook__()\n";
+
+    PyObject* mainMod = PyImport_AddModule("__main__");
+    PyObject* mainDict = PyModule_GetDict(mainMod);
+
+    PyObject* edbMod = PyImport_ImportModule("edb");
+    if (edbMod) {
+        PyDict_SetItemString(mainDict, "edb", edbMod);
+        Py_DECREF(edbMod);
+    }
+
+    PyObject* res = PyRun_String(wrapped.c_str(), Py_file_input, mainDict, mainDict);
+    if (!res) {
+        PyErr_Print();
+        return true;
+    }
+    Py_DECREF(res);
+
+    PyObject* retVal = PyDict_GetItemString(mainDict, "__edb_hook_ret__");
+    if (retVal == Py_False) {
+        return false;
+    }
+    return true;
+}
+
 } // namespace edb_next

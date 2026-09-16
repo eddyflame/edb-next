@@ -20,6 +20,7 @@ public:
 
     ScriptResult executeString(const std::string& code) override;
     ScriptResult executeFile(const std::string& filepath) override;
+    bool executeHook(const std::string& code) override;
 
     static DebugSession* activeSession() noexcept;
 

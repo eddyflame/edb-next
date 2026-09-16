@@ -30,6 +30,7 @@ private Q_SLOTS:
     void onDeleteBreakpointClicked();
     void onToggleBreakpointClicked();
     void onEditConditionClicked();
+    void onEditScriptActionClicked();
 
 private:
     void setupUi();

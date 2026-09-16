@@ -22,6 +22,8 @@ struct Breakpoint {
     std::string condition;
     bool isLogOnly{false};
     std::string logFormat;
+    std::string scriptCode;
+    std::string scriptLanguage{"python"};
     BreakpointType type{BreakpointType::Software};
     int hardwareSlot{-1};
     std::string symbol;

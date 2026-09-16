@@ -434,6 +434,18 @@ void DebugSession::handleEvent(const DebugEvent& event) {
                         }
                     }
 
+                    if (!ignore && !bp->scriptCode.empty()) {
+                        auto* eng = scriptEngines_.engine(bp->scriptLanguage);
+                        if (eng) {
+                            eng->setSession(this);
+                            bool shouldPause = eng->executeHook(bp->scriptCode);
+                            refreshRegisters();
+                            if (!shouldPause) {
+                                ignore = true;
+                            }
+                        }
+                    }
+
                     if (ignore) {
                         bpMgr_.prepareStepOver(bp_addr);
                         isStepOverBreak_ = true;
@@ -687,6 +699,12 @@ bool DebugSession::setBreakpointIgnoreCount(Address addr, uint32_t count) {
 
 bool DebugSession::setBreakpointLogOnly(Address addr, bool logOnly, const std::string& fmt) {
     bool ok = bpMgr_.setBreakpointLogOnly(addr, logOnly, fmt);
+    if (ok) Q_EMIT breakpointsUpdated();
+    return ok;
+}
+
+bool DebugSession::setBreakpointScript(Address addr, const std::string& code, const std::string& language) {
+    bool ok = bpMgr_.setBreakpointScript(addr, code, language);
     if (ok) Q_EMIT breakpointsUpdated();
     return ok;
 }

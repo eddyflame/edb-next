@@ -479,4 +479,44 @@ ScriptResult LuaScriptEngine::executeFile(const std::string& filepath) {
     return {true, capturedOutput_, ""};
 }
 
+bool LuaScriptEngine::executeHook(const std::string& code) {
+    if (!L_) {
+        if (!initialize(session_)) {
+            return true;
+        }
+    }
+
+    s_currentLuaEngine = this;
+    capturedOutput_.clear();
+
+    std::string wrapped = "local function __edb_bp_hook__()\n" + code + "\nend\nreturn __edb_bp_hook__()";
+    int loadStatus = luaL_loadstring(L_, wrapped.c_str());
+    if (loadStatus != LUA_OK) {
+        lua_pop(L_, 1);
+        // Fallback to direct loadstring
+        loadStatus = luaL_loadstring(L_, code.c_str());
+        if (loadStatus != LUA_OK) {
+            const char* err = lua_tostring(L_, -1);
+            if (err) LogManager::instance().error("Lua Hook Compile Error", err);
+            lua_pop(L_, 1);
+            return true;
+        }
+    }
+
+    int pcallStatus = lua_pcall(L_, 0, 1, 0);
+    if (pcallStatus != LUA_OK) {
+        const char* err = lua_tostring(L_, -1);
+        if (err) LogManager::instance().error("Lua Hook Runtime Error", err);
+        lua_pop(L_, 1);
+        return true;
+    }
+
+    bool shouldPause = true;
+    if (lua_isboolean(L_, -1) && !lua_toboolean(L_, -1)) {
+        shouldPause = false;
+    }
+    lua_pop(L_, 1);
+    return shouldPause;
+}
+
 } // namespace edb_next
