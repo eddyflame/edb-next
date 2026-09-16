@@ -25,6 +25,7 @@
 #include "StackView.hpp"
 #include "SourceView.hpp"
 #include "ScriptConsoleView.hpp"
+#include "MemoryScannerView.hpp"
 #include "core/TraceEngine.hpp"
 #include <QWidget>
 #include <QSplitter>
@@ -72,6 +73,7 @@ public:
     MultiDumpWidget* multiDumpWidget() const noexcept { return multiDumpWidget_; }
     OpcodeSearcherView* opcodeSearcherView() const noexcept { return opcodeSearcherView_; }
     ScriptConsoleView* scriptConsoleView() const noexcept { return scriptConsoleView_; }
+    MemoryScannerView* memoryScannerView() const noexcept { return memScannerView_; }
     TraceEngine& traceEngine() noexcept { return traceEngine_; }
 
     QTabWidget* bottomTabs() const noexcept { return bottomTabs_; }
@@ -123,6 +125,7 @@ private:
     MultiDumpWidget* multiDumpWidget_{nullptr};
     OpcodeSearcherView* opcodeSearcherView_{nullptr};
     ScriptConsoleView* scriptConsoleView_{nullptr};
+    MemoryScannerView* memScannerView_{nullptr};
 };
 
 } // namespace edb_next

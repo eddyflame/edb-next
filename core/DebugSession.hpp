@@ -25,6 +25,7 @@
 #include "PatternSearcher.hpp"
 #include "ScriptEngineManager.hpp"
 #include "RendezvousManager.hpp"
+#include "MemoryScanner.hpp"
 
 namespace edb_next {
 
@@ -55,6 +56,14 @@ public:
     [[nodiscard]] SessionState state() const noexcept { return state_; }
     [[nodiscard]] Pid pid() const noexcept { return engine_.pid(); }
     [[nodiscard]] Tid tid() const noexcept { return engine_.mainTid(); }
+    [[nodiscard]] LinuxDebugEngine& engine() noexcept { return engine_; }
+    [[nodiscard]] const LinuxDebugEngine& engine() const noexcept { return engine_; }
+
+    // Memory Scanner wrappers
+    size_t firstMemoryScan(const ScanOptions& options) { return memoryScanner_.firstScan(engine_, options); }
+    size_t nextMemoryScan(const ScanOptions& options) { return memoryScanner_.nextScan(engine_, options); }
+    void refreshMemoryScan() { memoryScanner_.refreshCurrentValues(engine_); }
+    void resetMemoryScan() { memoryScanner_.reset(); }
 
     // Lifecycle
     bool launch(const std::string& path, const std::vector<std::string>& args);
@@ -196,6 +205,8 @@ public:
     [[nodiscard]] AnnotationManager& annotations() noexcept { return annotations_; }
     [[nodiscard]] ScriptEngineManager& scriptEngines() noexcept { return scriptEngines_; }
     [[nodiscard]] const ScriptEngineManager& scriptEngines() const noexcept { return scriptEngines_; }
+    [[nodiscard]] MemoryScanner& memoryScanner() noexcept { return memoryScanner_; }
+    [[nodiscard]] const MemoryScanner& memoryScanner() const noexcept { return memoryScanner_; }
 
 Q_SIGNALS:
     void stateChanged(edb_next::SessionState state);
@@ -232,6 +243,7 @@ private:
     DwarfParser dwarfParser_;
     AnnotationManager annotations_;
     ScriptEngineManager scriptEngines_;
+    MemoryScanner memoryScanner_;
 
     RegisterContext currentRegs_;
     RegisterContext previousRegs_;

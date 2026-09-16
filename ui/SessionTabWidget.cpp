@@ -255,6 +255,18 @@ void SessionTabWidget::setupUi() {
     scriptConsoleView_->setSession(session_.get());
     bottomTabs_->addTab(scriptConsoleView_, "Script Console");
 
+    // Tab 21: Memory Scanner (CheatEngine-style Differential Scanner)
+    memScannerView_ = new MemoryScannerView(bottomTabs_);
+    memScannerView_->setSession(session_);
+    connect(memScannerView_, &MemoryScannerView::jumpToDisassemblyRequested, this, [this](Address addr) {
+        disasmView_->gotoAddress(addr);
+    });
+    connect(memScannerView_, &MemoryScannerView::jumpToMemoryRequested, this, [this](Address addr) {
+        multiDumpWidget_->jumpToAddress(addr);
+        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+    });
+    bottomTabs_->addTab(memScannerView_, "Memory Scanner");
+
     // Right: Dedicated Stack View (Classic 4-Quadrant Workstation)
     stackView_ = new StackView(bottomSplitter_);
     stackView_->setMinimumWidth(150);
@@ -324,6 +336,7 @@ void SessionTabWidget::refreshAll() {
     binaryInfoView_->refresh();
     intermodularCallsView_->refresh();
     if (scriptConsoleView_) scriptConsoleView_->setSession(session_.get());
+    if (memScannerView_) memScannerView_->refreshResults();
 }
 
 void SessionTabWidget::onSessionStateChanged(SessionState state) {

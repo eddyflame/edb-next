@@ -79,6 +79,7 @@ set(CORE_SOURCES
     core/PythonScriptEngine.cpp
     core/LuaScriptEngine.cpp
     core/ScriptEngineManager.cpp
+    core/MemoryScanner.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -127,6 +128,7 @@ set(UI_SOURCES
     ui/MultiDumpWidget.cpp
     ui/OpcodeSearcherView.cpp
     ui/StackView.cpp
+    ui/MemoryScannerView.cpp
     ui/MainWindow.cpp
 )
 
