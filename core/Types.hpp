@@ -201,6 +201,7 @@ struct ThreadInfo {
     Address rsp{0};
     std::string symbol;
     bool isActive{false};
+    bool isFrozen{false};
 };
 
 } // namespace edb_next

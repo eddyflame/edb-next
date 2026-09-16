@@ -62,6 +62,11 @@ public:
     bool detachProcess(Pid pid);
     bool adoptProcess(Pid pid);
 
+    // Thread control & freeze/thaw
+    bool pauseThread(Tid tid);
+    bool resumeThread(Tid tid, int signal = 0);
+    [[nodiscard]] std::vector<Tid> enumerateTids() const;
+
     // Introspection
     [[nodiscard]] std::vector<MemoryRegion> getMemoryRegions() const;
     [[nodiscard]] std::vector<ThreadInfo> getThreads() const;

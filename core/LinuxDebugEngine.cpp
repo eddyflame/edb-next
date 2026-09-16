@@ -202,6 +202,43 @@ bool LinuxDebugEngine::pause(Tid tid) {
     return ::kill(tid, SIGSTOP) == 0;
 }
 
+bool LinuxDebugEngine::pauseThread(Tid tid) {
+    if (pid_ <= 0 || tid <= 0) return false;
+    return ::syscall(SYS_tgkill, pid_, tid, SIGSTOP) == 0;
+}
+
+bool LinuxDebugEngine::resumeThread(Tid tid, int signal) {
+    if (tid <= 0) tid = activeTid();
+    return ::ptrace(PTRACE_CONT, tid, nullptr, reinterpret_cast<void*>(static_cast<intptr_t>(signal))) == 0;
+}
+
+std::vector<Tid> LinuxDebugEngine::enumerateTids() const {
+    std::vector<Tid> tids;
+    if (pid_ <= 0) return tids;
+
+    std::string task_dir = "/proc/" + std::to_string(pid_) + "/task";
+    DIR* dir = ::opendir(task_dir.c_str());
+    if (!dir) {
+        if (mainTid_ > 0) tids.push_back(mainTid_);
+        return tids;
+    }
+
+    struct dirent* entry = nullptr;
+    while ((entry = ::readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        char* endptr = nullptr;
+        long tid_val = std::strtol(entry->d_name, &endptr, 10);
+        if (endptr && *endptr == '\0' && tid_val > 0) {
+            tids.push_back(static_cast<Tid>(tid_val));
+        }
+    }
+    ::closedir(dir);
+    if (tids.empty() && mainTid_ > 0) {
+        tids.push_back(mainTid_);
+    }
+    return tids;
+}
+
 bool LinuxDebugEngine::readMemory(Address addr, void* buffer, size_t size) {
     if (size == 0 || !buffer) return true;
 
