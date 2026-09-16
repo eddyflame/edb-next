@@ -88,6 +88,45 @@ void CommandBarView::executeCommand(const QString& line) {
     iss >> cmd;
     if (cmd.empty()) return;
 
+    // Direct Script execution: py / :py / python, lua / :lua
+    if (cmd == "py" || cmd == ":py" || cmd == "python" || cmd == "lua" || cmd == ":lua") {
+        std::string lang = (cmd == "lua" || cmd == ":lua") ? "lua" : "python";
+        size_t pos = str.find(cmd);
+        std::string scriptCode;
+        if (pos != std::string::npos) {
+            scriptCode = str.substr(pos + cmd.length());
+            auto s_pos = scriptCode.find_first_not_of(" \t");
+            if (s_pos != std::string::npos) {
+                scriptCode = scriptCode.substr(s_pos);
+            } else {
+                scriptCode.clear();
+            }
+        }
+        if (scriptCode.empty()) {
+            Q_EMIT outputLogged(QString("Usage: %1 <code...>").arg(QString::fromStdString(cmd)), true);
+            return;
+        }
+
+        ScriptResult res;
+        if (session_) {
+            res = session_->scriptEngines().execute(lang, scriptCode);
+        } else {
+            ScriptEngineManager mgr;
+            res = mgr.execute(lang, scriptCode);
+        }
+
+        if (!res.output.empty()) {
+            Q_EMIT outputLogged(QString::fromStdString(res.output), false);
+        }
+        if (!res.error.empty()) {
+            Q_EMIT outputLogged(QString::fromStdString(res.error), true);
+        }
+        if (res.output.empty() && res.error.empty()) {
+            Q_EMIT outputLogged(res.success ? "Script executed successfully" : "Script execution failed", !res.success);
+        }
+        return;
+    }
+
     std::vector<std::string> args;
     std::string arg;
     while (iss >> arg) {
@@ -442,7 +481,11 @@ void CommandBarView::setupDefaultCommands() {
         Q_EMIT outputLogged(QString("AutoTrace: %1").arg(QString::fromStdString(res.message)), false);
     }, "trace [into|over] [count] [stopCondition] - Auto-trace instructions until count or condition");
 
-    // 7. Help: help
+    // 7. Scripting: py, lua
+    registerCommand("py", [](const std::vector<std::string>&) {}, "py <code...> - Execute Python 3 script statement or expression");
+    registerCommand("lua", [](const std::vector<std::string>&) {}, "lua <code...> - Execute Lua 5.4 script statement or expression");
+
+    // 8. Help: help
     registerCommand("help", [this](const std::vector<std::string>&) {
         QString out = "=== edb-next Command Bar Help ===\n";
         for (const auto& [name, entry] : commands_) {

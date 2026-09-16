@@ -21,6 +21,7 @@
 #include "InstructionInspector.hpp"
 #include "CodeXRefFinder.hpp"
 #include "PatternSearcher.hpp"
+#include "ScriptEngineManager.hpp"
 
 namespace edb_next {
 
@@ -148,6 +149,8 @@ public:
     [[nodiscard]] const AnnotationManager& annotationManager() const noexcept { return annotations_; }
     [[nodiscard]] const AnnotationManager& annotations() const noexcept { return annotations_; }
     [[nodiscard]] AnnotationManager& annotations() noexcept { return annotations_; }
+    [[nodiscard]] ScriptEngineManager& scriptEngines() noexcept { return scriptEngines_; }
+    [[nodiscard]] const ScriptEngineManager& scriptEngines() const noexcept { return scriptEngines_; }
 
 Q_SIGNALS:
     void stateChanged(edb_next::SessionState state);
@@ -175,6 +178,7 @@ private:
     ElfParser symbols_;
     DwarfParser dwarfParser_;
     AnnotationManager annotations_;
+    ScriptEngineManager scriptEngines_;
 
     RegisterContext currentRegs_;
     RegisterContext previousRegs_;

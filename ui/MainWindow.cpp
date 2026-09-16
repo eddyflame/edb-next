@@ -382,6 +382,10 @@ void MainWindow::setupMenusAndToolbars() {
     auto* act_tab_opcodes = menuView_->addAction("&Opcode Search");
     connect(act_tab_opcodes, &QAction::triggered, this, [this]{ onSelectBottomTabTriggered(17); });
 
+    auto* act_tab_script = menuView_->addAction("🐍 &Script Console (Python/Lua)");
+    act_tab_script->setShortcut(QKeySequence("Alt+P"));
+    connect(act_tab_script, &QAction::triggered, this, &MainWindow::onScriptConsoleTriggered);
+
     menuView_->addSeparator();
     auto* act_cpu = menuView_->addAction("Focus CPU / Disassembly");
     act_cpu->setShortcut(QKeySequence("Alt+C"));
@@ -616,6 +620,15 @@ void MainWindow::onSelectBottomTabTriggered(int index) {
 void MainWindow::onResetLayoutTriggered() {
     resize(1360, 860);
     logMessage("UI layout reset to default dimensions.");
+}
+
+void MainWindow::onScriptConsoleTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        if (tab->bottomTabs() && tab->scriptConsoleView()) {
+            tab->bottomTabs()->setCurrentWidget(tab->scriptConsoleView());
+            tab->scriptConsoleView()->setFocus();
+        }
+    }
 }
 
 void MainWindow::onPreferencesTriggered() {

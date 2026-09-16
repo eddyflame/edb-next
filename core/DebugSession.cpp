@@ -32,11 +32,13 @@ DebugSession::DebugSession(std::string id, std::string name, QObject* parent)
 {
     qRegisterMetaType<edb_next::SessionState>("edb_next::SessionState");
     connect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent);
+    scriptEngines_.setSession(this);
 }
 
 DebugSession::~DebugSession() {
     disconnect();
     eventLoop_.stopLoop();
+    scriptEngines_.shutdown();
     terminate();
 }
 

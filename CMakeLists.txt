@@ -19,6 +19,9 @@ pkg_check_modules(CAPSTONE REQUIRED capstone)
 find_library(LIBDW_LIBRARIES NAMES dw libdw.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
 find_library(LIBELF_LIBRARIES NAMES elf libelf.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
 
+pkg_check_modules(PYTHON REQUIRED python3-embed)
+find_library(LUA_LIBRARIES NAMES lua5.4 lua54 liblua5.4.so.0 liblua5.4.so PATHS /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+
 find_path(LIBDW_INCLUDE_DIRS elfutils/libdw.h
     PATHS
     /usr/include
@@ -37,6 +40,8 @@ include_directories(
     ${CAPSTONE_INCLUDE_DIRS}
     ${LIBDW_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libdw/include
+    ${PYTHON_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lua/include
 )
 
 # Core Library
@@ -69,6 +74,9 @@ set(CORE_SOURCES
     core/DatabaseManager.cpp
     core/OpcodeSearcher.cpp
     core/StateDumper.cpp
+    core/PythonScriptEngine.cpp
+    core/LuaScriptEngine.cpp
+    core/ScriptEngineManager.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -79,6 +87,8 @@ target_link_libraries(edb_core
     ${CAPSTONE_LIBRARIES}
     ${LIBDW_LIBRARIES}
     ${LIBELF_LIBRARIES}
+    ${PYTHON_LIBRARIES}
+    ${LUA_LIBRARIES}
     pthread
 )
 
@@ -86,6 +96,7 @@ target_link_libraries(edb_core
 set(UI_SOURCES
     ui/DisassemblyView.cpp
     ui/SourceView.cpp
+    ui/ScriptConsoleView.cpp
     ui/RegisterView.cpp
     ui/MemoryHexView.cpp
     ui/MemoryRegionsView.cpp
@@ -198,3 +209,16 @@ target_link_libraries(test_dwarf
     pthread
 )
 add_dependencies(test_dwarf build_test_target)
+
+# Scripting Engine test executable (Python 3 & Lua 5.4)
+add_executable(test_scripting tests/test_scripting.cpp ${UI_SOURCES})
+target_link_libraries(test_scripting
+    PRIVATE
+    edb_core
+    Qt5::Widgets
+    Qt5::Gui
+    Qt5::Core
+    ${CAPSTONE_LIBRARIES}
+    pthread
+)
+add_dependencies(test_scripting build_test_target)

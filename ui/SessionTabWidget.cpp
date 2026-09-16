@@ -250,6 +250,11 @@ void SessionTabWidget::setupUi() {
     });
     bottomTabs_->addTab(opcodeSearcherView_, "Opcode Search");
 
+    // Tab 20: Script Console (Python 3 & Lua 5.4)
+    scriptConsoleView_ = new ScriptConsoleView(bottomTabs_);
+    scriptConsoleView_->setSession(session_.get());
+    bottomTabs_->addTab(scriptConsoleView_, "Script Console");
+
     // Right: Dedicated Stack View (Classic 4-Quadrant Workstation)
     stackView_ = new StackView(bottomSplitter_);
     stackView_->setMinimumWidth(150);
@@ -318,6 +323,7 @@ void SessionTabWidget::refreshAll() {
     watchView_->refresh();
     binaryInfoView_->refresh();
     intermodularCallsView_->refresh();
+    if (scriptConsoleView_) scriptConsoleView_->setSession(session_.get());
 }
 
 void SessionTabWidget::onSessionStateChanged(SessionState state) {
