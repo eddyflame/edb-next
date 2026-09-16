@@ -28,6 +28,11 @@ DebugSession::DebugSession(std::string id, std::string name, QObject* parent)
               return engine_.clearHardwareBreakpoint(engine_.activeTid(), slot);
           }
       ),
+      pageGuardMgr_(
+          [this](Address addr, size_t sz, int prot) {
+              return changeMemoryProtection(addr, sz, prot);
+          }
+      ),
       eventLoop_(engine_, bpMgr_, nullptr)
 {
     qRegisterMetaType<edb_next::SessionState>("edb_next::SessionState");
@@ -149,6 +154,10 @@ void DebugSession::terminate() {
     engine_.kill();
     eventLoop_.stopLoop();
     bpMgr_.clear();
+    pageGuardMgr_.clear();
+    pendingPageGuardRestoreAddr_ = Address(0);
+    isPageGuardStepOver_ = false;
+    isPageGuardResuming_ = false;
     symbols_.clear();
     dwarfParser_.clear();
 
@@ -160,6 +169,10 @@ void DebugSession::detach() {
     eventLoop_.stopLoop();
     engine_.detach();
     bpMgr_.clear();
+    pageGuardMgr_.clear();
+    pendingPageGuardRestoreAddr_ = Address(0);
+    isPageGuardStepOver_ = false;
+    isPageGuardResuming_ = false;
     symbols_.clear();
     dwarfParser_.clear();
     setState(SessionState::Stopped);
@@ -172,6 +185,13 @@ void DebugSession::resume(bool passSignal) {
     if (passSignal && lastSignal_ != 0) {
         sig = lastSignal_;
         lastSignal_ = 0;
+    }
+
+    if (pendingPageGuardRestoreAddr_.value() != 0) {
+        isPageGuardResuming_ = true;
+        engine_.singleStep(engine_.activeTid());
+        setState(SessionState::Running);
+        return;
     }
 
     Address rip = currentRegs_.rip();
@@ -389,6 +409,43 @@ void DebugSession::handleEvent(const DebugEvent& event) {
         return;
     }
 
+    if (isPageGuardStepOver_) {
+        // We just stepped over the instruction while page protection was temporarily lifted
+        isPageGuardStepOver_ = false;
+        if (pendingPageGuardRestoreAddr_.value() != 0) {
+            auto* g = pageGuardMgr_.getGuardMutable(pendingPageGuardRestoreAddr_);
+            if (g) {
+                pageGuardMgr_.reprotect(g);
+            }
+            pendingPageGuardRestoreAddr_ = Address(0);
+        }
+        engine_.continueExecution(engine_.activeTid());
+        return;
+    }
+
+    if (isPageGuardResuming_) {
+        // User clicked Continue while paused on a Page-Guard hit;
+        // stepped 1 instruction, now reprotect and continue!
+        isPageGuardResuming_ = false;
+        if (pendingPageGuardRestoreAddr_.value() != 0) {
+            auto* g = pageGuardMgr_.getGuardMutable(pendingPageGuardRestoreAddr_);
+            if (g) {
+                pageGuardMgr_.reprotect(g);
+            }
+            pendingPageGuardRestoreAddr_ = Address(0);
+        }
+        engine_.continueExecution(engine_.activeTid());
+        return;
+    }
+
+    if (pendingPageGuardRestoreAddr_.value() != 0) {
+        auto* g = pageGuardMgr_.getGuardMutable(pendingPageGuardRestoreAddr_);
+        if (g) {
+            pageGuardMgr_.reprotect(g);
+        }
+        pendingPageGuardRestoreAddr_ = Address(0);
+    }
+
     if (bpMgr_.isSteppingOver()) {
         bpMgr_.finishStepOver();
     }
@@ -396,6 +453,73 @@ void DebugSession::handleEvent(const DebugEvent& event) {
     if (event.reason == StopReason::ProcessExit) {
         setState(SessionState::Terminated);
     } else {
+        if (event.signal == SIGSEGV) {
+            siginfo_t siginfo{};
+            if (engine_.getSigInfo(event.tid, &siginfo)) {
+                Address faultAddr(reinterpret_cast<uint64_t>(siginfo.si_addr));
+                auto* guard = pageGuardMgr_.findGuardForFault(faultAddr);
+                if (guard && guard->enabled) {
+                    // Page-Guard trap!
+                    pageGuardMgr_.temporarilyUnprotect(guard);
+                    pendingPageGuardRestoreAddr_ = guard->address;
+
+                    bool inRange = (faultAddr >= guard->address && faultAddr < guard->address + guard->size);
+                    refreshRegisters();
+                    if (!inRange && (currentRegs_.rip() >= guard->address && currentRegs_.rip() < guard->address + guard->size)) {
+                        inRange = true;
+                        faultAddr = currentRegs_.rip();
+                    }
+
+                    if (inRange) {
+                        guard->hitCount++;
+
+                        bool ignore = false;
+                        if (!guard->condition.empty()) {
+                            if (!ExpressionEvaluator::evaluateCondition(guard->condition, currentRegs_, &engine_)) {
+                                ignore = true;
+                            }
+                        }
+
+                        if (!ignore && !guard->scriptCode.empty()) {
+                            auto* eng = scriptEngines_.engine(guard->scriptLanguage);
+                            if (eng) {
+                                eng->setSession(this);
+                                bool shouldPause = eng->executeHook(guard->scriptCode);
+                                refreshRegisters();
+                                if (!shouldPause) {
+                                    ignore = true;
+                                }
+                            }
+                        }
+
+                        if (ignore) {
+                            isPageGuardStepOver_ = true;
+                            engine_.singleStep(engine_.activeTid());
+                            return;
+                        }
+
+                        DebugEvent processed_event = event;
+                        processed_event.reason = StopReason::Breakpoint;
+                        processed_event.address = faultAddr;
+                        processed_event.message = "Page-Guard Breakpoint Hit at " + faultAddr.toHex() +
+                                                  " (Page " + guard->pageBase.toHex() + ", " +
+                                                  pageGuardAccessToString(guard->access) + ")";
+                        LogManager::instance().bp("PageGuard", processed_event.message);
+
+                        setState(SessionState::Paused);
+                        Q_EMIT eventOccurred(processed_event);
+                        Q_EMIT memoryUpdated();
+                        return;
+                    } else {
+                        // False-positive page touch (another address on same page)
+                        isPageGuardStepOver_ = true;
+                        engine_.singleStep(engine_.activeTid());
+                        return;
+                    }
+                }
+            }
+        }
+
         if (event.signal != 0 && event.signal != SIGTRAP && event.signal != SIGSTOP) {
             lastSignal_ = event.signal;
             const auto& policy = ConfigurationManager::instance().signalPolicy(event.signal);
@@ -707,6 +831,88 @@ bool DebugSession::setBreakpointScript(Address addr, const std::string& code, co
     bool ok = bpMgr_.setBreakpointScript(addr, code, language);
     if (ok) Q_EMIT breakpointsUpdated();
     return ok;
+}
+
+bool DebugSession::addPageGuard(Address addr, size_t size, PageGuardAccess access, const std::string& comment) {
+    if (!engine_.isAttached()) return false;
+    if (size == 0) size = 1;
+
+    // Determine original protection of the memory page
+    int origProt = PROT_READ | PROT_WRITE;
+    auto regions = engine_.getMemoryRegions();
+    for (const auto& reg : regions) {
+        if (addr >= reg.start && addr < reg.end) {
+            origProt = 0;
+            if (reg.permissions.find('r') != std::string::npos) origProt |= PROT_READ;
+            if (reg.permissions.find('w') != std::string::npos) origProt |= PROT_WRITE;
+            if (reg.permissions.find('x') != std::string::npos) origProt |= PROT_EXEC;
+            break;
+        }
+    }
+
+    bool ok = pageGuardMgr_.addGuard(addr, size, access, origProt, comment);
+    if (ok) {
+        LogManager::instance().bp("PageGuard", "Added Page-Guard at " + addr.toHex() +
+            " (size: " + std::to_string(size) + ", type: " + pageGuardAccessToString(access) + ")");
+        Q_EMIT pageGuardsUpdated();
+        Q_EMIT memoryUpdated();
+    } else {
+        LogManager::instance().error("PageGuard", "Failed to add Page-Guard at " + addr.toHex());
+    }
+    return ok;
+}
+
+bool DebugSession::removePageGuard(Address addr) {
+    if (!pageGuardMgr_.hasGuard(addr)) return false;
+    bool ok = pageGuardMgr_.removeGuard(addr);
+    if (ok) {
+        if (pendingPageGuardRestoreAddr_ == addr) {
+            pendingPageGuardRestoreAddr_ = Address(0);
+        }
+        LogManager::instance().bp("PageGuard", "Removed Page-Guard at " + addr.toHex());
+        Q_EMIT pageGuardsUpdated();
+        Q_EMIT memoryUpdated();
+    }
+    return ok;
+}
+
+bool DebugSession::enablePageGuard(Address addr) {
+    bool ok = pageGuardMgr_.enableGuard(addr);
+    if (ok) {
+        Q_EMIT pageGuardsUpdated();
+        Q_EMIT memoryUpdated();
+    }
+    return ok;
+}
+
+bool DebugSession::disablePageGuard(Address addr) {
+    bool ok = pageGuardMgr_.disableGuard(addr);
+    if (ok) {
+        Q_EMIT pageGuardsUpdated();
+        Q_EMIT memoryUpdated();
+    }
+    return ok;
+}
+
+bool DebugSession::togglePageGuard(Address addr) {
+    bool ok = pageGuardMgr_.toggleGuard(addr);
+    if (ok) {
+        Q_EMIT pageGuardsUpdated();
+        Q_EMIT memoryUpdated();
+    }
+    return ok;
+}
+
+bool DebugSession::hasPageGuard(Address addr) const {
+    return pageGuardMgr_.hasGuard(addr);
+}
+
+bool DebugSession::isPageGuarded(Address addr) const {
+    return pageGuardMgr_.isPageGuarded(addr);
+}
+
+bool DebugSession::isAddressPageWatched(Address addr) const {
+    return pageGuardMgr_.isAddressWatched(addr);
 }
 
 Result<std::vector<uint8_t>> DebugSession::assemble(const std::string& insn, Address origin) {

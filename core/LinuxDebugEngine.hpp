@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <signal.h>
 
 namespace edb_next {
 
@@ -54,6 +55,9 @@ public:
     bool remoteMprotect(Address addr, size_t size, int prot);
     Result<Address> remoteMmap(Address addr, size_t size, int prot, int flags);
     bool remoteMunmap(Address addr, size_t size);
+
+    // Signal inspection
+    bool getSigInfo(Tid tid, siginfo_t* siginfo);
 
     // Introspection
     [[nodiscard]] std::vector<MemoryRegion> getMemoryRegions() const;

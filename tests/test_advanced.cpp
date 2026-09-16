@@ -8,6 +8,7 @@
 #include "core/IntermodularCallsFinder.hpp"
 #include "core/OpcodeSearcher.hpp"
 #include "core/StateDumper.hpp"
+#include "core/PageGuardManager.hpp"
 #include "ui/CFGGraphView.hpp"
 #include "ui/CommandBarView.hpp"
 #include "ui/MemoryHexView.hpp"
@@ -531,6 +532,107 @@ void test_memory_hex_view_features() {
     std::cout << "[PASS] MemoryHexView Breakpoint & Hardware Watchpoint UI test passed." << std::endl;
 }
 
+void test_page_guard_breakpoints() {
+    std::cout << "\n[TEST] Starting Page-Guard Memory Protection Breakpoints test..." << std::endl;
+
+    // 1. Test standalone PageGuardManager logic & calculations
+    Address target(0x00401020);
+    Address pageBase = PageGuardManager::alignToPage(target);
+    assert(pageBase == Address(0x00401000));
+
+    size_t span = PageGuardManager::calculatePageSpan(target, 4);
+    assert(span == 4096);
+
+    std::vector<std::tuple<Address, size_t, int>> mprotectCalls;
+    PageGuardManager mgr([&](Address a, size_t sz, int prot) {
+        mprotectCalls.emplace_back(a, sz, prot);
+        return true;
+    });
+
+    bool added = mgr.addGuard(target, 8, PageGuardAccess::ReadOnly, PROT_READ | PROT_WRITE, "TestGuard");
+    assert(added && "addGuard should succeed");
+    assert(mgr.hasGuard(target) && "hasGuard should return true");
+    assert(mgr.isAddressWatched(target + 4) && "isAddressWatched should be true within range");
+    assert(!mgr.isAddressWatched(target + 16) && "isAddressWatched should be false outside range");
+    assert(mgr.isPageGuarded(Address(0x00401500)) && "isPageGuarded should be true on same 4KB page");
+    assert(!mgr.isPageGuarded(Address(0x00402000)) && "isPageGuarded should be false on other page");
+
+    auto* g = mgr.findGuardForFault(target);
+    assert(g != nullptr && "findGuardForFault should find guard");
+    assert(g->address == target);
+    assert(g->guardedProt == PROT_READ);
+
+    // Test temporary unprotect and reprotect
+    assert(mgr.temporarilyUnprotect(g));
+    assert(g->isTemporarilyUnprotected);
+    assert(mgr.reprotect(g));
+    assert(!g->isTemporarilyUnprotected);
+
+    // Test disable & enable
+    assert(mgr.disableGuard(target));
+    assert(!mgr.isAddressWatched(target));
+    assert(mgr.enableGuard(target));
+    assert(mgr.isAddressWatched(target));
+
+    // Test remove
+    assert(mgr.removeGuard(target));
+    assert(!mgr.hasGuard(target));
+
+    // 2. Test live DebugSession with Page-Guard
+    auto session = std::make_shared<DebugSession>("test_pg_session", "PGSession");
+    bool launched = session->launch(getTestTargetPath(), {"WorkerPG"});
+    assert(launched && "Failed to launch test target");
+
+    // Allocate remote page in target
+    auto page = session->allocateMemory(4096, PROT_READ | PROT_WRITE);
+    assert(page.has_value() && "Remote memory allocation should succeed");
+    Address watchedAddr = *page + 0x100;
+
+    // Add ReadOnly Page-Guard
+    bool ok = session->addPageGuard(watchedAddr, 8, PageGuardAccess::ReadOnly, "HeapWatchedVar");
+    assert(ok && "addPageGuard should succeed");
+    assert(session->hasPageGuard(watchedAddr));
+    assert(session->isAddressPageWatched(watchedAddr));
+    assert(session->isPageGuarded(watchedAddr));
+
+    // Verify HexView rendering with Page-Guard
+    MemoryHexView hexView;
+    hexView.setSession(session);
+    hexView.setBaseAddress(watchedAddr);
+    hexView.refresh();
+
+    QTableWidgetItem* watchedItem = hexView.item(0, 1);
+    assert(watchedItem != nullptr);
+    assert(watchedItem->toolTip().contains("Page-Guard Watched"));
+    assert(watchedItem->background().color() == QColor(180, 110, 20, 160));
+
+    // Test DatabaseManager serialization with Page-Guard
+    DatabaseProject proj;
+    proj.binaryPath = getTestTargetPath();
+    DatabasePageGuardData pgData;
+    pgData.address = watchedAddr.value();
+    pgData.size = 8;
+    pgData.access = "ReadOnly";
+    pgData.comment = "DB Guard Test";
+    proj.pageGuards.push_back(pgData);
+
+    std::string tmpDb = "./test_pg_db.json";
+    assert(DatabaseManager::instance().saveToFile(tmpDb, proj));
+    DatabaseProject loadedProj;
+    assert(DatabaseManager::instance().loadFromFile(tmpDb, loadedProj));
+    assert(loadedProj.pageGuards.size() == 1);
+    assert(loadedProj.pageGuards[0].address == watchedAddr.value());
+    assert(loadedProj.pageGuards[0].access == "ReadOnly");
+    ::unlink(tmpDb.c_str());
+
+    // Clean up
+    session->removePageGuard(watchedAddr);
+    assert(!session->hasPageGuard(watchedAddr));
+    session->terminate();
+
+    std::cout << "[PASS] Page-Guard Breakpoints test passed cleanly." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -550,6 +652,7 @@ int main(int argc, char* argv[]) {
     test_remote_syscalls_and_memory_mgmt();
     test_cxx_demangling();
     test_memory_hex_view_features();
+    test_page_guard_breakpoints();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

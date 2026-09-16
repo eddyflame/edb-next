@@ -430,6 +430,86 @@ void CommandBarView::setupDefaultCommands() {
         }
     }, "free <addr> <size> - Unmap memory in target process via munmap");
 
+    registerCommand("pageguard", [this](const std::vector<std::string>& args) {
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: pageguard <addr/symbol> [size] [none|ro|xo]", true);
+            return;
+        }
+        Address addr = parseAddress(args[0]);
+        if (addr.isNull()) {
+            Q_EMIT outputLogged("Failed to resolve address for: " + QString::fromStdString(args[0]), true);
+            return;
+        }
+        size_t size = 1;
+        if (args.size() > 1) {
+            size = std::strtoul(args[1].c_str(), nullptr, 0);
+            if (size == 0) size = 1;
+        }
+        PageGuardAccess access = PageGuardAccess::NoAccess;
+        if (args.size() > 2) {
+            access = pageGuardAccessFromString(args[2]);
+        }
+        if (session_) {
+            bool ok = session_->addPageGuard(addr, size, access);
+            Q_EMIT outputLogged(QString("Page-Guard set at %1 (size %2, type %3): %4")
+                                    .arg(QString::fromStdString(addr.toHex()))
+                                    .arg(size)
+                                    .arg(QString::fromStdString(pageGuardAccessToString(access)))
+                                    .arg(ok ? "Success" : "Failed"), !ok);
+        }
+    }, "pageguard <addr/symbol> [size] [none|ro|xo] - Set Page-Guard memory protection breakpoint");
+
+    registerCommand("guard", [this](const std::vector<std::string>& args) {
+        std::string cmd = "pageguard";
+        for (const auto& a : args) cmd += " " + a;
+        executeCommand(QString::fromStdString(cmd));
+    }, "Alias for pageguard");
+
+    registerCommand("unpageguard", [this](const std::vector<std::string>& args) {
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: unpageguard <addr/symbol>", true);
+            return;
+        }
+        Address addr = parseAddress(args[0]);
+        if (session_) {
+            bool ok = session_->removePageGuard(addr);
+            Q_EMIT outputLogged(QString("Page-Guard removed at %1: %2")
+                                    .arg(QString::fromStdString(addr.toHex()))
+                                    .arg(ok ? "Success" : "Failed"), !ok);
+        }
+    }, "unpageguard <addr/symbol> - Remove Page-Guard breakpoint");
+
+    registerCommand("unguard", [this](const std::vector<std::string>& args) {
+        std::string cmd = "unpageguard";
+        for (const auto& a : args) cmd += " " + a;
+        executeCommand(QString::fromStdString(cmd));
+    }, "Alias for unpageguard");
+
+    registerCommand("pageguards", [this](const std::vector<std::string>&) {
+        if (!session_) return;
+        auto guards = session_->pageGuardManager().allGuards();
+        if (guards.empty()) {
+            Q_EMIT outputLogged("No active Page-Guard breakpoints.", false);
+            return;
+        }
+        Q_EMIT outputLogged(QString("Active Page-Guards (%1):").arg(guards.size()), false);
+        for (const auto& g : guards) {
+            QString line = QString("  [Address: %1 - %2] Page: %3 (Size: %4) Type: %5 Hits: %6 Status: %7")
+                               .arg(QString::fromStdString(g.address.toHex()))
+                               .arg(QString::fromStdString((g.address + g.size).toHex()))
+                               .arg(QString::fromStdString(g.pageBase.toHex()))
+                               .arg(g.pageSize)
+                               .arg(QString::fromStdString(pageGuardAccessToString(g.access)))
+                               .arg(g.hitCount)
+                               .arg(g.enabled ? "Enabled" : "Disabled");
+            Q_EMIT outputLogged(line, false);
+        }
+    }, "pageguards - List all active Page-Guard breakpoints");
+
+    registerCommand("guards", [this](const std::vector<std::string>&) {
+        executeCommand("pageguards");
+    }, "Alias for pageguards");
+
     registerCommand("dumpstate", [this](const std::vector<std::string>&) {
         if (!session_) return;
         std::string dump = StateDumper::dumpState(*session_);

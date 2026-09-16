@@ -6,6 +6,7 @@
 #include "EventLoopThread.hpp"
 #include "RegisterContext.hpp"
 #include "AnnotationManager.hpp"
+#include "PageGuardManager.hpp"
 #include <QObject>
 #include <memory>
 #include <string>
@@ -91,6 +92,18 @@ public:
     bool setBreakpointLogOnly(Address addr, bool logOnly, const std::string& fmt);
     bool setBreakpointScript(Address addr, const std::string& code, const std::string& language = "python");
 
+    // Page-Guard Memory Protection Breakpoints
+    bool addPageGuard(Address addr, size_t size = 1, PageGuardAccess access = PageGuardAccess::NoAccess, const std::string& comment = "");
+    bool removePageGuard(Address addr);
+    bool enablePageGuard(Address addr);
+    bool disablePageGuard(Address addr);
+    bool togglePageGuard(Address addr);
+    [[nodiscard]] bool hasPageGuard(Address addr) const;
+    [[nodiscard]] bool isPageGuarded(Address addr) const;
+    [[nodiscard]] bool isAddressPageWatched(Address addr) const;
+    [[nodiscard]] PageGuardManager& pageGuardManager() noexcept { return pageGuardMgr_; }
+    [[nodiscard]] const PageGuardManager& pageGuardManager() const noexcept { return pageGuardMgr_; }
+
     // Assembly & Analysis
     Result<std::vector<uint8_t>> assemble(const std::string& insn, Address origin = Address(0));
     std::vector<ROPGadget> scanROP(size_t maxGadgetLength = 4, size_t maxResults = 500, const std::string& filter = "");
@@ -159,6 +172,7 @@ Q_SIGNALS:
     void registersUpdated();
     void memoryUpdated();
     void breakpointsUpdated();
+    void pageGuardsUpdated();
     void activeThreadChanged(Tid tid);
     void sourceLocationChanged(const edb_next::SourceLocation& loc);
 
@@ -175,6 +189,7 @@ private:
 
     LinuxDebugEngine engine_;
     BreakpointManager bpMgr_;
+    PageGuardManager pageGuardMgr_;
     EventLoopThread eventLoop_;
     ElfParser symbols_;
     DwarfParser dwarfParser_;
@@ -186,6 +201,9 @@ private:
     user_fpregs_struct currentFpRegs_{};
     user_fpregs_struct previousFpRegs_{};
     bool isStepOverBreak_{false};
+    Address pendingPageGuardRestoreAddr_{0};
+    bool isPageGuardStepOver_{false};
+    bool isPageGuardResuming_{false};
 
     std::string targetPath_;
     std::vector<std::string> targetArgs_;
