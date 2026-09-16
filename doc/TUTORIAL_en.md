@@ -29,10 +29,11 @@
    - 4.2 Software, Hardware, and Conditional Breakpoints
    - 4.3 Ignore Counts and Log-Only Tracepoints
    - 4.4 Script-Driven Breakpoint Actions & Silent Hooking
-   - 4.5 POSIX Signal Interception and Pass-Through Execution
-   - 4.6 Dynamic Branch Prediction
-   - 4.7 Hit Trace (Code Coverage) and Run Trace (Time-Travel Navigation)
-   - 4.8 CPU Machine State Snapshot (StateDumper)
+   - 4.5 Memory Page-Guard Breakpoints & Stealth Execution
+   - 4.6 POSIX Signal Interception and Pass-Through Execution
+   - 4.7 Dynamic Branch Prediction
+   - 4.8 Hit Trace (Code Coverage) and Run Trace (Time-Travel Navigation)
+   - 4.9 CPU Machine State Snapshot (StateDumper)
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -220,6 +221,11 @@ Build outputs in `build/`:
   - Right-click any byte cell in the Hex Dump and open the **"Breakpoint"** submenu;
   - Instantly deploy **Set Hardware Write Watchpoint** (1, 2, 4, or 8 bytes) or **Set Hardware Read/Write Watchpoint** (1, 2, 4, or 8 bytes), as well as Hardware Execute breakpoints or software `0xCC` breakpoints;
   - Active breakpoint cells are highlighted with deep red backgrounds (`QColor(160, 40, 40, 160)`) and bright white text, with hovering tooltips displaying `Breakpoint active at 0x...`.
+- **Page-Guard Memory Protection Breakpoints**:
+  - Right-click any byte cell or selection -> `Breakpoint -> Page-Guard Breakpoint`;
+  - Deploy **No Access (`PROT_NONE`)**, **Write Only (`PROT_READ`)**, **Execute Only (`PROT_EXEC`)**, or custom byte spans;
+  - Cells under Page-Guard surveillance are highlighted with warm amber gold backgrounds (`QColor(180, 110, 20, 160)`), while the surrounding 4KB page displays a gentle gold tint;
+  - Completely eliminates the 4-register limit of hardware debug registers.
 - **Raw Binary Export**:
   - In Tab 5 (Memory Regions), right-click any page to export as `.bin`.
 
@@ -262,20 +268,29 @@ Build outputs in `build/`:
   - **Crash-Resistant Guard**: Uncaught script exceptions produce clean tracebacks in the console and log, safely pausing the target without crashing the debugger host.
   - **Project Persistence**: Script actions and language preferences are serialized into the `.edb_db` reverse engineering database.
 
-### 4.5 POSIX Signal Management
+### 4.5 Memory Page-Guard Breakpoints & Stealth Execution (Anti-Anti-Debugging)
+- **Zero-0xCC Stealth Breakpoints**: Defeats binary integrity self-checksumming routines (CRC32/Hash) by guarding code pages with `PROT_READ` rather than writing `0xCC` opcodes. Code integrity scans read authentic instructions without alarm, while execution attempts trigger kernel page-faults caught seamlessly by the debugger.
+- **Unlimited Soft Watchpoints**: Overcomes the physical 4-register limitation of CPU DR0~DR3 registers by leveraging virtual memory page protections (`PROT_READ` for write watchpoints, `PROT_NONE` for full access traps).
+- **Deployment**:
+  - **Hex Dump Context Menu**: Right-click byte cell -> `Breakpoint -> Page-Guard Breakpoint` -> `No Access`, `Write Only`, `Execute Only`, or custom byte range.
+  - **CommandBar CLI**: `pageguard <addr> [size] [none|ro|xo]` (alias `guard`), `unpageguard <addr>` (`unguard`), `pageguards` (`guards`).
+- **Visual Highlighting**: Guarded addresses are highlighted in warm amber gold (`QColor(180, 110, 20, 160)`), with subtle golden backgrounds for the rest of the 4KB page.
+- **Sub-Microsecond False-Positive Bypass**: If the target accesses an unrelated variable on the same 4KB page, `edb-next`'s kernel-level state machine temporarily lifts protection, single-steps 1 instruction (`PTRACE_SINGLESTEP`), re-applies protection, and resumes target execution automatically in microseconds with 0 UI stutter.
+
+### 4.6 POSIX Signal Management
 - Configure signals 1-64 under `Options -> Preferences -> Signals`.
 - Use **Shift+F7/F8/F9** to pass signals directly to the target's signal handlers.
 
-### 4.6 Dynamic Branch Prediction
+### 4.7 Dynamic Branch Prediction
 - Bottom bar indicates whether the current branch will be followed:
   - **`[JUMP TAKEN]`** (Green)
   - **`[JUMP NOT TAKEN]`** (Gray)
 
-### 4.7 Hit Trace & Run Trace
+### 4.8 Hit Trace & Run Trace
 - **Hit Trace**: Real-time code coverage tracking in disassembly.
 - **Run Trace**: History recorder enabling step back (**`< Step Back`**) and step forward (**`Step Forward >`**) time-travel inspection.
 
-### 4.8 CPU Machine State Snapshot (StateDumper)
+### 4.9 CPU Machine State Snapshot (StateDumper)
 - Press **Ctrl+D** or menu `Debug -> Dump CPU State` to export registers, stack memory, and disassembly context to log and clipboard.
 
 ---
@@ -336,6 +351,9 @@ flowchart LR
 | `mprotect <addr> <size> <prot>` | Change target page protections (7=RWX). Ex: `mprotect 0x555555555000 4096 7` |
 | `alloc <size> [prot]` | Allocate target memory page. Ex: `alloc 4096 7` |
 | `free <addr> <size>` | Free dynamically allocated target page. Ex: `free 0x7ffff7fbc000 4096` |
+| `pageguard <addr> [sz] [type]` | Set Page-Guard memory protection breakpoint (`guard`). Ex: `guard 0x401000 8 ro` |
+| `unpageguard <addr>` | Remove Page-Guard breakpoint (`unguard`). Ex: `unguard 0x401000` |
+| `pageguards` | List all active Page-Guard breakpoints (`guards`) |
 | `dumpstate` | Format and copy full CPU state snapshot to clipboard |
 | `py <code...>` | Directly evaluate Python 3 statement or expression. Ex: `py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | Directly evaluate Lua 5.4 statement or expression. Ex: `lua print(string.format('0x%x', edb.get_reg('rip')))` |

@@ -385,6 +385,31 @@
 
 ---
 
+### 3.16 内存页保护断点与隐蔽断点系统 (Page-Guard Breakpoint & Anti-Anti-Debugging)
+
+为了彻底攻克 Linux 平台两大调试痛点——x86_64 硬件调试寄存器仅 4 个（DR0~DR3）的物理槽位限制，以及面对加固壳或 CTF 混淆题目的代码段校验和（CRC32/Hash）自检测反调试问题，`edb-next` 打造了全自动化的内存页保护断点系统：
+
+1. **核心页保护机制 (Page-Guard Architecture)**：
+   - 抽象独立的 `PageGuardManager` 负责管理虚拟内存页（4KB 对齐）保护权限；
+   - 支持三种细粒度访问监视策略：
+     - **NoAccess (`PROT_NONE`)**：全面拦截读、写与执行；
+     - **ReadOnly (`PROT_READ`)**：拦截写操作（软写监视点），允许正常的内存读取与指令执行；
+     - **ExecuteOnly (`PROT_EXEC`)**：拦截读写操作，允许正常指令执行；
+   - **反反调试隐匿执行断点 (Stealth Execution Breakpoint)**：对代码段设置 `ReadOnly` 或 `NoAccess`，内存中保持真实原版机器码（**零 0xCC 注入**）。当目标自校验函数扫描读取 `.text` 校验和时，页面放行读取，绝不触发篡改警报；当 CPU EIP/RIP 试图执行受控指令时，立即触发内核异常进入调试器。
+2. **SIGSEGV 信号捕获与微秒级单步状态机**：
+   - `LinuxDebugEngine::getSigInfo()` 通过 `PTRACE_GETSIGINFO` 读取 `si_addr`；
+   - 若 `si_addr` 属于受监控页面：
+     - **页内假阳性访问透明放行 (False-Positive Page Touch)**：若目标访问的是同一 4KB 页面上的其他无关变量，调试器在内核级微秒内执行“临时撤保 -> 单步一条指令 -> 恢复页保 -> 继续全速运行”，UI 与用户毫无察觉；
+     - **真断点命中 (True Breakpoint Hit)**：命中用户关注的变量或指令时，挂起 UI 并标红指示；用户继续运行或单步时，状态机自动确保执行越过该指令后即刻重新设保。
+3. **HexDump 视图交互与极客 CLI 集成**：
+   - `MemoryHexView` 单元格右键提供 Page-Guard 一键部署（NoAccess、ReadOnly、ExecuteOnly 与自定义字节范围）；
+   - 处于 Page-Guard 监视范围内的单元格以金琥珀色背景（`QColor(180, 110, 20, 160)`）醒目高亮；
+   - 底栏 CommandBar 提供 `pageguard`（别名 `guard`）、`unpageguard`（别名 `unguard`）以及 `pageguards`（`guards`）全套指令。
+4. **工程数据库 (.edb_db) 持久化**：
+   - `DatabaseManager` 将受控页保护断点的地址、跨度、权限策略完整写入 JSON 逆向项目工程。
+
+---
+
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
 作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。本章梳理出当前版本尚未实现或待进阶完善的功能，作为后续版本的官方演进路线图 (Roadmap)。
@@ -396,12 +421,11 @@
   2. **ARM64 / AArch64 原生支持**：抽象 `IRegisterContext` 与 `IDebugEngine` 工厂，针对 ARM64 平台实现基于 `NT_PRSTATUS` / `PTRACE_GETREGSET` 的 X0~X30 寄存器组及硬件断点（`PTRACE_SETHBPREGS`）支持；
   3. **RISC-V (RV64GC) 探索**：为国内新兴开源硬件生态预留接口契约。
 
-### 4.2 高级反反调试与隐蔽断点机制 (Anti-Anti-Debugging & Stealth)
-- **当前状态**：调试机制基于原生 `ptrace`，在遇到高强度对抗样本（如恶意加固壳、CTF 混淆题目）时，目标程序通过检测自身是否被 ptrace（如主动调用 `PTRACE_TRACEME`、检查 `/proc/self/status` 中的 `TracerPid` 或测量 `rdtsc` 时间差）能够察觉调试器存在。
+### 4.2 高级反反调试扩展 (Anti-Anti-Debugging Extensions)
+- **当前状态**：隐匿执行断点与内存页保护断点 (Page-Guard Breakpoint) 已在 3.16 节全景落地，实现了零 0xCC 注入的代码段自校验绕过与无限槽位软监视点。目前针对进程树层级与时间戳的伪装仍有进阶扩展空间。
 - **待完善方案**：
-  1. **`TracerPid` 伪装**：基于注入技术 Hook 或通过内核模块虚拟化目标读取 `/proc/self/status` 的行为；
-  2. **RDTSC 指令陷阱抹平**：利用 CR4 寄存器标志或硬件单步对 `rdtsc` / `rdtscp` 指令进行时间戳平滑，抹平单步执行的时间延迟；
-  3. **隐匿执行断点 (Page-Guard Breakpoint)**：基于内存页权限陷阱实现无 `0xCC` 注入的纯内存断点，绕过目标进程对代码段内存校验和（CRC/Hash）的自校验防篡改机制。
+  1. **`TracerPid` 伪装**：基于注入技术 Hook 或通过内核模块虚拟化目标读取 `/proc/self/status` 的行为，抹平 TracerPid 痕迹；
+  2. **RDTSC 指令陷阱抹平**：利用 CR4 寄存器标志或硬件单步对 `rdtsc` / `rdtscp` 指令进行时间戳平滑，抹平单步执行的时间延迟。
 
 ### 4.3 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout)
 - **当前状态**：C++ 符号反混淆已在 3.13 节完整实现并落地；当前版本尚缺少将内存按复合数据类型（struct/union）结构化格式化呈现的能力。
@@ -456,7 +480,7 @@
 | **C++ 符号反混淆 (Demangling)** | ★★★★★ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.13 节全景实现**。基于 `abi::__cxa_demangle`，符号、调用栈、反汇编指示全面可读化。 |
 | **细粒度硬件读写监视点 UI** | ★★★★☆ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.14 节全景实现**。HexDump 单元格右键菜单 1/2/4/8 字节硬件读写监视点与高亮标记。 |
 | **断点绑定 Python/Lua 脚本打桩** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.15 节全景实现**。支持 Python 3/Lua 5.4 脚本打桩与 `return false` 无感动态 Hook。 |
-| **4.2 高级反反调试与隐蔽断点 (Page-Guard)** | ★★★★★ | 中等 (Medium) | **P1 (核心壁垒)** | **当前最优先攻坚**。填补 Linux 平台反反调试工具空白，解决恶意样本 CRC 自校验与 `TracerPid` 检测。 |
+| **内存页保护断点 (Page-Guard)** | ★★★★★ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.16 节全景实现**。打破 DR0~DR3 数量限制，实现零 0xCC 代码段自校验绕过与微秒级单步放行。 |
 | **4.7 动态库加载自动拦截 (`_r_debug`)** | ★★★★☆ | 中等 (Medium) | **P1 (核心壁垒)** | **当前最优先攻坚**。解决动态 `dlopen()` 模块符号丢失问题，对齐 GDB 核心基础设施。 |
 | **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **P2 (高阶进阶)** | 针对 Linux 后端守护进程与 CTF Pwn 题的强力扩展，基于 `PTRACE_O_TRACEFORK` 拦截。 |
 | **4.9 多线程独立冻结与解冻 (Freeze/Thaw)** | ★★★☆☆ | 中等 (Medium) | **P2 (高阶进阶)** | 解决高并发竞态调试干扰，专为复杂后台多线程应用设计。 |

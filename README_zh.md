@@ -51,7 +51,8 @@
 - 🐍 **嵌入式 Python 3 & Lua 5.4 双脚本自动化引擎**：原生嵌入 CPython 3 与 Lua 5.4 解释器，统一由 `ScriptEngineManager` 调度；内置 `edb` 模块向脚本全面暴露内存读写、寄存器控制、断点管理、单步执行与表达式求值，配备独立暗黑极客 Script Console（`Alt+P`）与 CommandBar 行内执行（`py <code...>` / `lua <code...>`）；支持在任意断点绑定脚本动作，结合 `return False` / `return false` 契约实现微秒级无感动态打桩（Silent Hooking）。
 - 🏷️ **C++ 符号智能反混淆 (Demangling)**：原生集成 Itanium ABI `abi::__cxa_demangle`，全局符号浏览器、调用栈、反汇编行指示、寄存器与栈区智能解引用全线呈现清晰的 `calculate_fib(int)`，搜索过滤双向匹配，悬停保留原始 Mangled 名。
 - 🎯 **转储区细粒度硬件读写监视点 (Hardware Watchpoints Context Menu)**：在 HexDump 单元格右键一键部署 1/2/4/8 字节硬件写监视点（Write Watchpoint）、硬件读写监视点与硬件执行断点，单元格深红背景醒目高亮指示活动断点。
-- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate` 等指令，并向插件全面开放扩展接口。
+- 🛡️ **内存页保护断点与零 0xCC 隐匿执行断点 (Page-Guard / Anti-Anti-Debugging)**：突破 x86_64 硬件寄存器仅 4 处的物理极限，基于 `PROT_NONE` / `PROT_READ` 虚拟页保护提供无限槽位软监视点；对代码段实施零 `0xCC` 注入的纯内存断点，完美绕过加固壳与混淆样本的 CRC32/Hash 代码段自检测反调试；内置内核级假阳性透明放行状态机，微秒级越过同页其他变量访问。
+- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
 ---

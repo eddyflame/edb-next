@@ -29,10 +29,11 @@
    - 4.2 软件断点、硬件断点与递归下降条件断点
    - 4.3 命中间隔 (Ignore Count) 与仅日志断点 (Log Only)
    - 4.4 断点绑定 Python/Lua 脚本动作与微秒级无感打桩 (Script Actions)
-   - 4.5 POSIX 信号拦截、放行与透传执行
-   - 4.6 底部动态分支预测 (Dynamic Branch Prediction)
-   - 4.7 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
-   - 4.8 CPU 机器状态全景快照导出 (StateDumper)
+   - 4.5 内存页保护断点与零 0xCC 隐匿执行断点 (Page-Guard Breakpoints)
+   - 4.6 POSIX 信号拦截、放行与透传执行
+   - 4.7 底部动态分支预测 (Dynamic Branch Prediction)
+   - 4.8 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
+   - 4.9 CPU 机器状态全景快照导出 (StateDumper)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -300,6 +301,11 @@ cmake --build build -j$(nproc)
   - 在 Hex Dump 视图中选中任意字节单元格，右键打开 **"Breakpoint"** 子菜单；
   - 一键设置 **"Set Hardware Write Watchpoint"**（1 / 2 / 4 / 8 字节写监视点）或 **"Set Hardware Read/Write Watchpoint"**（1 / 2 / 4 / 8 字节读写监视点），亦支持设置硬件执行断点或切换 0xCC 软件断点；
   - 转储区自动检测活动断点地址，命中或注册断点的内存单元格以**深红背景 (`QColor(160, 40, 40, 160)`) 与高亮白字**醒目着色，鼠标悬浮即提示 `Breakpoint active at 0x...`，断点状态一目了然。
+- **内存转储区页保护断点 (Page-Guard / 软内存监视点)**：
+  - 在 Hex Dump 视图中选中任意字节或范围，右键打开 **"Breakpoint -> Page-Guard Breakpoint"**；
+  - 支持一键下发 **"No Access (PROT_NONE)"**（拦截一切读写执行）、**"Write Only (PROT_READ)"**（拦截写入，读与执行全速放行）、**"Execute Only (PROT_EXEC)"** 或输入自定义字节跨度；
+  - 受 Page-Guard 监视的内存单元格以**金琥珀色背景 (`QColor(180, 110, 20, 160)`) 与高亮白字**醒目呈现，所在 4KB 页面其余区域以淡金柔和着色，鼠标悬停即显示 `Page-Guard Watched: 0x...`；
+  - 彻底打破 CPU DR0~DR3 仅 4 处的物理限制，可无限设置软内存监视点。
 - **内存段物理转储 (.bin)**：
   - 切换至 Tab 5 **Memory Regions**（内存区域表）；
   - 右键任意内存段（如堆段、数据段或动态库），选择 **"Dump Region to File (.bin)..."**，秒级导出完整内存快照。
@@ -377,9 +383,32 @@ cmake --build build -j$(nproc)
   - **异常安全防护**：若脚本存在语法错误或运行时抛出未捕获异常，调试引擎自动将完整的异常栈追踪（Traceback）转储至控制台与调试日志，并安全挂起目标供逆向人员介入，绝不导致宿主崩溃；
   - **项目持久化支持**：所有绑定的脚本代码及语言配置均完整序列化存储在 `.edb_db` 项目工程库中，重载工程即刻还原。
 
+### 4.5 内存页保护断点与零 0xCC 隐匿执行断点 (Page-Guard Breakpoints)
+
+在面对包含代码校验和（CRC32/Hash）自检测的加固二进制，或者需要同时监控数十处内存缓冲区却受限于 CPU DR0~DR3 仅 4 处硬件寄存器的场景下，`edb-next` 提供了工业级的内存页保护软断点系统：
+
+- **设置页保护断点**：
+  - **HexDump 视图快捷部署**：在 Hex Dump 单元格上右键展开 **"Breakpoint -> Page-Guard Breakpoint"**，选择监视类型：
+    - **No Access (`PROT_NONE`)**：全面拦截该内存地址的读、写与执行访问；
+    - **Write Only (`PROT_READ`)**：拦截写入操作（软写监视点），允许正常读取与指令执行；
+    - **Execute Only (`PROT_EXEC`)**：拦截读写操作，允许正常指令执行；
+    - **Custom Page-Guard Range...**：输入任意字节跨度（支持跨 4KB 页面无缝覆盖）。
+  - **底栏极客命令行一键下发**：
+    - `pageguard 0x7ffff7fbc100 8 ro`（在指定地址设置 8 字节读监视点，写操作触发断点）；
+    - `pageguard 0x401020 1 none`（设置 0xCC-Free 隐匿执行断点）；
+    - `guards` 或 `pageguards` 查看当前所有受监控的页保护断点；
+    - `unpageguard 0x7ffff7fbc100` 清除指定地址的页保护断点。
+- **色彩与状态渲染**：
+  - 受 Page-Guard 监视的单元格以**金琥珀色背景 (`QColor(180, 110, 20, 160)`) 与高亮白字**醒目显示；
+  - 鼠标悬浮 Tooltip 呈现 `Page-Guard Watched: 0x...`；所在 4KB 页面以柔和淡金底色提示页保作用域。
+- **微秒级假阳性透明放行机制 (False-Positive Bypass)**：
+  - 操作系统虚拟内存权限以 4KB 页面为最小管理粒度。若目标进程访问了**同一 4KB 页面上的其他合法变量**，调试引擎通过内置内核级状态机自动执行“撤除保护 -> 单步执行一条指令 -> 恢复页保 -> 全速恢复运行”，全过程在微秒内无感完成，逆向人员不会遭遇频繁卡顿与误报！
+- **反反调试代码自校验绕过 (CRC32/Hash Bypass)**：
+  - 对代码函数入口设置 Page-Guard，目标内存中**完全保留原始机器指令字节码（零 0xCC 修改）**。加固壳的代码段自校验循环扫描读取指令时，页面允许读取直接放行，校验和完美匹配；当 CPU 指令指针 RIP 执行至该地址时，内核硬件级陷入断点，彻底粉碎目标反调试防线！
+
 ---
 
-### 4.5 POSIX 信号拦截、放行与透传执行
+### 4.6 POSIX 信号拦截、放行与透传执行
 
 - **全局信号策略配置**：
   - 打开 **Options -> Preferences -> Signals**；
@@ -392,7 +421,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.6 底部动态分支预测 (Dynamic Branch Prediction)
+### 4.7 底部动态分支预测 (Dynamic Branch Prediction)
 
 在调试条件跳转指令（如 `je`, `jne`, `jg`, `jle`）时，主工作台底部常驻有动态预测状态条：
 - `InstructionInspector` 实时解算当前条件跳转依赖的 EFLAGS 标志位（ZF, SF, OF, CF）；
@@ -403,7 +432,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.7 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
+### 4.8 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
 
 切换至 Tab 13 **Trace** 选项卡：
 - **Hit Trace (代码覆盖率)**：
@@ -416,7 +445,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 4.8 CPU 机器状态全景快照导出 (StateDumper)
+### 4.9 CPU 机器状态全景快照导出 (StateDumper)
 
 在任何调试中断时刻，按下快捷键 **Ctrl+D**（或菜单 `Debug -> Dump CPU State (DumpState)`）：
 - 系统将瞬间生成当前时刻的精细报告，输出至系统日志并自动复制到剪贴板：
@@ -637,6 +666,9 @@ cmake --build build -j$(nproc)
 | `mprotect <addr> <size> <prot>`| `mprot`| 动态修改目标内存权限（prot: 7=RWX, 5=RX, 3=RW, 1=RO）。例：`mprotect 0x555555555000 4096 7` |
 | `alloc <size> [prot]` | `malloc`| 在目标进程动态分配内存页。例：`alloc 4096 7` |
 | `free <addr> <size>` | `free` | 释放目标进程中动态分配的内存。例：`free 0x7ffff7fbc000 4096` |
+| `pageguard <addr> [sz] [type]` | `guard` | 设置页保护软内存断点（type: `none`/`ro`/`xo`）。例：`guard 0x401000 8 ro` |
+| `unpageguard <addr>` | `unguard` | 移除指定地址上的页保护断点。例：`unguard 0x401000` |
+| `pageguards` | `guards` | 打印当前所有激活的页保护断点清单 |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
 | `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |
