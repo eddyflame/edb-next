@@ -294,6 +294,10 @@ cmake --build build -j$(nproc)
   - 选中欲修改的字节，按下快捷键 **Ctrl+E**；
   - 实时输入新的十六进制字节序列并确认，修改立即生效于目标内存并被 `PatchManager` 自动记录；
   - 右键支持 **"Fill with Zeros"**（全填 0）与 **"Fill with NOPs"**（全填 0x90）。
+- **内存转储区右键直下硬件监视点与单元格高亮**：
+  - 在 Hex Dump 视图中选中任意字节单元格，右键打开 **"Breakpoint"** 子菜单；
+  - 一键设置 **"Set Hardware Write Watchpoint"**（1 / 2 / 4 / 8 字节写监视点）或 **"Set Hardware Read/Write Watchpoint"**（1 / 2 / 4 / 8 字节读写监视点），亦支持设置硬件执行断点或切换 0xCC 软件断点；
+  - 转储区自动检测活动断点地址，命中或注册断点的内存单元格以**深红背景 (`QColor(160, 40, 40, 160)`) 与高亮白字**醒目着色，鼠标悬浮即提示 `Breakpoint active at 0x...`，断点状态一目了然。
 - **内存段物理转储 (.bin)**：
   - 切换至 Tab 5 **Memory Regions**（内存区域表）；
   - 右键任意内存段（如堆段、数据段或动态库），选择 **"Dump Region to File (.bin)..."**，秒级导出完整内存快照。
@@ -506,6 +510,16 @@ cmake --build build -j$(nproc)
 - 点击 **"Insert RIP"**：自动插入当前调试指令地址；
 - 点击 **"Insert Timestamp"**：插入当前时间；
 - 支持保存至工程数据库或一键导出为标准 Markdown（`.md`）分析报告。
+
+---
+
+### 5.9 全局符号浏览器与 C++ 符号反混淆 (SymbolViewer - Tab 6 / Alt+E)
+- 按下快捷键 **Alt+E**（或切换至 Tab 6 **Symbols**）：
+  - 自动列出目标二进制及所有加载的共享库中的所有导出、局部及动态符号；
+  - **原生 Itanium ABI C++ 反混淆**：所有修饰符号（如 `_Z13calculate_fibi`、`_ZNSt7__cxx11...`）全自动反混淆为清爽易读的函数原型（如 `calculate_fib(int)`）；
+  - **悬浮 Tooltip 溯源**：鼠标悬停于符号名称单元格，即弹出原始 Mangled 字符串与符号地址，逆向比对零困扰；
+  - **双向模糊过滤**：在顶部搜索框输入 Mangled 原名或 Demangled 函数名均可即时高亮匹配；
+  - **双击瞬达**：双击任意函数符号，反汇编视图立即对齐至该函数入口点。
 
 ---
 

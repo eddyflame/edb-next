@@ -214,6 +214,10 @@ Build outputs in `build/`:
   - Context menu "Follow in Dump" automatically routes data to the active tab.
 - **In-Place Hex Editing (`Ctrl+E`)**:
   - Modify bytes directly; right-click to fill with zeros or NOPs.
+- **Direct Hardware Watchpoints & Cell Highlights**:
+  - Right-click any byte cell in the Hex Dump and open the **"Breakpoint"** submenu;
+  - Instantly deploy **Set Hardware Write Watchpoint** (1, 2, 4, or 8 bytes) or **Set Hardware Read/Write Watchpoint** (1, 2, 4, or 8 bytes), as well as Hardware Execute breakpoints or software `0xCC` breakpoints;
+  - Active breakpoint cells are highlighted with deep red backgrounds (`QColor(160, 40, 40, 160)`) and bright white text, with hovering tooltips displaying `Breakpoint active at 0x...`.
 - **Raw Binary Export**:
   - In Tab 5 (Memory Regions), right-click any page to export as `.bin`.
 
@@ -267,6 +271,7 @@ Build outputs in `build/`:
 - **Opcode Searcher (Tab 19)**: Scans memory for preset sequences (`JMP reg`, `Syscall`) or custom regex.
 - **Binary Info (Tab 17)**: ELF headers, segments, sections, and `DT_NEEDED` dependencies.
 - **Process Properties (Tab 8)**: `/proc/<pid>/fd/` classification into Sockets, Pipes, and PTYs.
+- **Symbol Viewer with C++ Demangling (Tab 6 / Alt+E)**: Full global symbol browser automatically resolving GCC/Clang mangled identifiers into clean C++ signatures via `<cxxabi.h>`, with raw symbol tooltips, bidirectional name filtering, and double-click disassembly jump.
 - **Notes (Tab 15)**: Integrated scratchpad supporting quick RIP and timestamp injection.
 
 ---
