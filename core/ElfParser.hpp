@@ -86,6 +86,10 @@ public:
     [[nodiscard]] Address entryPoint() const noexcept { return headerInfo_.entryPoint; }
     [[nodiscard]] bool hasDebugInfo() const noexcept;
 
+    bool addSharedLibrary(const std::string& filepath, Address base_addr);
+    [[nodiscard]] bool isModuleLoaded(const std::string& filepath) const;
+    [[nodiscard]] const std::vector<std::string>& loadedModules() const noexcept { return loadedModules_; }
+
     void clear();
 
 private:
@@ -93,6 +97,7 @@ private:
     std::vector<ElfSectionInfo> sections_;
     std::vector<ElfProgramHeaderInfo> programHeaders_;
     std::vector<std::string> dynamicDependencies_;
+    std::vector<std::string> loadedModules_;
 
     std::vector<SymbolInfo> symbols_;
     std::unordered_map<uint64_t, size_t> addressToSymbolIdx_;

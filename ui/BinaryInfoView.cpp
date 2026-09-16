@@ -98,11 +98,30 @@ void BinaryInfoView::setupUi() {
     depsTable_->setFont(mono);
     subTabs_->addTab(depsTable_, "Dynamic Dependencies");
 
+    // Tab 5: Loaded Shared Libraries (_r_debug Rendezvous)
+    libsTable_ = new QTableWidget(this);
+    libsTable_->setColumnCount(4);
+    libsTable_->setHorizontalHeaderLabels({"Base Address", "Library Name", "Dynamic (l_ld)", "File Path"});
+    libsTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    libsTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    libsTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    libsTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    libsTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    libsTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    libsTable_->verticalHeader()->setVisible(false);
+    libsTable_->setFont(mono);
+    connect(libsTable_, &QTableWidget::cellDoubleClicked, this, &BinaryInfoView::handleLibraryDoubleClicked);
+    subTabs_->addTab(libsTable_, "Loaded Shared Libraries");
+
     layout->addWidget(subTabs_);
 }
 
 void BinaryInfoView::setSession(std::shared_ptr<DebugSession> session) {
     session_ = session;
+    if (session) {
+        connect(session.get(), &DebugSession::libraryLoaded, this, &BinaryInfoView::refresh, Qt::UniqueConnection);
+        connect(session.get(), &DebugSession::libraryUnloaded, this, &BinaryInfoView::refresh, Qt::UniqueConnection);
+    }
     refresh();
 }
 
@@ -118,6 +137,7 @@ void BinaryInfoView::refresh() {
         sectionsTable_->setRowCount(0);
         segmentsTable_->setRowCount(0);
         depsTable_->setRowCount(0);
+        libsTable_->setRowCount(0);
         return;
     }
 
@@ -126,6 +146,7 @@ void BinaryInfoView::refresh() {
     populateSections(parser);
     populateSegments(parser);
     populateDependencies(parser);
+    populateLibraries(*session);
 }
 
 void BinaryInfoView::populateHeaderInfo(const ElfParser& parser, const std::string& path) {
@@ -243,6 +264,43 @@ void BinaryInfoView::handleSegmentDoubleClicked(int row, int col) {
             bool is_x = (seg.flags & 0x1) != 0;
             Q_EMIT jumpToAddressRequested(seg.vaddr, is_x);
         }
+    }
+}
+
+void BinaryInfoView::populateLibraries(const DebugSession& session) {
+    auto libs = session.loadedLibraries();
+    libsTable_->setRowCount(static_cast<int>(libs.size()));
+
+    for (int i = 0; i < static_cast<int>(libs.size()); ++i) {
+        const auto& lib = libs[i];
+
+        auto* item_base = new QTableWidgetItem(QString::fromStdString(lib.baseAddress.toHex()));
+        item_base->setForeground(QColor(100, 180, 240));
+
+        auto* item_name = new QTableWidgetItem(QString::fromStdString(lib.name));
+        item_name->setForeground(QColor(152, 195, 121));
+
+        auto* item_ld = new QTableWidgetItem(QString::fromStdString(lib.dynamicAddress.toHex()));
+        item_ld->setForeground(QColor(180, 180, 180));
+
+        auto* item_path = new QTableWidgetItem(QString::fromStdString(lib.path));
+
+        libsTable_->setItem(i, 0, item_base);
+        libsTable_->setItem(i, 1, item_name);
+        libsTable_->setItem(i, 2, item_ld);
+        libsTable_->setItem(i, 3, item_path);
+    }
+}
+
+void BinaryInfoView::handleLibraryDoubleClicked(int row, int /*col*/) {
+    if (!libsTable_ || row < 0 || row >= libsTable_->rowCount()) return;
+    auto* item = libsTable_->item(row, 0);
+    if (!item) return;
+
+    bool ok = false;
+    uint64_t val = item->text().toULongLong(&ok, 16);
+    if (ok && val != 0) {
+        Q_EMIT jumpToAddressRequested(Address(val), true);
     }
 }
 

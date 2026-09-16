@@ -25,6 +25,7 @@ Q_SIGNALS:
 private Q_SLOTS:
     void handleSectionDoubleClicked(int row, int col);
     void handleSegmentDoubleClicked(int row, int col);
+    void handleLibraryDoubleClicked(int row, int col);
 
 private:
     void setupUi();
@@ -32,6 +33,7 @@ private:
     void populateSections(const ElfParser& parser);
     void populateSegments(const ElfParser& parser);
     void populateDependencies(const ElfParser& parser);
+    void populateLibraries(const DebugSession& session);
 
     std::weak_ptr<DebugSession> session_;
     QTabWidget* subTabs_{nullptr};
@@ -48,6 +50,7 @@ private:
     QTableWidget* sectionsTable_{nullptr};
     QTableWidget* segmentsTable_{nullptr};
     QTableWidget* depsTable_{nullptr};
+    QTableWidget* libsTable_{nullptr};
 };
 
 } // namespace edb_next

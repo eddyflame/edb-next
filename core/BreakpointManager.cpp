@@ -232,13 +232,47 @@ bool BreakpointManager::setBreakpointScript(Address addr, const std::string& cod
     return true;
 }
 
-std::vector<Breakpoint> BreakpointManager::allBreakpoints() const {
+std::vector<Breakpoint> BreakpointManager::allBreakpoints(bool include_internal) const {
     std::vector<Breakpoint> result;
     result.reserve(breakpoints_.size());
     for (const auto& [_, bp] : breakpoints_) {
+        if (!include_internal && bp.isInternal) {
+            continue;
+        }
         result.push_back(bp);
     }
     return result;
+}
+
+bool BreakpointManager::addPendingBreakpoint(const std::string& symbol, const std::string& condition,
+                                             const std::string& scriptCode, const std::string& scriptLang,
+                                             bool isLogOnly, const std::string& logFormat) {
+    if (symbol.empty()) return false;
+    for (const auto& pb : pendingBreakpoints_) {
+        if (pb.symbol == symbol) {
+            return false;
+        }
+    }
+    pendingBreakpoints_.push_back(PendingBreakpoint{
+        .symbol = symbol,
+        .enabled = true,
+        .condition = condition,
+        .scriptCode = scriptCode,
+        .scriptLanguage = scriptLang.empty() ? "python" : scriptLang,
+        .isLogOnly = isLogOnly,
+        .logFormat = logFormat
+    });
+    return true;
+}
+
+bool BreakpointManager::removePendingBreakpoint(const std::string& symbol) {
+    auto it = std::remove_if(pendingBreakpoints_.begin(), pendingBreakpoints_.end(),
+        [&](const PendingBreakpoint& pb) { return pb.symbol == symbol; });
+    if (it != pendingBreakpoints_.end()) {
+        pendingBreakpoints_.erase(it, pendingBreakpoints_.end());
+        return true;
+    }
+    return false;
 }
 
 void BreakpointManager::clear() {
@@ -255,6 +289,7 @@ void BreakpointManager::clear() {
     }
     slotOccupied_.fill(false);
     breakpoints_.clear();
+    pendingBreakpoints_.clear();
     pendingReenableAddr_.reset();
 }
 

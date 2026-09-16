@@ -48,6 +48,7 @@ include_directories(
 set(CORE_SOURCES
     core/BreakpointManager.cpp
     core/PageGuardManager.cpp
+    core/RendezvousManager.cpp
     core/LinuxDebugEngine.cpp
     core/EventLoopThread.cpp
     core/ElfParser.cpp

@@ -118,6 +118,7 @@ void ElfParser::clear() {
     sections_.clear();
     programHeaders_.clear();
     dynamicDependencies_.clear();
+    loadedModules_.clear();
     headerInfo_ = {};
     baseAddress_ = Address(0);
 }
@@ -125,6 +126,7 @@ void ElfParser::clear() {
 bool ElfParser::loadBinary(const std::string& filepath, Address base_addr) {
     clear();
     baseAddress_ = base_addr;
+    loadedModules_.push_back(filepath);
 
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
@@ -356,6 +358,138 @@ std::optional<Address> ElfParser::findSymbolAddress(const std::string& name) con
         return it->second;
     }
     return std::nullopt;
+}
+
+bool ElfParser::isModuleLoaded(const std::string& filepath) const {
+    return std::find(loadedModules_.begin(), loadedModules_.end(), filepath) != loadedModules_.end();
+}
+
+bool ElfParser::addSharedLibrary(const std::string& filepath, Address base_addr) {
+    if (filepath.empty() || isModuleLoaded(filepath)) {
+        return false;
+    }
+
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    Elf64_Ehdr ehdr;
+    file.read(reinterpret_cast<char*>(&ehdr), sizeof(ehdr));
+    if (!file || ehdr.e_ident[EI_MAG0] != ELFMAG0 ||
+        ehdr.e_ident[EI_MAG1] != ELFMAG1 ||
+        ehdr.e_ident[EI_MAG2] != ELFMAG2 ||
+        ehdr.e_ident[EI_MAG3] != ELFMAG3) {
+        return false;
+    }
+
+    if (ehdr.e_ident[EI_CLASS] != ELFCLASS64) {
+        return false;
+    }
+
+    // Read Section Headers
+    if (ehdr.e_shnum == 0 || ehdr.e_shoff == 0) return false;
+    std::vector<Elf64_Shdr> shdrs(ehdr.e_shnum);
+    file.seekg(ehdr.e_shoff);
+    file.read(reinterpret_cast<char*>(shdrs.data()), ehdr.e_shnum * sizeof(Elf64_Shdr));
+    if (!file) return false;
+
+    // Read Section Header String Table (.shstrtab)
+    std::vector<char> shstrtab;
+    if (ehdr.e_shstrndx < shdrs.size()) {
+        shstrtab.resize(shdrs[ehdr.e_shstrndx].sh_size);
+        file.seekg(shdrs[ehdr.e_shstrndx].sh_offset);
+        file.read(shstrtab.data(), shstrtab.size());
+    }
+
+    // Populate Section Infos for this library
+    for (const auto& sh : shdrs) {
+        std::string sname;
+        if (sh.sh_name < shstrtab.size()) {
+            sname = &shstrtab[sh.sh_name];
+        }
+
+        uint64_t saddr = sh.sh_addr;
+        if (ehdr.e_type == ET_DYN && base_addr.value() > 0 && saddr > 0) {
+            saddr += base_addr.value();
+        }
+
+        sections_.push_back(ElfSectionInfo{
+            .name = sname,
+            .typeString = sectionTypeToString(sh.sh_type),
+            .type = sh.sh_type,
+            .flags = sh.sh_flags,
+            .address = Address(saddr),
+            .offset = sh.sh_offset,
+            .size = sh.sh_size,
+            .align = sh.sh_addralign
+        });
+    }
+
+    // Helper lambda to load symbols
+    auto parse_sym_table = [&](const Elf64_Shdr& sym_shdr, const Elf64_Shdr& str_shdr) {
+        size_t count = sym_shdr.sh_size / sizeof(Elf64_Sym);
+        std::vector<Elf64_Sym> syms(count);
+        file.seekg(sym_shdr.sh_offset);
+        file.read(reinterpret_cast<char*>(syms.data()), sym_shdr.sh_size);
+
+        std::vector<char> strtab(str_shdr.sh_size);
+        file.seekg(str_shdr.sh_offset);
+        file.read(strtab.data(), str_shdr.sh_size);
+
+        for (const auto& sym : syms) {
+            if (sym.st_name == 0 || sym.st_value == 0) continue;
+            if (sym.st_name >= strtab.size()) continue;
+
+            const char* name_ptr = &strtab[sym.st_name];
+            std::string sym_name(name_ptr);
+            if (sym_name.empty()) continue;
+
+            uint64_t actual_val = sym.st_value;
+            if (ehdr.e_type == ET_DYN && base_addr.value() > 0) {
+                actual_val += base_addr.value();
+            }
+
+            std::string demangled = demangle(sym_name);
+            SymbolInfo info{
+                .name = sym_name,
+                .demangledName = demangled,
+                .address = Address(actual_val),
+                .size = sym.st_size,
+                .type = static_cast<uint8_t>(ELF64_ST_TYPE(sym.st_info)),
+                .binding = static_cast<uint8_t>(ELF64_ST_BIND(sym.st_info))
+            };
+
+            symbols_.push_back(info);
+            nameToAddress_[sym_name] = Address(actual_val);
+            if (demangled != sym_name) {
+                nameToAddress_[demangled] = Address(actual_val);
+            }
+        }
+    };
+
+    // Find .symtab and .dynsym with matching .strtab and .dynstr
+    for (size_t i = 0; i < shdrs.size(); ++i) {
+        if (shdrs[i].sh_type == SHT_SYMTAB || shdrs[i].sh_type == SHT_DYNSYM) {
+            uint32_t str_link = shdrs[i].sh_link;
+            if (str_link < shdrs.size() && shdrs[str_link].sh_type == SHT_STRTAB) {
+                parse_sym_table(shdrs[i], shdrs[str_link]);
+            }
+        }
+    }
+
+    // Re-sort symbols by address
+    std::sort(symbols_.begin(), symbols_.end(), [](const SymbolInfo& a, const SymbolInfo& b) {
+        return a.address < b.address;
+    });
+
+    addressToSymbolIdx_.clear();
+    for (size_t i = 0; i < symbols_.size(); ++i) {
+        addressToSymbolIdx_[symbols_[i].address.value()] = i;
+    }
+
+    loadedModules_.push_back(filepath);
+    return true;
 }
 
 bool ElfParser::hasDebugInfo() const noexcept {

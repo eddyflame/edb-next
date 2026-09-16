@@ -16,6 +16,7 @@ public:
     ~DwarfParser();
 
     bool load(const std::string& filepath, Address base_addr = Address(0));
+    bool addModule(const std::string& filepath, Address base_addr);
     void clear();
 
     [[nodiscard]] bool hasDebugInfo() const noexcept { return hasDebugInfo_; }

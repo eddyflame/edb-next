@@ -184,6 +184,161 @@ bool DwarfParser::load(const std::string& filepath, Address base_addr) {
     return true;
 }
 
+bool DwarfParser::addModule(const std::string& filepath, Address base_addr) {
+    if (filepath.empty()) return false;
+
+    elf_version(EV_CURRENT);
+    int fd = open(filepath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return false;
+    }
+
+    Dwarf* dbg = dwarf_begin(fd, DWARF_C_READ);
+    if (!dbg) {
+        close(fd);
+        return false;
+    }
+
+    uint64_t reloc_base = 0;
+    Elf* elf = dwarf_getelf(dbg);
+    if (elf) {
+        Elf64_Ehdr* ehdr = elf64_getehdr(elf);
+        if (ehdr && ehdr->e_type == ET_DYN && base_addr.value() > 0) {
+            reloc_base = base_addr.value();
+        }
+    }
+
+    std::set<std::string> uniqueFiles(allSourceFiles_.begin(), allSourceFiles_.end());
+    Dwarf_Off cu_off = 0, next_off = 0;
+    size_t cu_header_size = 0;
+    bool foundAny = false;
+
+    while (dwarf_nextcu(dbg, cu_off, &next_off, &cu_header_size, nullptr, nullptr, nullptr) == 0) {
+        Dwarf_Die cu_die;
+        if (!dwarf_offdie(dbg, cu_off + cu_header_size, &cu_die)) {
+            cu_off = next_off;
+            continue;
+        }
+
+        CompilationUnitInfo cuInfo;
+        const char* cu_name = dwarf_diename(&cu_die);
+        if (cu_name) cuInfo.name = cu_name;
+
+        Dwarf_Attribute attr;
+        if (dwarf_attr(&cu_die, DW_AT_comp_dir, &attr)) {
+            const char* dir = dwarf_formstring(&attr);
+            if (dir) cuInfo.compDir = dir;
+        }
+        if (dwarf_attr(&cu_die, DW_AT_producer, &attr)) {
+            const char* prod = dwarf_formstring(&attr);
+            if (prod) cuInfo.producer = prod;
+        }
+
+        Dwarf_Addr low_pc = 0, high_pc = 0;
+        if (dwarf_lowpc(&cu_die, &low_pc) == 0) {
+            cuInfo.lowPc = Address(low_pc + reloc_base);
+        }
+        if (dwarf_attr(&cu_die, DW_AT_high_pc, &attr)) {
+            int form = dwarf_whatform(&attr);
+            if (dwarf_highpc(&cu_die, &high_pc) == 0) {
+                if (form == DW_FORM_addr) {
+                    cuInfo.highPc = Address(high_pc + reloc_base);
+                } else {
+                    cuInfo.highPc = Address(low_pc + high_pc + reloc_base);
+                }
+            }
+        }
+
+        Dwarf_Lines* lines = nullptr;
+        size_t nlines = 0;
+        if (dwarf_getsrclines(&cu_die, &lines, &nlines) == 0 && lines != nullptr) {
+            for (size_t i = 0; i < nlines; ++i) {
+                Dwarf_Line* line = dwarf_onesrcline(lines, i);
+                if (!line) continue;
+
+                Dwarf_Addr addr = 0;
+                dwarf_lineaddr(line, &addr);
+                int lineno = 0;
+                dwarf_lineno(line, &lineno);
+                int col = 0;
+                dwarf_linecol(line, &col);
+                const char* src = dwarf_linesrc(line, nullptr, nullptr);
+                bool is_stmt = false;
+                dwarf_linebeginstatement(line, &is_stmt);
+                bool is_prologue_end = false;
+                dwarf_lineprologueend(line, &is_prologue_end);
+                bool is_epilogue_begin = false;
+                dwarf_lineepiloguebegin(line, &is_epilogue_begin);
+
+                if (src && lineno > 0) {
+                    std::string src_path(src);
+                    std::string filename = src_path;
+                    auto pos = src_path.find_last_of('/');
+                    if (pos != std::string::npos) {
+                        filename = src_path.substr(pos + 1);
+                    }
+
+                    Address actual_addr(addr + reloc_base);
+
+                    SourceLocation loc{
+                        .filePath = src_path,
+                        .fileName = filename,
+                        .directory = (pos != std::string::npos) ? src_path.substr(0, pos) : "",
+                        .line = lineno,
+                        .column = col,
+                        .address = actual_addr,
+                        .isStmt = is_stmt,
+                        .isPrologueEnd = is_prologue_end,
+                        .isEpilogueBegin = is_epilogue_begin
+                    };
+
+                    lineEntries_.push_back(loc);
+                    uniqueFiles.insert(src_path);
+                    cuInfo.files.push_back(src_path);
+
+                    auto& lineMapFull = fileLineToAddress_[src_path];
+                    if (lineMapFull.find(lineno) == lineMapFull.end() || is_stmt) {
+                        lineMapFull[lineno] = actual_addr;
+                    }
+
+                    auto& lineMapBase = fileLineToAddress_[filename];
+                    if (lineMapBase.find(lineno) == lineMapBase.end() || is_stmt) {
+                        lineMapBase[lineno] = actual_addr;
+                    }
+                    foundAny = true;
+                }
+            }
+        }
+
+        cuList_.push_back(std::move(cuInfo));
+        cu_off = next_off;
+    }
+
+    dwarf_end(dbg);
+    close(fd);
+
+    if (foundAny) {
+        hasDebugInfo_ = true;
+        std::sort(lineEntries_.begin(), lineEntries_.end(), [](const SourceLocation& a, const SourceLocation& b) {
+            if (a.address != b.address) return a.address < b.address;
+            if (a.isStmt != b.isStmt) return a.isStmt > b.isStmt;
+            return a.line < b.line;
+        });
+
+        addressToIdx_.clear();
+        for (size_t i = 0; i < lineEntries_.size(); ++i) {
+            uint64_t val = lineEntries_[i].address.value();
+            if (addressToIdx_.find(val) == addressToIdx_.end() || lineEntries_[i].isStmt) {
+                addressToIdx_[val] = i;
+            }
+        }
+
+        allSourceFiles_.assign(uniqueFiles.begin(), uniqueFiles.end());
+    }
+
+    return foundAny;
+}
+
 std::optional<SourceLocation> DwarfParser::findSourceLocation(Address addr) const {
     if (lineEntries_.empty()) return std::nullopt;
 
