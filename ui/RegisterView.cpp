@@ -190,10 +190,11 @@ void RegisterView::updateGprDisplay() {
 
         // 1. Symbol matching
         if (auto symOpt = session->symbols().findNearestSymbol(Address(val))) {
+            const std::string& sname = symOpt->first.displayName();
             if (symOpt->second == 0) {
-                comment = QString("<%1>").arg(QString::fromStdString(symOpt->first.name));
+                comment = QString("<%1>").arg(QString::fromStdString(sname));
             } else if (symOpt->second < 0x2000) {
-                comment = QString("<%1+0x%2>").arg(QString::fromStdString(symOpt->first.name)).arg(symOpt->second, 0, 16);
+                comment = QString("<%1+0x%2>").arg(QString::fromStdString(sname)).arg(symOpt->second, 0, 16);
             }
         }
 
@@ -237,7 +238,7 @@ void RegisterView::updateGprDisplay() {
                         ss << "-> 0x" << std::hex << std::setw(16) << std::setfill('0') << deref_val;
                         if (auto dSym = session->symbols().findNearestSymbol(Address(deref_val))) {
                             if (dSym->second < 0x2000) {
-                                ss << " <" << dSym->first.name;
+                                ss << " <" << dSym->first.displayName();
                                 if (dSym->second > 0) ss << "+0x" << std::hex << dSym->second;
                                 ss << ">";
                             }

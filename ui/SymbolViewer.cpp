@@ -120,14 +120,17 @@ void SymbolViewer::updateTableDisplay() {
     QFont monoFont = table_->font();
 
     for (const auto& sym : cachedSymbols_) {
-        QString name = QString::fromStdString(sym.name);
-        if (name.isEmpty()) continue;
+        QString rawName = QString::fromStdString(sym.name);
+        QString dispName = QString::fromStdString(sym.displayName());
+        if (dispName.isEmpty()) continue;
 
         std::ostringstream addrOss;
         addrOss << "0x" << std::hex << std::setw(16) << std::setfill('0') << sym.address.value();
         QString addrStr = QString::fromStdString(addrOss.str());
 
-        if (!filter.isEmpty() && !name.contains(filter, Qt::CaseInsensitive) && !addrStr.contains(filter, Qt::CaseInsensitive)) {
+        if (!filter.isEmpty() && !dispName.contains(filter, Qt::CaseInsensitive) &&
+            !rawName.contains(filter, Qt::CaseInsensitive) &&
+            !addrStr.contains(filter, Qt::CaseInsensitive)) {
             continue;
         }
 
@@ -137,8 +140,11 @@ void SymbolViewer::updateTableDisplay() {
         auto* itemAddr = new QTableWidgetItem(addrStr);
         itemAddr->setFont(monoFont);
 
-        auto* itemName = new QTableWidgetItem(name);
+        auto* itemName = new QTableWidgetItem(dispName);
         itemName->setFont(monoFont);
+        if (!sym.demangledName.empty() && sym.demangledName != sym.name) {
+            itemName->setToolTip(QString("Mangled: %1").arg(rawName));
+        }
 
         if (sym.type == 2) { // STT_FUNC
             itemName->setForeground(QColor(100, 200, 255));
