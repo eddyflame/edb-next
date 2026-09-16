@@ -35,6 +35,7 @@
    - 4.8 代码执行覆盖率 (Hit Trace) 与时间旅行单步回溯 (Run Trace)
    - 4.9 CPU 机器状态全景快照导出 (StateDumper)
    - 4.10 动态库全自动拦截、热重载与延迟待决断点 (Shared Libraries & Pending Breakpoints)
+   - 4.11 多进程 Follow-Fork 模式与子进程跟踪实战 (Follow-Fork & Inferiors)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -510,6 +511,56 @@ cmake --build build -j$(nproc)
 
 ---
 
+### 4.11 多进程 Follow-Fork 模式与子进程跟踪实战 (Follow-Fork & Inferiors)
+
+在逆向多进程服务器（如 Nginx、多工作进程服务）、自动化沙箱解包器或 CTF Pwn 赛题中，目标程序频繁调用 `fork()` 或 `vfork()` 衍生出子进程。`edb-next` 提供了全套强大的 Follow-Fork 控制与多 Inferior 管理能力：
+
+#### 1. 配置 Follow-Fork 模式 (`follow-fork [parent|child|both]`)
+在底栏 CommandBar 控制台中，逆向人员可以随时查询与动态切换跟踪策略：
+```text
+show follow-fork-mode          # 查看当前遵循模式 (Parent / Child / Both)
+follow-fork parent             # 默认模式：继续跟踪父进程，子进程脱钩自由运行
+follow-fork child              # 切换模式：脱离父进程，将会话焦点转移至新派生的子进程
+follow-fork both               # 双调试模式：保留父进程会话，同时自动为子进程创建独立会话
+set follow-fork-mode <mode>    # GDB 风格别名命令，效果相同
+```
+
+#### 2. 分支事件捕获断下 (`catch fork` / `catch vfork`)
+若希望在目标执行 `fork()` 的物理瞬间精确暂停，审查当时的寄存器与调用栈参数：
+- 在底栏命令行执行：
+  ```text
+  catch fork         # 开启 fork 事件拦截
+  catch vfork        # 开启 vfork 事件拦截
+  ```
+- 目标调用 `fork()` 时，进程将在 fork 系统调用返回瞬间被内核精确挂起，并在底栏状态行与系统日志中呈现：
+  ```text
+  [Fork Event] Process 12345 forked child 12347 (mode: Parent)
+  ```
+- 此时用户可从容查看现场、分析子进程 PID、设置断点，随后按 **F9**（`run`）继续。
+
+#### 3. 多目标进程列表与工作区穿梭 (`inferiors` / `inferior <id|pid>`)
+在 `follow-fork both` 模式下，每次目标派生子进程，`edb-next` 的会话管理器将自动在主工作区派生出一个新的工作区标签页（例如 `Child [PID: 12347]`），其拥有独立的寄存器、反汇编、内存转储与调用栈视图。
+- **查询所有活动会话与进程**：
+  ```text
+  inferiors          # 打印所有会话 ID、PID、运行状态与目标程序
+  processes          # 别名，输出相同
+  ```
+  输出示例：
+  ```text
+  === Active Debug Sessions (Inferiors) ===
+    ID: 1 | PID: 12345 | Name: nginx_master | State: Paused | Path: /usr/sbin/nginx
+  * ID: 2 | PID: 12347 | Name: Child [PID: 12347] | State: Running | Path: /usr/sbin/nginx
+  ```
+- **切换活动会话焦点**：
+  ```text
+  inferior 1         # 通过会话 ID 切换至父进程
+  inferior 12347     # 或直接通过 PID 切换至子进程
+  process 12347      # 别名，效果相同
+  ```
+  主界面将平滑将当前工作区标签页与底栏命令行的上下文对齐至指定进程，多进程协同调试从未如此清晰从容！
+
+---
+
 ## 5. 高级逆向分析工具箱实战 (Advanced Reverse Engineering)
 
 在主工作台左下角，内置了 18 个按需切换的高级分析抽屉：
@@ -703,6 +754,13 @@ cmake --build build -j$(nproc)
 | `modules` / `libs` / `solist` | `libs` | 打印目标进程当前所有已加载的共享库及基址与路径 |
 | `catch load` / `catch dlopen` | `catch load` | 切换是否在目标加载/卸载共享库时中断暂停执行 |
 | `bpp <symbol>` | `bpp` | 设定延迟待决断点 (Pending Breakpoint)，在目标动态加载该符号时自动绑定 |
+| `follow-fork [mode]` | `follow-fork` | 查询或设置 fork 遵循模式（`parent` / `child` / `both`）。例：`follow-fork both` |
+| `set follow-fork-mode <mode>` | `set follow-fork-mode` | GDB 风格设置 fork 遵循模式 |
+| `show follow-fork-mode` | `show follow-fork-mode`| 打印当前生效的 fork 遵循模式 |
+| `catch fork` / `catch vfork` | `catch fork` | 切换是否在目标派生子进程时刻中断暂停被调试进程 |
+| `inferiors` / `processes` | `inferiors` | 打印当前受控的所有目标调试会话 (Inferiors) 状态清单 |
+| `inferior <id\|pid>` | `inferior` | 切换当前活动调试会话与工作区焦点。例：`inferior 2`、`inferior 12347` |
+| `process <id\|pid>` | `process` | 切换活动会话（`inferior` 别名） |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
 | `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |

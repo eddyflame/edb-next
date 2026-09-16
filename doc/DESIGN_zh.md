@@ -438,6 +438,34 @@
 
 ---
 
+### 3.18 多进程 Follow-Fork 与子进程跟踪系统 (Follow-Fork Mode & Multi-Process Inferior Debugging)
+
+在现代 Linux 系统编程、网络后端服务（如 Nginx、PostgreSQL等多进程架构）、分布式通信应用以及安全竞赛（CTF Pwn 多进程沙箱与子进程提权漏洞）中，目标进程通过 `fork()` 或 `vfork()` 系统调用派生子进程是极其常见的操作模式。传统 Linux 调试器在此类场景下极易丢失子进程上下文，或导致多进程调试时的控制台与断点状态混乱。`edb-next` 深度整合 Linux 内核 `ptrace` 选项与多会话树架构，构建了灵活强大的 Follow-Fork 多进程管理机制：
+
+1. **Linux 内核 `PTRACE_O_TRACEFORK` / `TRACEVFORK` 与 Tracer 亲和性保障**：
+   - 在 `LinuxDebugEngine::attach` 与 `launch` 中默认配置 `PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC` 内核调试选项；
+   - 目标进程触发 `fork()` / `vfork()` 时，内核会拦截该系统调用并自动将新子进程挂载到调试器下（停止于 `SIGTRAP | (PTRACE_EVENT_FORK << 8)`），同时通过内部事件消息记录子进程 PID；
+   - **Linux ptrace 线程特定亲和性关键设计**：
+     - Linux 内核中 `ptrace` 跟踪依附关系严格绑定于最初发起附加的 Tracer 线程。后台工作线程 `EventLoopThread` 仅负责执行非阻塞 `waitpid()` 捕获 `PTRACE_EVENT_FORK` 状态，并打包为 `StopReason::ProcessForked` 事件派发给主线程；
+     - 主线程（Tracer 线程）通过 `ptrace(PTRACE_GETEVENTMSG, pid, &child_pid)` 安全提取子进程 PID，杜绝了多线程跨线程操作导致的内核 `ESRCH (No such process)` 崩溃。
+
+2. **三态 Follow-Fork 模式策略与分支路由**：
+   - 系统支持三种遵循模式（`FollowForkMode`）：
+     - **`Parent`（默认模式）**：调试焦点保持在父进程。`DebugSession` 调用 `detachProcess(child_pid)` 安全脱钩子进程，使其在独立进程空间全速自由运行。若未开启 `stopOnForkEvents`，父进程无需用户干预全速继续；
+     - **`Child` 模式**：调试焦点切换至子进程。`DebugSession` 脱钩父进程，并通过 `adoptChild(child_pid)` 切换当前会话的底层 PID、线程池与寄存器上下文，实现聚焦子进程逆向；
+     - **`Both` 模式**：同时调试父进程与子进程！父进程保持在当前 `DebugSession` 中继续调试，同时向全局会话管理器发射 `childProcessForked` 信号，由 `SessionManager::createChildSession` 自动派生独立的子进程会话；
+   - **事件拦截开关 (`catch fork` / `catch vfork`)**：
+     - 用户可通过 `catch fork` 开启分支捕获。开启后，无论何种 Follow-Fork 模式，父进程均会在 fork 发生时刻断下，并向界面报告 `[Fork Event] Process <parent_pid> forked child <child_pid>`，供逆向人员审查第一现场。
+
+3. **层次化多进程会话树与无缝多 Tab 切换**：
+   - 在 `Both` 模式下，`SessionManager` 为新子进程生成带 `Child [PID: <pid>]` 标识的独立 `DebugSession`，完整继承父进程的 ELF 符号表、DWARF 行号树以及断点配置；
+   - `MainWindow` 主工作区采用动态标签页技术，自动为子进程生成独立工作区 Tab。用户可随时在父子进程标签页间穿梭，互不干扰；
+   - **CLI 快速穿梭与会话控制**：
+     - `inferiors` / `processes`：打印当前所有托管的目标进程列表及其 PID、运行状态与目标程序路径；
+     - `inferior <id|pid>` / `process <id|pid>`：通过命令行直接切换当前活动的调试会话与工作区焦点。
+
+---
+
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
 作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。本章梳理出当前版本尚未实现或待进阶完善的功能，作为后续版本的官方演进路线图 (Roadmap)。
@@ -461,11 +489,11 @@
   1. **结构体与类型布局解析**：允许逆向人员导入 C 语言头文件或手动定义结构体字段（如 `struct my_task { int id; char name[32]; void* ptr; };`）；
   2. **Memory Hex View 结构体视图叠加**：将内存转储区域按结构体字段进行着色对齐与字段名标注展示。
 
-### 4.4 多进程 Follow-Fork 与 IPC 跟踪
-- **当前状态**：当前版本专注于单进程多线程模型，目标调用 `fork()` 或 `vfork()` 时，默认仅跟踪父进程。
-- **待完善方案**：
-  1. **`PTRACE_O_TRACEFORK` / `TRACEVFORK` 拦截**：在 `LinuxDebugEngine` 中启用内核 fork 事件监听；
-  2. **多进程树状会话管理**：当派生子进程时，`SessionManager` 自动生成新的 `DebugSession` 实例，主窗口通过多标签页（Tab）无缝管理父子进程。
+### 4.4 多进程 Follow-Fork 与子进程跟踪
+- **当前状态**：**已在 3.18 节全景实现 (v1.0)**。基于内核 `PTRACE_O_TRACEFORK`/`TRACEVFORK` 与 Tracer 亲和性设计，完整支持 `Parent` / `Child` / `Both` 三态跟踪、`catch fork` 捕获、`SessionManager` 独立子会话树与 `inferiors` / `inferior` 命令行多进程穿梭。
+- **后续进阶方向**：
+  1. **子进程脱离行为策略扩展 (Detach on Exit)**：精细化控制非核心分支进程的退出处置；
+  2. **跨进程 IPC 通信跟踪**：监控多进程之间的 Unix Socket、管道 (Pipe) 与共享内存通信数据流。
 
 ### 4.5 硬件监视点 DR6 状态精准溯源与页异常断点 (DR6 Attribution & Page-Guard Watchpoints)
 - **当前状态**：转储区细粒度 1/2/4/8 字节硬件读写监视点与断点单元格高亮已在 3.14 节完整实现；目前命中后主界面主要通过信号类型报告。
@@ -510,7 +538,7 @@
 | **断点绑定 Python/Lua 脚本打桩** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.15 节全景实现**。支持 Python 3/Lua 5.4 脚本打桩与 `return false` 无感动态 Hook。 |
 | **内存页保护断点 (Page-Guard)** | ★★★★★ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.16 节全景实现**。打破 DR0~DR3 数量限制，实现零 0xCC 代码段自校验绕过与微秒级单步放行。 |
 | **4.7 动态库加载自动拦截 (`_r_debug`)** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.17 节全景实现**。解决动态 `dlopen()` 模块符号丢失问题，实现内部陷阱拦截、符号/DWARF 热重载与 Pending 待决断点。 |
-| **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **P2 (高阶进阶)** | 针对 Linux 后端守护进程与 CTF Pwn 题的强力扩展，基于 `PTRACE_O_TRACEFORK` 拦截。 |
+| **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.18 节全景实现**。支持 Parent/Child/Both 三态跟踪、PTRACE_EVENT_FORK 拦截、子会话树派生与 inferiors 多会话穿梭。 |
 | **4.9 多线程独立冻结与解冻 (Freeze/Thaw)** | ★★★☆☆ | 中等 (Medium) | **P2 (高阶进阶)** | 解决高并发竞态调试干扰，专为复杂后台多线程应用设计。 |
 | **4.10 动态内存特征差分扫描器** | ★★★☆☆ | 较高 (High) | **P2 (高阶进阶)** | 专为游戏外挂逆向、密钥动态搜索打造，多轮差分内存搜索算法。 |
 | **4.3 复合数据类型与结构体解析 (Type Viewer)** | ★★★☆☆ | 中等 (Medium) | **P2 (高阶进阶)** | 允许导入 C 头文件并结构化排布 Hex 内存，提升逆向结构体可读性。 |

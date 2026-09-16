@@ -239,6 +239,21 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - `BinaryInfoView` (Tab 17) includes a dedicated 5th tab: **"Loaded Shared Libraries (`_r_debug`)"**, displaying load bases, sonames, filepaths, and dynamic headers with double-click navigation to Disassembly or Hex Dump.
   - Bottom CommandBar CLI adds `modules` / `libs` / `solist` and `catch load` / `catch dlopen`.
 
+### 3.18 Follow-Fork Mode & Multi-Process Inferior Debugging
+- **Linux Kernel `PTRACE_O_TRACEFORK` / `TRACEVFORK` & Tracer Thread Affinity**:
+  - Automatically activates `PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC` options during target launch and attachment.
+  - When the target executes `fork()` or `vfork()`, the kernel halts the parent with `SIGTRAP | (PTRACE_EVENT_FORK << 8)`.
+  - **ptrace Tracer Affinity**: In Linux, ptrace tracee relationships are strictly bound to the tracer thread that initiated them. Non-blocking background worker `EventLoopThread` polls `waitpid()` and dispatches raw `StopReason::ProcessForked` to the main GUI thread; the main thread invokes `ptrace(PTRACE_GETEVENTMSG)` to extract the child PID, completely avoiding cross-thread kernel `ESRCH` errors.
+- **Tri-State Follow-Fork Policy & Routing**:
+  - **`Parent` (Default)**: Keeps focus on the parent process. The engine calls `detachProcess(child_pid)` to allow the child to execute freely. If `stopOnForkEvents` is off, parent execution resumes transparently.
+  - **`Child`**: Shifts active debugging focus to the child. The session detaches the parent and invokes `adoptChild(child_pid)` to rebind the current session to the child PID, thread list, and register context.
+  - **`Both`**: Debugs both parent and child simultaneously. The parent remains active in the current session while emitting `childProcessForked`, triggering `SessionManager::createChildSession` to spawn a dedicated child `DebugSession`.
+  - **Event Catching (`catch fork` / `catch vfork`)**: When enabled, halts execution at the fork point regardless of mode with a status report `[Fork Event] Process <parent_pid> forked child <child_pid>`.
+- **Hierarchical Multi-Process Session Tree & UI Tabs**:
+  - In `Both` mode, child sessions inherit the parent's ELF symbol table, DWARF compilation units, and breakpoints under a clean `Child [PID: <pid>]` title.
+  - `MainWindow` dynamically generates workspace tabs for each inferior.
+  - CLI control via `inferiors` / `processes` (list all active sessions and state) and `inferior <id|pid>` / `process <id|pid>` (switch active session tab).
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -250,7 +265,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 3. **Compound Data Type Reconstruction & Struct Layout Visualization**:
    - Import C headers or user-defined struct specifications; overlay fields and alignments onto the memory hex dump.
 4. **Multi-Process Follow-Fork**:
-   - Intercept `PTRACE_EVENT_FORK` / `VFORK` / `CLONE` and manage hierarchical child sessions via multi-tab session views.
+   - **Completed in §3.18 (v1.0)**. Full kernel `PTRACE_O_TRACEFORK`/`TRACEVFORK` support, tracer thread affinity architecture, tri-state follow-fork (`Parent`/`Child`/`Both`), `catch fork` triggers, and multi-inferior session tabs (`inferiors` / `inferior <id|pid>`).
 5. **Hardware Watchpoint DR6 Status Attribution & Page-Guard Watchpoints**:
    - Parse debug status register DR6 (`B0`~`B3`) to display precise status bar alerts ("Hardware watchpoint triggered: Address 0x... written"); gracefully fallback to page-guard exceptions when hardware debug registers are exhausted.
 6. **GDB Remote Serial Protocol (RSP) Support**:
@@ -275,7 +290,7 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 | **Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.15**. Python 3 & Lua 5.4 dynamic hooks with `return false` silent bypass. |
 | **Memory Page-Guard Breakpoints** | ★★★★★ | Medium | **Completed (v1.0)** | **Fully implemented in §3.16**. Breaks 4-register limit, zero-0xCC stealth execution, and sub-microsecond step over. |
 | **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.17**. Solves runtime `dlopen()` symbol omission; internal trap, symbol/DWARF hot reload & pending breakpoints. |
-| **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **P2 (Advanced)** | Essential for Linux daemons and multiprocess CTF challenges via `PTRACE_O_TRACEFORK`. |
+| **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.18**. Tri-state follow-fork, ptrace fork event trapping, child session tree & inferior CLI switching. |
 | **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **P2 (Advanced)** | Eliminates race condition interference during multithreaded step-through analysis. |
 | **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
 | **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **P2 (Advanced)** | Format memory views using custom C struct definitions. |
