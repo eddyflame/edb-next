@@ -187,6 +187,19 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 - **Interactive Script Console (`ScriptConsoleView`, `Alt+P`)**: Bottom drawer terminal with language switcher, one-click script file execution (`▶ Run File...`), history navigation, and dark syntax color rendering.
 - **CommandBar Quick Commands & CI Coverage**: Integrated single-line execution (`py <expr>` / `lua <expr>`) with 100% automated regression test suite (`tests/test_scripting.cpp`).
 
+### 3.13 C++ Symbol Demangling System
+- **Itanium ABI Demangler Integration**: Core integration of GNU `<cxxabi.h>` `abi::__cxa_demangle` in `ElfParser::demangle()`, with zero-copy fallback for non-mangled C symbols and zero external dependencies.
+- **Universal Readability Injection**: Extended `SymbolInfo` to hold both `mangledName` and `demangledName` alongside a unified `displayName()` accessor. Bidirectional lookup tree (`nameToAddress_`) supports lookups by either name. Full pipeline integration across CallStack backtraces, disassembly banners, register smart dereferences, and stack memory annotations.
+- **Enhanced Symbol Viewer (`SymbolViewer`, `Alt+E`)**: Presents clean demangled function signatures in table columns, tooltip preservation of raw mangled identifiers, and real-time bidirectional search filtering.
+
+### 3.14 Fine-Grained Hardware Watchpoint UI & Breakpoint Cell Highlighting
+- **Memory Hex View Context Menu**: Complete "Breakpoint" submenu on right-click in `MemoryHexView`:
+  - **Set Hardware Write Watchpoint**: 1, 2, 4, or 8 bytes.
+  - **Set Hardware Read/Write Watchpoint**: 1, 2, 4, or 8 bytes.
+  - **Set Hardware Execute Breakpoint**: 1 byte.
+  - **Toggle / Remove Breakpoint**: Software `0xCC` breakpoint toggle and removal.
+- **Prominent Visual Indication**: Active breakpoint cells render with a deep red background (`QColor(160, 40, 40, 160)`), bright white text, and hovering tooltips displaying `Breakpoint active at 0x...`. Normal byte color syntax highlighting (zero bytes, ASCII characters, non-printable bytes) is preserved on non-breakpoint cells.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -195,12 +208,12 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
    - Abstract `IRegisterContext` and engine factories to support 32-bit x86 (`compat_ptrace`) and AArch64 / ARM64 (`NT_PRSTATUS` / `PTRACE_GETREGSET`).
 2. **Anti-Anti-Debugging & Stealth**:
    - Cloak `TracerPid` in `/proc/<pid>/status`, smooth `rdtsc` execution differences, and introduce page-guard memory breakpoints to bypass integrity checks.
-3. **C++ Demangling & Type Reconstruction**:
-   - Integrate `abi::__cxa_demangle` for human-readable symbols; provide struct layout visualization for memory dumps.
+3. **Compound Data Type Reconstruction & Struct Layout Visualization**:
+   - Import C headers or user-defined struct specifications; overlay fields and alignments onto the memory hex dump.
 4. **Multi-Process Follow-Fork**:
    - Intercept `PTRACE_EVENT_FORK` / `VFORK` / `CLONE` and manage hierarchical child sessions via multi-tab session views.
-5. **Fine-Grained Hardware Watchpoint UI**:
-   - Context-menu based 1/2/4/8-byte read/write watchpoint assignment in Hex Dumps, with DR6 status register hit reporting.
+5. **Hardware Watchpoint DR6 Status Attribution & Page-Guard Watchpoints**:
+   - Parse debug status register DR6 (`B0`~`B3`) to display precise status bar alerts ("Hardware watchpoint triggered: Address 0x... written"); gracefully fallback to page-guard exceptions when hardware debug registers are exhausted.
 6. **GDB Remote Serial Protocol (RSP) Support**:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
 7. **Automated Shared Library Loading Interception (`_r_debug` Rendezvous)**:
@@ -220,14 +233,15 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 
 | Roadmap Capability | Impact | Complexity | Priority | Recommended Target Milestone |
 | :--- | :---: | :---: | :---: | :--- |
-| **4.3 C++ Symbol Demangling** | ★★★★★ | Low | **P0 (Immediate)** | **Execute immediately**. Zero external deps via `<cxxabi.h>`, instantly improves readability across all views. |
-| **4.5 Fine-Grained Hardware Watchpoint UI** | ★★★★☆ | Low | **P0 (Immediate)** | **Execute immediately**. Backend DR0-7 support already complete; expose right-click context menu in Hex Dumps. |
-| **4.2 Advanced Anti-Anti-Debugging (Page-Guard)** | ★★★★★ | Medium | **P1 (Core Moat)** | **Upcoming Priority**. Closes Linux stealth gap, neutralizing CRC checks and `/proc/self/status` `TracerPid`. |
-| **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Upcoming Priority**. Solves runtime `dlopen()` symbol omission; aligns with GDB core debug capabilities. |
-| **4.8 Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Upcoming Priority**. Unlocks embedded Python/Lua engine potential for zero-overhead dynamic instrumentation. |
+| **C++ Symbol Demangling** | ★★★★★ | Low | **Completed (v1.0)** | **Fully implemented in §3.13**. `<cxxabi.h>` demangling active across symbols, stack, registers, and disassembler. |
+| **Fine-Grained Hardware Watchpoint UI** | ★★★★☆ | Low | **Completed (v1.0)** | **Fully implemented in §3.14**. 1/2/4/8-byte read/write watchpoint assignment and cell highlights in Hex Dumps. |
+| **4.2 Advanced Anti-Anti-Debugging (Page-Guard)** | ★★★★★ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Closes Linux stealth gap, neutralizing CRC checks and `/proc/self/status` `TracerPid`. |
+| **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Solves runtime `dlopen()` symbol omission; aligns with GDB core debug capabilities. |
+| **4.8 Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **P1 (Core Moat)** | **Highest Current Priority**. Unlocks embedded Python/Lua engine potential for zero-overhead dynamic instrumentation. |
 | **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **P2 (Advanced)** | Essential for Linux daemons and multiprocess CTF challenges via `PTRACE_O_TRACEFORK`. |
 | **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **P2 (Advanced)** | Eliminates race condition interference during multithreaded step-through analysis. |
 | **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **P2 (Advanced)** | Multi-pass memory convergence tool for key discovery, dynamic offset search, and game analysis. |
+| **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **P2 (Advanced)** | Format memory views using custom C struct definitions. |
 | **4.1 Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
 | **4.6 GDB Remote Serial Protocol (RSP) Client** | ★★★☆☆ | High | **P3 (Long-Term)** | Extends edb-next UI as a universal frontend for QEMU, Android, and embedded targets. |
 
