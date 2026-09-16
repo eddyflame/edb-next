@@ -53,7 +53,8 @@
 - 🎯 **转储区细粒度硬件读写监视点 (Hardware Watchpoints Context Menu)**：在 HexDump 单元格右键一键部署 1/2/4/8 字节硬件写监视点（Write Watchpoint）、硬件读写监视点与硬件执行断点，单元格深红背景醒目高亮指示活动断点。
 - 🛡️ **内存页保护断点与零 0xCC 隐匿执行断点 (Page-Guard / Anti-Anti-Debugging)**：突破 x86_64 硬件寄存器仅 4 处的物理极限，基于 `PROT_NONE` / `PROT_READ` 虚拟页保护提供无限槽位软监视点；对代码段实施零 `0xCC` 注入的纯内存断点，完美绕过加固壳与混淆样本的 CRC32/Hash 代码段自检测反调试；内置内核级假阳性透明放行状态机，微秒级越过同页其他变量访问。
 - 📦 **动态库加载全自动拦截与热重载 (_r_debug Rendezvous & Pending Breakpoints)**：深度接入 Linux glibc `_r_debug` Rendezvous 协议与 `_dl_debug_state` 内部陷阱，全自动捕获运行时 `dlopen()` 与 `dlclose()` 共享库装载事件；动态差分 `link_map`、合并 ELF 符号表并扩展 DWARF 源码映射；提供待决延迟断点（Pending Breakpoints，`bpp <symbol>`），在新模块装载瞬间自动绑定物理断点，支持 `catch load` / `catch dlopen` 模块加载中断与 `BinaryInfoView` 动态库实时面板。
-- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards` 等指令，并向插件全面开放扩展接口。
+- 🌿 **多进程 Follow-Fork 与子进程会话树 (Follow-Fork & Multi-Process Debugging)**：基于 Linux 内核 `PTRACE_O_TRACEFORK`/`TRACEVFORK` 与 Tracer 亲和性机制，支持 `Parent`（保持父进程）、`Child`（切换至子进程）与 `Both`（父子多进程独立会话树同屏协同）三态跟踪策略；支持 `catch fork` 物理断下拦截；底栏集成 `inferiors` 与 `inferior <id|pid>` 指令，无缝管理多进程工作区标签页。
+- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
 ---
@@ -74,6 +75,7 @@
 | **命令行交互** | 无交互 CLI | 标配底栏命令行 | **x64dbg 风格 CommandBar 极客交互栏** |
 | **Linux 堆分析** | 插件支持较旧 | 不适用 (Windows) | **原生 Glibc ptmalloc 分析器 (Tab 9)** |
 | **动态库热加载 / dlopen 拦截** | 需手动刷新符号 | 支持 DLL 事件 | **原生 glibc _r_debug 协议自动捕获 + Pending 待决断点** |
+| **多进程 Follow-Fork / 子进程跟踪** | 仅单进程跟踪 | 支持多进程附加 | **原生 PTRACE_EVENT_FORK 捕获 + Parent/Child/Both 三态会话树 + inferiors 穿梭** |
 | **漏洞利用辅助** | 基础 ROP 插件 | 需第三方插件 | **内置 ROP 工具箱与 Python `p64()` 导出** |
 
 ---

@@ -35,6 +35,7 @@
    - 4.8 Hit Trace (Code Coverage) and Run Trace (Time-Travel Navigation)
    - 4.9 CPU Machine State Snapshot (StateDumper)
    - 4.10 Automated Shared Library Interception & Pending Breakpoints
+   - 4.11 Follow-Fork Mode & Multi-Process Inferiors
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -322,6 +323,55 @@ When a plugin or shared library has not yet been loaded (e.g. `plugin_calc.so`),
 
 ---
 
+### 4.11 Follow-Fork Mode & Multi-Process Inferiors
+
+When analyzing multi-process architectures (such as Nginx master/worker patterns, distributed servers, or CTF Pwn sandbox escape challenges), targets frequently spawn child processes via `fork()` or `vfork()`. `edb-next` provides complete follow-fork control and multi-inferior workspace management:
+
+#### 1. Configuring Follow-Fork Mode (`follow-fork [parent|child|both]`)
+Inspect and toggle follow-fork behavior at runtime in the bottom CommandBar:
+```text
+show follow-fork-mode          # Query active follow-fork mode (Parent / Child / Both)
+follow-fork parent             # Default mode: continue tracking parent, detach child freely
+follow-fork child              # Switch mode: detach parent, refocus session on new child
+follow-fork both               # Dual mode: keep parent session and spawn dedicated child session
+set follow-fork-mode <mode>    # GDB-style alias
+```
+
+#### 2. Catching Fork Events (`catch fork` / `catch vfork`)
+To pause execution precisely when `fork()` returns in the parent:
+```text
+catch fork         # Toggle catch on fork events
+catch vfork        # Toggle catch on vfork events
+```
+When `fork()` is called, the parent halts immediately at the syscall return boundary, reporting:
+```text
+[Fork Event] Process 12345 forked child 12347 (mode: Parent)
+```
+Inspect registers, stack arguments, or set breakpoints in the newly created child before pressing **F9** (`run`) to resume.
+
+#### 3. Listing & Switching Multi-Process Inferiors (`inferiors` / `inferior <id|pid>`)
+In `follow-fork both` mode, `SessionManager` automatically spawns a dedicated child workspace tab (e.g. `Child [PID: 12347]`) with its own registers, disassembly, hex dumps, and call stack.
+- **List all managed inferiors**:
+  ```text
+  inferiors          # Print session ID, PID, state, and target path
+  processes          # Alias for inferiors
+  ```
+  Sample output:
+  ```text
+  === Active Debug Sessions (Inferiors) ===
+    ID: 1 | PID: 12345 | Name: nginx_master | State: Paused | Path: /usr/sbin/nginx
+  * ID: 2 | PID: 12347 | Name: Child [PID: 12347] | State: Running | Path: /usr/sbin/nginx
+  ```
+- **Switch active workspace focus**:
+  ```text
+  inferior 1         # Switch to parent session by ID
+  inferior 12347     # Switch to child session directly by PID
+  process 12347      # Alias for inferior
+  ```
+  The workspace tabs, registers, and bottom CommandBar immediately align to the chosen process!
+
+---
+
 ## 5. Advanced Reverse Engineering Toolset
 
 - **Heap Analyzer (Tab 9)**: Traverses glibc `malloc_chunk` structures, parsing chunk size, flags (`A|M|P`), and allocated/free state.
@@ -384,6 +434,13 @@ flowchart LR
 | `modules` / `libs` / `solist` | Print all currently loaded shared libraries, base addresses, and paths (`libs`) |
 | `catch load` / `catch dlopen` | Toggle execution halt upon shared library load/unload (`catch load`) |
 | `bpp <symbol>` | Set a deferred Pending Breakpoint that binds automatically upon module load |
+| `follow-fork [mode]` | Query or set follow-fork mode (`parent` / `child` / `both`). Ex: `follow-fork both` |
+| `set follow-fork-mode <mode>` | GDB-style alias to set follow-fork mode |
+| `show follow-fork-mode` | Print currently active follow-fork mode |
+| `catch fork` / `catch vfork` | Toggle breakpoint halt upon target process `fork()` |
+| `inferiors` / `processes` | List all active debug sessions and PIDs (`inferiors`) |
+| `inferior <id\|pid>` | Switch active debugging session and workspace tab (`inferior 2`, `inferior 12347`) |
+| `process <id\|pid>` | Switch active session (alias for `inferior`) |
 | `dumpstate` | Format and copy full CPU state snapshot to clipboard |
 | `py <code...>` | Directly evaluate Python 3 statement or expression. Ex: `py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | Directly evaluate Lua 5.4 statement or expression. Ex: `lua print(string.format('0x%x', edb.get_reg('rip')))` |
