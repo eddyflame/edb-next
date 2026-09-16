@@ -70,6 +70,10 @@ bool DebugSession::launch(const std::string& path, const std::vector<std::string
         }
     }
     symbols_.loadBinary(path, base_addr);
+    dwarfParser_.load(path, base_addr);
+    if (slash_pos != std::string::npos) {
+        SourceFileManager::instance().addSearchPath(path.substr(0, slash_pos));
+    }
 
     refreshRegisters();
     setState(SessionState::Paused);
@@ -112,6 +116,11 @@ bool DebugSession::attach(Pid pid) {
             }
         }
         symbols_.loadBinary(exe_path, base_addr);
+        dwarfParser_.load(exe_path, base_addr);
+        auto exe_slash = exe_path.find_last_of('/');
+        if (exe_slash != std::string::npos) {
+            SourceFileManager::instance().addSearchPath(exe_path.substr(0, exe_slash));
+        }
     }
 
     refreshRegisters();
@@ -139,6 +148,7 @@ void DebugSession::terminate() {
     eventLoop_.stopLoop();
     bpMgr_.clear();
     symbols_.clear();
+    dwarfParser_.clear();
 
     setState(SessionState::Terminated);
     setState(SessionState::Stopped);
@@ -149,6 +159,7 @@ void DebugSession::detach() {
     engine_.detach();
     bpMgr_.clear();
     symbols_.clear();
+    dwarfParser_.clear();
     setState(SessionState::Stopped);
 }
 
@@ -355,6 +366,10 @@ void DebugSession::refreshRegisters() {
     engine_.getRegisters(engine_.activeTid(), currentRegs_);
     engine_.getFpRegisters(engine_.activeTid(), currentFpRegs_);
     Q_EMIT registersUpdated();
+
+    if (auto loc = dwarfParser_.findSourceLocation(currentRegs_.rip())) {
+        Q_EMIT sourceLocationChanged(*loc);
+    }
 }
 
 void DebugSession::handleEvent(const DebugEvent& event) {
@@ -554,6 +569,9 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
 
     if (disasm_count > 0) {
         result.reserve(disasm_count);
+        std::string prev_file;
+        int prev_line = -1;
+
         for (size_t i = 0; i < disasm_count; ++i) {
             Address addr(insn[i].address);
             std::vector<uint8_t> insn_bytes(insn[i].bytes, insn[i].bytes + insn[i].size);
@@ -569,6 +587,24 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
                 }
             }
 
+            std::string src_file;
+            std::string src_full;
+            int src_line = 0;
+            std::string src_text;
+            bool is_line_start = false;
+
+            if (auto loc = dwarfParser_.findSourceLocation(addr)) {
+                src_file = loc->fileName;
+                src_full = loc->filePath;
+                src_line = loc->line;
+                src_text = SourceFileManager::instance().getLineText(loc->filePath, loc->line);
+                if (src_file != prev_file || src_line != prev_line) {
+                    is_line_start = true;
+                    prev_file = src_file;
+                    prev_line = src_line;
+                }
+            }
+
             result.push_back(DisassembledInstruction{
                 .address = addr,
                 .mnemonic = insn[i].mnemonic,
@@ -576,7 +612,12 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
                 .bytes = std::move(insn_bytes),
                 .symbol = std::move(sym_str),
                 .isCurrentRip = (addr == currentRegs_.rip()),
-                .hasBreakpoint = bpMgr_.hasBreakpoint(addr)
+                .hasBreakpoint = bpMgr_.hasBreakpoint(addr),
+                .sourceFile = std::move(src_file),
+                .sourceFullPath = std::move(src_full),
+                .sourceLine = src_line,
+                .sourceText = std::move(src_text),
+                .isSourceLineStart = is_line_start
             });
         }
         cs_free(insn, disasm_count);
@@ -780,6 +821,81 @@ DebugSession::AutoTraceResult DebugSession::autoTrace(bool stepOverTarget, size_
         result.message = "Completed " + std::to_string(result.stepsExecuted) + " trace steps";
     }
     return result;
+}
+
+std::optional<SourceLocation> DebugSession::currentSourceLocation() const {
+    if (state_ != SessionState::Paused || currentRegs_.rip().isNull()) {
+        return std::nullopt;
+    }
+    return dwarfParser_.findSourceLocation(currentRegs_.rip());
+}
+
+std::optional<SourceLocation> DebugSession::resolveSourceLocation(Address addr) const {
+    return dwarfParser_.findSourceLocation(addr);
+}
+
+std::optional<Address> DebugSession::resolveSourceLine(const std::string& file, int line) const {
+    return dwarfParser_.findAddressByLine(file, line);
+}
+
+bool DebugSession::toggleSourceBreakpoint(const std::string& file, int line) {
+    auto addr = resolveSourceLine(file, line);
+    if (!addr) return false;
+    if (hasBreakpoint(*addr)) {
+        return removeBreakpoint(*addr);
+    } else {
+        return addBreakpoint(*addr);
+    }
+}
+
+bool DebugSession::hasSourceBreakpoint(const std::string& file, int line) const {
+    auto addr = resolveSourceLine(file, line);
+    if (!addr) return false;
+    return hasBreakpoint(*addr);
+}
+
+bool DebugSession::stepSourceOver(int maxInsnSteps) {
+    if (state_ != SessionState::Paused) return false;
+    auto curLoc = currentSourceLocation();
+    if (!curLoc || curLoc->line <= 0) {
+        stepOver();
+        return true;
+    }
+    std::string origFile = curLoc->fileName;
+    int origLine = curLoc->line;
+    for (int i = 0; i < maxInsnSteps; ++i) {
+        stepOver();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        if (state_ != SessionState::Paused) break;
+        auto nextLoc = currentSourceLocation();
+        if (!nextLoc) break;
+        if (nextLoc->fileName != origFile || nextLoc->line != origLine) {
+            break;
+        }
+    }
+    return true;
+}
+
+bool DebugSession::stepSourceInto(int maxInsnSteps) {
+    if (state_ != SessionState::Paused) return false;
+    auto curLoc = currentSourceLocation();
+    if (!curLoc || curLoc->line <= 0) {
+        stepInto();
+        return true;
+    }
+    std::string origFile = curLoc->fileName;
+    int origLine = curLoc->line;
+    for (int i = 0; i < maxInsnSteps; ++i) {
+        stepInto();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        if (state_ != SessionState::Paused) break;
+        auto nextLoc = currentSourceLocation();
+        if (!nextLoc) break;
+        if (nextLoc->fileName != origFile || nextLoc->line != origLine) {
+            break;
+        }
+    }
+    return true;
 }
 
 } // namespace edb_next

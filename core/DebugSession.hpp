@@ -13,6 +13,8 @@
 #include <optional>
 
 #include "ElfParser.hpp"
+#include "DwarfParser.hpp"
+#include "SourceFileManager.hpp"
 #include "CallStackUnwinder.hpp"
 #include "Assembler.hpp"
 #include "ROPScanner.hpp"
@@ -30,6 +32,11 @@ struct DisassembledInstruction {
     std::string symbol;
     bool isCurrentRip{false};
     bool hasBreakpoint{false};
+    std::string sourceFile;
+    std::string sourceFullPath;
+    int sourceLine{0};
+    std::string sourceText;
+    bool isSourceLineStart{false};
 };
 
 class DebugSession : public QObject {
@@ -121,6 +128,19 @@ public:
     AutoTraceResult autoTrace(bool stepOver, size_t maxSteps = 100, const std::string& stopCondition = "");
 
     [[nodiscard]] const ElfParser& elfParser() const noexcept { return symbols_; }
+    [[nodiscard]] const DwarfParser& dwarfParser() const noexcept { return dwarfParser_; }
+    [[nodiscard]] DwarfParser& dwarfParser() noexcept { return dwarfParser_; }
+    [[nodiscard]] bool hasDebugInfo() const noexcept { return dwarfParser_.hasDebugInfo(); }
+    [[nodiscard]] std::optional<SourceLocation> currentSourceLocation() const;
+    [[nodiscard]] std::optional<SourceLocation> resolveSourceLocation(Address addr) const;
+    [[nodiscard]] std::optional<Address> resolveSourceLine(const std::string& file, int line) const;
+
+    // Source-level Breakpoint & Stepping
+    bool toggleSourceBreakpoint(const std::string& file, int line);
+    bool hasSourceBreakpoint(const std::string& file, int line) const;
+    bool stepSourceOver(int maxInsnSteps = 250);
+    bool stepSourceInto(int maxInsnSteps = 250);
+
     [[nodiscard]] const std::string& targetPath() const noexcept { return targetPath_; }
     [[nodiscard]] BreakpointManager& breakpointManager() noexcept { return bpMgr_; }
     [[nodiscard]] const BreakpointManager& breakpointManager() const noexcept { return bpMgr_; }
@@ -136,6 +156,7 @@ Q_SIGNALS:
     void memoryUpdated();
     void breakpointsUpdated();
     void activeThreadChanged(Tid tid);
+    void sourceLocationChanged(const edb_next::SourceLocation& loc);
 
 private Q_SLOTS:
     void handleEvent(const edb_next::DebugEvent& event);
@@ -152,6 +173,7 @@ private:
     BreakpointManager bpMgr_;
     EventLoopThread eventLoop_;
     ElfParser symbols_;
+    DwarfParser dwarfParser_;
     AnnotationManager annotations_;
 
     RegisterContext currentRegs_;
@@ -169,3 +191,4 @@ private:
 } // namespace edb_next
 
 Q_DECLARE_METATYPE(edb_next::SessionState)
+Q_DECLARE_METATYPE(edb_next::SourceLocation)

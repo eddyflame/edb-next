@@ -35,15 +35,23 @@ void SessionTabWidget::setupUi() {
     auto* h_splitter = new QSplitter(Qt::Horizontal, top_widget);
     h_splitter->setChildrenCollapsible(true);
 
-    disasmView_ = new DisassemblyView(h_splitter);
-    disasmView_->setMinimumWidth(200);
+    codeTabs_ = new QTabWidget(h_splitter);
+    codeTabs_->setMinimumWidth(200);
+
+    disasmView_ = new DisassemblyView(codeTabs_);
     disasmView_->setSession(session_);
+
+    sourceView_ = new SourceView(codeTabs_);
+    sourceView_->setSession(session_);
+
+    codeTabs_->addTab(disasmView_, "Disassembly (Alt+C)");
+    codeTabs_->addTab(sourceView_, "Source Code (Alt+S)");
 
     regView_ = new RegisterView(h_splitter);
     regView_->setMinimumWidth(150);
     regView_->setSession(session_);
 
-    h_splitter->addWidget(disasmView_);
+    h_splitter->addWidget(codeTabs_);
     h_splitter->addWidget(regView_);
     h_splitter->setStretchFactor(0, 3);
     h_splitter->setStretchFactor(1, 1);
@@ -66,7 +74,16 @@ void SessionTabWidget::setupUi() {
         bottomTabs_->setCurrentWidget(multiDumpWidget_);
     });
     connect(regView_, &RegisterView::jumpToDisassemblyRequested, this, [this](Address addr) {
+        showDisassemblyView();
         disasmView_->gotoAddress(addr);
+    });
+    connect(sourceView_, &SourceView::jumpToDisassemblyRequested, this, [this](Address addr) {
+        showDisassemblyView();
+        disasmView_->gotoAddress(addr);
+    });
+    connect(sourceView_, &SourceView::breakpointToggled, this, [this](Address) {
+        disasmView_->refresh();
+        bpView_->refresh();
     });
 
     v_splitter->addWidget(top_widget);
@@ -263,8 +280,21 @@ void SessionTabWidget::toggleStackView() {
     }
 }
 
+void SessionTabWidget::showSourceView() {
+    if (codeTabs_ && sourceView_) {
+        codeTabs_->setCurrentWidget(sourceView_);
+    }
+}
+
+void SessionTabWidget::showDisassemblyView() {
+    if (codeTabs_ && disasmView_) {
+        codeTabs_->setCurrentWidget(disasmView_);
+    }
+}
+
 void SessionTabWidget::refreshAll() {
     disasmView_->refresh();
+    if (sourceView_) sourceView_->refresh();
     regView_->refresh();
 
     if (session_ && session_->state() != SessionState::Stopped) {
@@ -301,6 +331,7 @@ void SessionTabWidget::onSessionStateChanged(SessionState state) {
 void SessionTabWidget::onRegistersUpdated() {
     regView_->refresh();
     disasmView_->refresh();
+    if (sourceView_) sourceView_->refresh();
     stackView_->refresh();
     callStackView_->refresh();
 }
@@ -314,6 +345,7 @@ void SessionTabWidget::onMemoryUpdated() {
 
 void SessionTabWidget::onBreakpointsUpdated() {
     disasmView_->refresh();
+    if (sourceView_) sourceView_->refresh();
     bpView_->refresh();
 }
 

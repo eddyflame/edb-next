@@ -321,12 +321,12 @@
   2. **ARM64 / AArch64 原生支持**：抽象 `IRegisterContext` 与 `IDebugEngine` 工厂，针对 ARM64 平台实现基于 `NT_PRSTATUS` / `PTRACE_GETREGSET` 的 X0~X30 寄存器组及硬件断点（`PTRACE_SETHBPREGS`）支持；
   3. **RISC-V (RV64GC) 探索**：为国内新兴开源硬件生态预留接口契约。
 
-### 4.2 DWARF 源码级调试与行号映射 (Source-Level Debugging)
-- **当前状态**：当前 `ElfParser` 仅解析了 `.symtab` 与 `.dynsym` 符号表，实现了函数名与全局变量地址匹配，但不包含源码级调试信息。
-- **待完善方案**：
-  1. **libdw / libdwarf 接入**：集成 DWARF 调试信息解析库，提取 `.debug_info`、`.debug_line` 节区；
-  2. **源码反汇编混合渲染**：当检测到目标程序编译带 `-g` 时，在反汇编视图对应代码行上方内嵌展示 C/C++ 原始源码行；
-  3. **源码文件浏览器**：提供类似 GDB `layout src` 的独立源码浏览标签页，支持直接在源码行双击下断。
+### 4.2 DWARF 源码级调试与行号映射 (Source-Level Debugging) [已实现 / Done]
+- **当前状态**：已完整实现基于 `libdw` 的 DWARF 调试信息解析、双向行号映射、源码与反汇编混合渲染及独立源码浏览器。
+- **已实现特性**：
+  1. **libdw 原生接入与行号映射**：接入 `libdw` 并封装 `core/DwarfParser` 与 `core/SourceFileManager`，提取 `.debug_info` 与 `.debug_line`，实现 `Address <-> (File:Line:Column)` 双向高速映射；
+  2. **源码反汇编混合渲染**：当目标程序带 `-g` 编译时，在 `DisassemblyView` 对应指令上方内嵌展示 C/C++ 原始源码行（暗黑青绿横幅），支持 `Ctrl+Shift+S` 实时切换混合模式；
+  3. **独立源码文件浏览器 (layout src)**：新增 `ui/SourceView` 标签页（`Alt+S`），支持源文件列表切换、行号、断点指示符（`●`）、当前 RIP 执行指针（`➔`），并支持在源码行直接双击下断与源码级单步步过/步入（`stepSourceOver` / `stepSourceInto`）。
 
 ### 4.3 嵌入式 Python 脚本自动化引擎 (Embedded Python Scripting)
 - **当前状态**：当前支持 C++20 原生 `.so` 动态插件，并通过 CLI 控制台支持外部扩展命令，但尚未嵌入动态脚本语言解释器。

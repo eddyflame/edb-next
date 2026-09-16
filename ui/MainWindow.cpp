@@ -387,7 +387,17 @@ void MainWindow::setupMenusAndToolbars() {
     act_cpu->setShortcut(QKeySequence("Alt+C"));
     connect(act_cpu, &QAction::triggered, this, [this] {
         if (auto* tab = currentSessionTabWidget()) {
+            tab->showDisassemblyView();
             tab->disasmView()->setFocus();
+        }
+    });
+
+    auto* act_src = menuView_->addAction("Focus Source Code");
+    act_src->setShortcut(QKeySequence("Alt+S"));
+    connect(act_src, &QAction::triggered, this, [this] {
+        if (auto* tab = currentSessionTabWidget()) {
+            tab->showSourceView();
+            tab->sourceView()->setFocus();
         }
     });
 

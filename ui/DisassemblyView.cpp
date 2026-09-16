@@ -106,6 +106,9 @@ void DisassemblyView::setupUi() {
 
     auto* sc_fwd = new QShortcut(QKeySequence("Alt+Right"), this);
     connect(sc_fwd, &QShortcut::activated, this, &DisassemblyView::navigateHistoryForward);
+
+    auto* sc_mixed = new QShortcut(QKeySequence("Ctrl+Shift+S"), this);
+    connect(sc_mixed, &QShortcut::activated, this, &DisassemblyView::toggleMixedSourceMode);
 }
 
 void DisassemblyView::setSession(std::shared_ptr<DebugSession> session) {
@@ -117,26 +120,94 @@ void DisassemblyView::setSession(std::shared_ptr<DebugSession> session) {
     refresh();
 }
 
+void DisassemblyView::toggleMixedSourceMode() {
+    setMixedSourceMode(!showMixedSource_);
+}
+
+void DisassemblyView::setMixedSourceMode(bool enabled) {
+    if (showMixedSource_ != enabled) {
+        showMixedSource_ = enabled;
+        refresh();
+    }
+}
+
 void DisassemblyView::refresh() {
     auto session = session_.lock();
     if (!session || session->state() == SessionState::Stopped) {
         setRowCount(0);
+        displayRows_.clear();
+        currentInstructions_.clear();
         return;
     }
 
     Address start_addr = (followRip_ || viewAddress_.isNull()) ? session->registers().rip() : viewAddress_;
     if (start_addr.isNull()) {
         setRowCount(0);
+        displayRows_.clear();
+        currentInstructions_.clear();
         return;
     }
 
     currentInstructions_ = session->disassemble(start_addr, 40);
-    setRowCount(static_cast<int>(currentInstructions_.size()));
+
+    displayRows_.clear();
+    for (size_t i = 0; i < currentInstructions_.size(); ++i) {
+        const auto& insn = currentInstructions_[i];
+        if (showMixedSource_ && insn.isSourceLineStart && insn.sourceLine > 0 && !insn.sourceText.empty()) {
+            displayRows_.push_back(DisplayRow{RowType::SourceBanner, i});
+        }
+        displayRows_.push_back(DisplayRow{RowType::Instruction, i});
+    }
+
+    setRowCount(static_cast<int>(displayRows_.size()));
 
     int target_scroll_row = -1;
 
-    for (int r = 0; r < static_cast<int>(currentInstructions_.size()); ++r) {
-        const auto& insn = currentInstructions_[r];
+    for (int r = 0; r < static_cast<int>(displayRows_.size()); ++r) {
+        const auto& drow = displayRows_[r];
+        const auto& insn = currentInstructions_[drow.insnIndex];
+
+        if (drow.type == RowType::SourceBanner) {
+            auto* item_mark = new QTableWidgetItem("[SRC]");
+            item_mark->setTextAlignment(Qt::AlignCenter);
+            item_mark->setForeground(QColor(128, 203, 196));
+
+            auto* item_addr = new QTableWidgetItem(QString("Line %1").arg(insn.sourceLine));
+            item_addr->setTextAlignment(Qt::AlignCenter);
+            item_addr->setForeground(QColor(130, 210, 245));
+
+            auto* item_bytes = new QTableWidgetItem("");
+
+            QString src_str = QString("/* %1 */").arg(QString::fromStdString(insn.sourceText).trimmed());
+            auto* item_asm = new QTableWidgetItem(src_str);
+            item_asm->setForeground(QColor(130, 210, 245));
+            QFont srcFont = font();
+            srcFont.setItalic(true);
+            srcFont.setBold(true);
+            item_asm->setFont(srcFont);
+
+            auto* item_sym = new QTableWidgetItem(QString::fromStdString(insn.sourceFile));
+            item_sym->setForeground(QColor(100, 160, 210));
+
+            auto* item_comment = new QTableWidgetItem("");
+
+            QColor banner_bg(22, 38, 54, 230);
+            item_mark->setBackground(banner_bg);
+            item_addr->setBackground(banner_bg);
+            item_bytes->setBackground(banner_bg);
+            item_asm->setBackground(banner_bg);
+            item_sym->setBackground(banner_bg);
+            item_comment->setBackground(banner_bg);
+
+            setItem(r, 0, item_mark);
+            setItem(r, 1, item_addr);
+            setItem(r, 2, item_bytes);
+            setItem(r, 3, item_asm);
+            setItem(r, 4, item_sym);
+            setItem(r, 5, item_comment);
+            continue;
+        }
+
         bool isBookmarked = session->annotations().isBookmarked(insn.address);
 
         // Column 0: Mark (Breakpoint / Current RIP / Bookmark)
@@ -331,15 +402,21 @@ void DisassemblyView::navigateHistoryForward() {
 }
 
 std::optional<Address> DisassemblyView::addressAtRow(int row) const {
-    if (row >= 0 && row < static_cast<int>(currentInstructions_.size())) {
-        return currentInstructions_[row].address;
+    if (row >= 0 && row < static_cast<int>(displayRows_.size())) {
+        size_t idx = displayRows_[row].insnIndex;
+        if (idx < currentInstructions_.size()) {
+            return currentInstructions_[idx].address;
+        }
     }
     return std::nullopt;
 }
 
 const DisassembledInstruction* DisassemblyView::instructionAtRow(int row) const {
-    if (row >= 0 && row < static_cast<int>(currentInstructions_.size())) {
-        return &currentInstructions_[row];
+    if (row >= 0 && row < static_cast<int>(displayRows_.size())) {
+        size_t idx = displayRows_[row].insnIndex;
+        if (idx < currentInstructions_.size()) {
+            return &currentInstructions_[idx];
+        }
     }
     return nullptr;
 }
@@ -649,6 +726,12 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
 
     QAction* act_follow = menu.addAction("Follow Current RIP");
     connect(act_follow, &QAction::triggered, this, &DisassemblyView::followRip);
+
+    menu.addSeparator();
+    QAction* act_mixed = menu.addAction("Show C/C++ Source Lines (Mixed Mode, Ctrl+Shift+S)");
+    act_mixed->setCheckable(true);
+    act_mixed->setChecked(showMixedSource_);
+    connect(act_mixed, &QAction::toggled, this, &DisassemblyView::setMixedSourceMode);
 
     menu.exec(mapToGlobal(pos));
 }

@@ -78,6 +78,7 @@ public:
     [[nodiscard]] const std::vector<ElfProgramHeaderInfo>& programHeaders() const noexcept { return programHeaders_; }
     [[nodiscard]] const std::vector<std::string>& dynamicDependencies() const noexcept { return dynamicDependencies_; }
     [[nodiscard]] Address entryPoint() const noexcept { return headerInfo_.entryPoint; }
+    [[nodiscard]] bool hasDebugInfo() const noexcept;
 
     void clear();
 
