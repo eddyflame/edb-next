@@ -4,6 +4,7 @@
 #include "DebugSession.hpp"
 #include <QTableWidget>
 #include <memory>
+#include <optional>
 
 namespace edb_next {
 

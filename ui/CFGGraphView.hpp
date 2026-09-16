@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <optional>
 
 namespace edb_next {
 

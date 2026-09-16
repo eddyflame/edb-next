@@ -3,6 +3,9 @@
 #include "core/ExpressionEvaluator.hpp"
 #include <QCoreApplication>
 #include <iostream>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <unistd.h>
 
@@ -169,6 +172,18 @@ void test_symbols_and_memory_search() {
             if (res) {
                 found_addr = *res;
                 break;
+            }
+        }
+    }
+    if (found_addr.isNull()) {
+        for (const auto& reg : session.memoryRegions()) {
+            if (reg.isReadable()) {
+                size_t size = reg.end.value() - reg.start.value();
+                auto res = session.searchMemory(reg.start, size, pattern);
+                if (res) {
+                    found_addr = *res;
+                    break;
+                }
             }
         }
     }

@@ -14,6 +14,9 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <iostream>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <unistd.h>
 #include <fstream>
@@ -157,6 +160,8 @@ void test_plugin_manager() {
     };
     for (auto& l : ctx.listeners_) l(ev);
 
+    ctx.listeners_.clear();
+    ctx.commands_.clear();
     pm.unloadAll();
     assert(pm.loadedPlugins().empty() && "All plugins should be unloaded");
     std::cout << "[PASS] PluginManager loaded, executed, and unloaded plugin cleanly." << std::endl;
@@ -313,13 +318,16 @@ void test_extended_elf_and_intermodular() {
 
     // Test Intermodular Calls
     DebugSession session("test_intermod_sess", "Intermod Test");
-    assert(session.launch(getTestTargetPath(), {"WorkerIntermod"}));
+    bool launched = session.launch(getTestTargetPath(), {"WorkerIntermod"});
+    assert(launched && "Failed to launch target for Intermod test");
     auto calls = IntermodularCallsFinder::findCalls(std::shared_ptr<DebugSession>(&session, [](DebugSession*){}));
     session.terminate();
 
     assert(!calls.empty() && "Must find intermodular library calls in test_target");
     std::cout << "[PASS] Found " << calls.size() << " intermodular call(s) in test target." << std::endl;
-    std::cout << "       Sample Call: " << calls[0].callerFunction << " -> " << calls[0].calleeApi << " (" << calls[0].instruction << ")" << std::endl;
+    if (!calls.empty()) {
+        std::cout << "       Sample Call: " << calls[0].callerFunction << " -> " << calls[0].calleeApi << " (" << calls[0].instruction << ")" << std::endl;
+    }
     std::cout << "[PASS] Extended ElfParser and IntermodularCallsFinder verified." << std::endl;
 }
 
@@ -331,7 +339,8 @@ void test_database_persistence_and_memory_dump() {
 
     // 1. Setup session and populate reversing metadata
     auto session = std::make_shared<DebugSession>("test_db_sess", "DB Test");
-    assert(session->launch(getTestTargetPath(), {"WorkerDB"}));
+    bool launched = session->launch(getTestTargetPath(), {"WorkerDB"});
+    assert(launched && "Failed to launch target for DB test");
 
     Address fib_addr = *session->resolveSymbol("calculate_fib");
     session->annotationManager().setComment(fib_addr, "Calculates fibonacci number");
@@ -363,7 +372,8 @@ void test_database_persistence_and_memory_dump() {
 
     // 4. Create fresh session and import database
     auto session2 = std::make_shared<DebugSession>("test_db_sess2", "DB Test 2");
-    assert(session2->launch(getTestTargetPath(), {"WorkerDB2"}));
+    bool launched2 = session2->launch(getTestTargetPath(), {"WorkerDB2"});
+    assert(launched2 && "Failed to launch target for DB2 test");
 
     PatchManager patchMgr2;
     std::string restored_notes;
@@ -389,7 +399,8 @@ void test_database_persistence_and_memory_dump() {
 void test_opcode_searcher_and_state_dumper() {
     std::cout << "\n[TEST] Starting OpcodeSearcher & StateDumper test..." << std::endl;
     DebugSession session("test_opcode_sess", "Opcode Test");
-    assert(session.launch(getTestTargetPath(), {"WorkerOpcode"}));
+    bool launched = session.launch(getTestTargetPath(), {"WorkerOpcode"});
+    assert(launched && "Failed to launch target for Opcode test");
 
     // 1. Test Opcode Searcher with CustomInstruction query ("push")
     auto customResults = OpcodeSearcher::search(session, OpcodeSearchType::CustomInstruction, "push");
@@ -419,7 +430,8 @@ void test_opcode_searcher_and_state_dumper() {
 void test_remote_syscalls_and_memory_mgmt() {
     std::cout << "\n[TEST] Starting Remote Syscalls (mprotect / mmap / munmap) & Set RIP test..." << std::endl;
     DebugSession session("test_remote_sess", "Remote Syscall Test");
-    assert(session.launch(getTestTargetPath(), {"WorkerRemote"}));
+    bool launched = session.launch(getTestTargetPath(), {"WorkerRemote"});
+    assert(launched && "Failed to launch target for Remote test");
 
     Address origRip = session.registers().rip();
     assert(origRip > Address(0));

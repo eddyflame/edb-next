@@ -952,8 +952,10 @@ edb-next/
 ├── ui/                         # GUI 表现层源码
 ├── plugins/                    # 扩展插件源码
 ├── tests/                      # 单元测试与测试目标源码
-├── docs/                       # 项目详细设计文档、API 手册与架构拓扑图
-│   └── SOFTWARE_DESIGN_DOCUMENT.md
+├── doc/                        # 项目详细设计文档、使用教程与开源贡献指南
+│   ├── CONTRIBUTING_{zh,en}.md
+│   ├── DESIGN_{zh,en}.md
+│   └── TUTORIAL_{zh,en}.md
 ├── .clang-format               # 统一 C++20 代码风格规范
 ├── .gitignore                  # Git 忽略配置 (build/, *.edb_db, .cache 等)
 ├── CMakeLists.txt              # 构建脚本
