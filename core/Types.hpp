@@ -99,8 +99,24 @@ enum class StopReason {
     Signal,
     ProcessExit,
     ThreadCreated,
+    ProcessForked,
     Error
 };
+
+enum class FollowForkMode : uint8_t {
+    Parent = 0,
+    Child = 1,
+    Both = 2
+};
+
+inline const char* followForkModeToString(FollowForkMode mode) {
+    switch (mode) {
+        case FollowForkMode::Parent: return "parent";
+        case FollowForkMode::Child:  return "child";
+        case FollowForkMode::Both:   return "both";
+    }
+    return "parent";
+}
 
 enum class HardwareBpType : uint8_t {
     Execute = 0,    // 00b
@@ -118,6 +134,7 @@ enum class HardwareBpSize : uint8_t {
 struct DebugEvent {
     Pid pid{0};
     Tid tid{0};
+    Pid childPid{0};
     StopReason reason{StopReason::None};
     int signal{0};
     Address address{0};
@@ -141,6 +158,9 @@ struct DebugEvent {
                 break;
             case StopReason::ThreadCreated:
                 oss << "Thread event on TID " << tid;
+                break;
+            case StopReason::ProcessForked:
+                oss << "Process forked child PID " << childPid;
                 break;
             case StopReason::Error:
                 oss << "Error: " << message;

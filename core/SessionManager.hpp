@@ -17,6 +17,7 @@ public:
     ~SessionManager() override;
 
     std::shared_ptr<DebugSession> createSession(const std::string& name);
+    std::shared_ptr<DebugSession> createChildSession(std::shared_ptr<DebugSession> parentSession, Pid childPid);
     void closeSession(const std::string& id);
     [[nodiscard]] std::shared_ptr<DebugSession> session(const std::string& id) const;
     [[nodiscard]] std::shared_ptr<DebugSession> activeSession() const;

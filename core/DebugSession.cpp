@@ -404,7 +404,69 @@ void DebugSession::refreshRegisters() {
 }
 
 void DebugSession::handleEvent(const DebugEvent& event) {
+    if (event.reason == StopReason::ProcessForked) {
+        unsigned long child_msg = 0;
+        engine_.getEventMessage(event.tid, &child_msg);
+        Pid child_pid = static_cast<Pid>(child_msg);
+
+        DebugEvent fork_ev = event;
+        fork_ev.childPid = child_pid;
+
+        std::string mode_str = followForkModeToString(followForkMode_);
+        LogManager::instance().info("FollowFork",
+            QString("[Fork] Process %1 forked child %2 (Follow mode: %3)")
+                .arg(event.pid).arg(child_pid).arg(mode_str.c_str()).toStdString());
+
+        if (followForkMode_ == FollowForkMode::Parent) {
+            // Detach child immediately so child runs freely
+            if (child_pid > 0) {
+                engine_.detachProcess(child_pid);
+            }
+            if (stopOnForkEvents_) {
+                setState(SessionState::Paused);
+                refreshRegisters();
+                Q_EMIT eventOccurred(fork_ev);
+            } else {
+                engine_.continueExecution(event.tid);
+            }
+            return;
+        }
+
+        if (followForkMode_ == FollowForkMode::Child) {
+            // Detach parent, follow child
+            engine_.detachProcess(event.pid);
+            adoptChild(child_pid);
+            if (stopOnForkEvents_) {
+                setState(SessionState::Paused);
+                Q_EMIT eventOccurred(fork_ev);
+            } else {
+                engine_.continueExecution(child_pid);
+            }
+            return;
+        }
+
+        if (followForkMode_ == FollowForkMode::Both) {
+            // Notify multi-process manager to create a child session
+            Q_EMIT childProcessForked(event.pid, child_pid);
+            if (stopOnForkEvents_) {
+                setState(SessionState::Paused);
+                refreshRegisters();
+                Q_EMIT eventOccurred(fork_ev);
+            } else {
+                engine_.continueExecution(event.tid);
+            }
+            return;
+        }
+    }
+
     if (event.reason == StopReason::ThreadCreated) {
+        if (event.pid != engine_.pid()) {
+            // Child process from fork that stopped on initial SIGSTOP
+            if (followForkMode_ == FollowForkMode::Parent) {
+                engine_.detachProcess(event.pid);
+                return;
+            }
+        }
         // Resume thread (clone event or initial SIGSTOP) from the TRACER thread!
         engine_.continueExecution(event.tid);
         return;
@@ -1259,6 +1321,105 @@ bool DebugSession::removePendingBreakpoint(const std::string& symbol) {
 
 const std::vector<PendingBreakpoint>& DebugSession::pendingBreakpoints() const noexcept {
     return bpMgr_.allPendingBreakpoints();
+}
+
+bool DebugSession::adoptChild(Pid child_pid) {
+    if (child_pid <= 0) return false;
+    eventLoop_.stopLoop();
+    engine_.adoptProcess(child_pid);
+
+    pageGuardMgr_.clear();
+    pendingPageGuardRestoreAddr_ = Address(0);
+    isPageGuardStepOver_ = false;
+    isPageGuardResuming_ = false;
+
+    // Reset rendezvous for child
+    rendezvousMgr_.clear();
+    rendezvousBrkAddr_ = Address(0);
+    if (!targetPath_.empty()) {
+        Address baseAddr(0);
+        auto regions = engine_.getMemoryRegions();
+        for (const auto& r : regions) {
+            if (r.pathname.find(targetPath_) != std::string::npos && r.isExecutable()) {
+                baseAddr = r.start;
+                break;
+            }
+        }
+        setupRendezvousHook(targetPath_, baseAddr);
+    }
+
+    eventLoop_.startLoop();
+    refreshRegisters();
+
+    Q_EMIT memoryUpdated();
+    Q_EMIT breakpointsUpdated();
+    return true;
+}
+
+bool DebugSession::initAsChild(std::shared_ptr<DebugSession> parent, Pid child_pid) {
+    if (!parent || child_pid <= 0) return false;
+    targetPath_ = parent->targetPath();
+    targetArgs_ = parent->targetArgs();
+    followForkMode_ = parent->followForkMode();
+    stopOnForkEvents_ = parent->stopOnForkEvents();
+
+    engine_.adoptProcess(child_pid);
+
+    Address base_addr(0);
+    auto regions = engine_.getMemoryRegions();
+    std::string base_name = targetPath_;
+    auto slash_pos = targetPath_.find_last_of('/');
+    if (slash_pos != std::string::npos) {
+        base_name = targetPath_.substr(slash_pos + 1);
+    }
+    for (const auto& r : regions) {
+        if (!r.pathname.empty() && r.offset == 0) {
+            if (r.pathname == targetPath_ || r.pathname.find(base_name) != std::string::npos) {
+                base_addr = r.start;
+                break;
+            }
+        }
+    }
+
+    if (!targetPath_.empty()) {
+        symbols_.loadBinary(targetPath_, base_addr);
+        dwarfParser_.load(targetPath_, base_addr);
+        setupRendezvousHook(targetPath_, base_addr);
+    }
+
+    // Clone breakpoints from parent
+    for (const auto& bp : parent->breakpoints()) {
+        if (bp.isInternal) continue;
+        if (bp.type == BreakpointType::HardwareExecute) {
+            bpMgr_.addHardwareBreakpoint(bp.address, HardwareBpType::Execute, HardwareBpSize::Byte1, bp.symbol);
+        } else if (bp.type == BreakpointType::HardwareWrite) {
+            bpMgr_.addHardwareBreakpoint(bp.address, HardwareBpType::Write, HardwareBpSize::Byte1, bp.symbol);
+        } else if (bp.type == BreakpointType::HardwareReadWrite) {
+            bpMgr_.addHardwareBreakpoint(bp.address, HardwareBpType::ReadWrite, HardwareBpSize::Byte1, bp.symbol);
+        } else {
+            bpMgr_.addBreakpoint(bp.address, false, bp.symbol);
+        }
+        if (!bp.condition.empty()) bpMgr_.setBreakpointCondition(bp.address, bp.condition);
+        if (bp.ignoreCount > 0) bpMgr_.setBreakpointIgnoreCount(bp.address, bp.ignoreCount);
+        if (bp.isLogOnly) bpMgr_.setBreakpointLogOnly(bp.address, true, bp.logFormat);
+        if (!bp.scriptCode.empty()) bpMgr_.setBreakpointScript(bp.address, bp.scriptCode, bp.scriptLanguage);
+        if (!bp.enabled) bpMgr_.disableBreakpoint(bp.address);
+    }
+
+    // Clone pending breakpoints
+    for (const auto& pbp : parent->pendingBreakpoints()) {
+        bpMgr_.addPendingBreakpoint(pbp.symbol, pbp.condition, pbp.scriptCode, pbp.scriptLanguage, pbp.isLogOnly, pbp.logFormat);
+    }
+
+    connect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent);
+    eventLoop_.startLoop();
+
+    refreshRegisters();
+    setState(SessionState::Paused);
+
+    Q_EMIT memoryUpdated();
+    Q_EMIT breakpointsUpdated();
+    return true;
 }
 
 } // namespace edb_next

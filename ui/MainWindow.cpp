@@ -137,6 +137,22 @@ void MainWindow::setupUi() {
             tab->selectBottomTab(0);
         }
     });
+    connect(cmdBar_, &CommandBarView::switchSessionRequested, this, [this](const QString& target) {
+        bool ok = false;
+        int pid = target.toInt(&ok);
+        for (int i = 0; i < tabWidget_->count(); ++i) {
+            auto* tab = qobject_cast<SessionTabWidget*>(tabWidget_->widget(i));
+            if (tab && tab->session()) {
+                if (tab->session()->id() == target.toStdString() || (ok && tab->session()->pid() == pid)) {
+                    tabWidget_->setCurrentIndex(i);
+                    logMessage(QString("Switched to session [%1] (PID: %2)")
+                        .arg(QString::fromStdString(tab->session()->name())).arg(tab->session()->pid()));
+                    return;
+                }
+            }
+        }
+        logMessage(QString("[CMD ERR] Session or PID '%1' not found.").arg(target));
+    });
     center_layout->addWidget(cmdBar_);
 
     setCentralWidget(center_container);
@@ -752,6 +768,11 @@ void MainWindow::onSessionCreated(std::shared_ptr<DebugSession> session) {
 
     connect(session.get(), &DebugSession::eventOccurred, this, &MainWindow::onSessionEventOccurred);
     connect(session.get(), &DebugSession::stateChanged, this, &MainWindow::onSessionStateChanged);
+    connect(session.get(), &DebugSession::childProcessForked, this, [this, session](Pid parentPid, Pid childPid) {
+        logMessage(QString("[Follow-Fork] Process %1 forked child %2 in 'both' mode. Spawning dedicated child session tab...")
+            .arg(parentPid).arg(childPid));
+        sessionMgr_.createChildSession(session, childPid);
+    });
     connect(tab_widget, &SessionTabWidget::requestSaveDatabase, this, &MainWindow::onSaveDatabaseTriggered);
     connect(tab_widget->multiDumpWidget(), &MultiDumpWidget::patchCreated, this, [this](Address addr, const std::vector<uint8_t>& oldB, const std::vector<uint8_t>& newB, const QString& c) {
         patchMgr_.addPatch(addr, oldB, newB, c.toStdString());

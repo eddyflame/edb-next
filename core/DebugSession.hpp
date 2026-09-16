@@ -119,6 +119,14 @@ public:
     [[nodiscard]] const std::vector<PendingBreakpoint>& pendingBreakpoints() const noexcept;
     void checkAndResolvePendingBreakpoints();
 
+    // Follow-Fork & Child Process Tracking
+    [[nodiscard]] FollowForkMode followForkMode() const noexcept { return followForkMode_; }
+    void setFollowForkMode(FollowForkMode mode) noexcept { followForkMode_ = mode; }
+    [[nodiscard]] bool stopOnForkEvents() const noexcept { return stopOnForkEvents_; }
+    void setStopOnForkEvents(bool enable) noexcept { stopOnForkEvents_ = enable; }
+    bool adoptChild(Pid child_pid);
+    bool initAsChild(std::shared_ptr<DebugSession> parent, Pid child_pid);
+
     // Assembly & Analysis
     Result<std::vector<uint8_t>> assemble(const std::string& insn, Address origin = Address(0));
     std::vector<ROPGadget> scanROP(size_t maxGadgetLength = 4, size_t maxResults = 500, const std::string& filter = "");
@@ -172,6 +180,7 @@ public:
     bool stepSourceInto(int maxInsnSteps = 250);
 
     [[nodiscard]] const std::string& targetPath() const noexcept { return targetPath_; }
+    [[nodiscard]] const std::vector<std::string>& targetArgs() const noexcept { return targetArgs_; }
     [[nodiscard]] BreakpointManager& breakpointManager() noexcept { return bpMgr_; }
     [[nodiscard]] const BreakpointManager& breakpointManager() const noexcept { return bpMgr_; }
     [[nodiscard]] AnnotationManager& annotationManager() noexcept { return annotations_; }
@@ -192,6 +201,7 @@ Q_SIGNALS:
     void sourceLocationChanged(const edb_next::SourceLocation& loc);
     void libraryLoaded(const QString& name, const QString& path, edb_next::Address baseAddr);
     void libraryUnloaded(const QString& name);
+    void childProcessForked(Pid parentPid, Pid childPid);
 
 private Q_SLOTS:
     void handleEvent(const edb_next::DebugEvent& event);
@@ -225,6 +235,8 @@ private:
     bool isPageGuardResuming_{false};
     Address rendezvousBrkAddr_{0};
     bool stopOnLibraryEvents_{false};
+    FollowForkMode followForkMode_{FollowForkMode::Parent};
+    bool stopOnForkEvents_{false};
 
     std::string targetPath_;
     std::vector<std::string> targetArgs_;
