@@ -11,10 +11,15 @@ namespace edb_next {
 
 struct SymbolInfo {
     std::string name;
+    std::string demangledName;
     Address address{0};
     uint64_t size{0};
     uint8_t type{0};
     uint8_t binding{0};
+
+    [[nodiscard]] const std::string& displayName() const noexcept {
+        return demangledName.empty() ? name : demangledName;
+    }
 };
 
 struct ElfHeaderInfo {
@@ -68,6 +73,7 @@ public:
     ElfParser() = default;
 
     bool loadBinary(const std::string& filepath, Address base_addr = Address(0));
+    [[nodiscard]] static std::string demangle(const std::string& mangled);
     [[nodiscard]] std::optional<SymbolInfo> findExactSymbol(Address addr) const;
     [[nodiscard]] std::optional<std::pair<SymbolInfo, uint64_t>> findNearestSymbol(Address addr) const;
     [[nodiscard]] std::optional<Address> findSymbolAddress(const std::string& name) const;

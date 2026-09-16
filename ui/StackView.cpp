@@ -218,10 +218,11 @@ void StackView::updateTable() {
         if (read_ok && val != 0) {
             auto sym_opt = session_->symbols().findNearestSymbol(Address(val));
             if (sym_opt && sym_opt->second < 0x10000) {
+                const std::string& sname = sym_opt->first.displayName();
                 if (sym_opt->second == 0) {
-                    comment_str = QString::fromStdString(sym_opt->first.name);
+                    comment_str = QString::fromStdString(sname);
                 } else {
-                    comment_str = QString("%1+0x%2").arg(QString::fromStdString(sym_opt->first.name))
+                    comment_str = QString("%1+0x%2").arg(QString::fromStdString(sname))
                                                     .arg(sym_opt->second, 0, 16);
                 }
             } else {

@@ -8,11 +8,12 @@ namespace edb_next {
 static std::string formatSymbol(const std::optional<std::pair<SymbolInfo, uint64_t>>& sym_opt) {
     if (!sym_opt) return "[Unknown]";
     const auto& [info, offset] = *sym_opt;
+    const std::string& sym_name = info.displayName();
     if (offset == 0) {
-        return "<" + info.name + ">";
+        return "<" + sym_name + ">";
     }
     std::ostringstream oss;
-    oss << "<" << info.name << "+0x" << std::hex << offset << ">";
+    oss << "<" << sym_name << "+0x" << std::hex << offset << ">";
     return oss.str();
 }
 

@@ -471,6 +471,23 @@ void test_remote_syscalls_and_memory_mgmt() {
     std::cout << "[PASS] Remote syscalls, mmap, mprotect, munmap and setInstructionPointer passed." << std::endl;
 }
 
+void test_cxx_demangling() {
+    std::cout << "\n[TEST] Starting C++ Demangling test..." << std::endl;
+    std::string mangled1 = "_Z13calculate_fibi";
+    std::string demangled1 = ElfParser::demangle(mangled1);
+    assert(demangled1 == "calculate_fib(int)" && "Demangle of _Z13calculate_fibi failed");
+
+    std::string mangled2 = "_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED1Ev";
+    std::string demangled2 = ElfParser::demangle(mangled2);
+    assert(demangled2.find("basic_string") != std::string::npos && "Demangle of std::string failed");
+
+    std::string non_mangled = "printf";
+    assert(ElfParser::demangle(non_mangled) == "printf" && "Non-mangled symbol should be unchanged");
+    assert(ElfParser::demangle("").empty() && "Empty symbol should remain empty");
+
+    std::cout << "[PASS] C++ Demangler verified: '" << mangled1 << "' -> '" << demangled1 << "'" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -488,6 +505,7 @@ int main(int argc, char* argv[]) {
     test_database_persistence_and_memory_dump();
     test_opcode_searcher_and_state_dumper();
     test_remote_syscalls_and_memory_mgmt();
+    test_cxx_demangling();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

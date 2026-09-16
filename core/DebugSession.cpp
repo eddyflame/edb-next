@@ -278,7 +278,7 @@ void DebugSession::pause() {
 bool DebugSession::toggleBreakpoint(Address addr) {
     std::string sym;
     if (auto s = symbols_.findNearestSymbol(addr)) {
-        sym = s->first.name;
+        sym = s->first.displayName();
     }
     bool ret = bpMgr_.hasBreakpoint(addr) ? bpMgr_.removeBreakpoint(addr) : bpMgr_.addBreakpoint(addr, false, sym);
     Q_EMIT memoryUpdated();
@@ -290,7 +290,7 @@ bool DebugSession::addBreakpoint(Address addr, const std::string& symbol) {
     std::string sym = symbol;
     if (sym.empty()) {
         if (auto s = symbols_.findNearestSymbol(addr)) {
-            sym = s->first.name;
+            sym = s->first.displayName();
         }
     }
     bool ret = bpMgr_.addBreakpoint(addr, false, sym);
@@ -305,7 +305,7 @@ bool DebugSession::addHardwareBreakpoint(Address addr, HardwareBpType type, Hard
     std::string sym = symbol;
     if (sym.empty()) {
         if (auto s = symbols_.findNearestSymbol(addr)) {
-            sym = s->first.name;
+            sym = s->first.displayName();
         }
     }
     bool ret = bpMgr_.addHardwareBreakpoint(addr, type, size, sym);
@@ -580,11 +580,12 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
 
             std::string sym_str;
             if (auto sym = symbols_.findNearestSymbol(addr)) {
+                const std::string& name = sym->first.displayName();
                 if (sym->second == 0) {
-                    sym_str = "<" + sym->first.name + ">";
+                    sym_str = "<" + name + ">";
                 } else {
                     std::ostringstream ss;
-                    ss << "<" << sym->first.name << "+0x" << std::hex << sym->second << ">";
+                    ss << "<" << name << "+0x" << std::hex << sym->second << ">";
                     sym_str = ss.str();
                 }
             }
@@ -654,7 +655,7 @@ std::vector<ThreadInfo> DebugSession::getThreads() const {
     for (auto& t : threads) {
         if (!t.rip.isNull()) {
             if (auto sym = symbols_.findNearestSymbol(t.rip)) {
-                t.symbol = sym->first.name;
+                t.symbol = sym->first.displayName();
                 if (sym->second > 0) {
                     t.symbol += "+" + std::to_string(sym->second);
                 }

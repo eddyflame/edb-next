@@ -3,8 +3,29 @@
 #include <fstream>
 #include <algorithm>
 #include <iostream>
+#include <cxxabi.h>
+#include <cstdlib>
 
 namespace edb_next {
+
+std::string ElfParser::demangle(const std::string& mangled) {
+    if (mangled.empty()) return mangled;
+    if (mangled.rfind("_Z", 0) != 0 && mangled.rfind("___Z", 0) != 0) {
+        return mangled;
+    }
+
+    int status = -1;
+    char* demangled = abi::__cxa_demangle(mangled.c_str(), nullptr, nullptr, &status);
+    if (status == 0 && demangled != nullptr) {
+        std::string result(demangled);
+        std::free(demangled);
+        return result;
+    }
+    if (demangled) {
+        std::free(demangled);
+    }
+    return mangled;
+}
 
 std::string ElfHeaderInfo::typeString() const {
     switch (type) {
@@ -228,8 +249,10 @@ bool ElfParser::loadBinary(const std::string& filepath, Address base_addr) {
                 actual_val += base_addr.value();
             }
 
+            std::string demangled = demangle(sym_name);
             SymbolInfo info{
                 .name = sym_name,
+                .demangledName = demangled,
                 .address = Address(actual_val),
                 .size = sym.st_size,
                 .type = static_cast<uint8_t>(ELF64_ST_TYPE(sym.st_info)),
@@ -240,6 +263,9 @@ bool ElfParser::loadBinary(const std::string& filepath, Address base_addr) {
             symbols_.push_back(info);
             addressToSymbolIdx_[actual_val] = idx;
             nameToAddress_[sym_name] = Address(actual_val);
+            if (demangled != sym_name) {
+                nameToAddress_[demangled] = Address(actual_val);
+            }
         }
     };
 
