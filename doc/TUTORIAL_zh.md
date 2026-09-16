@@ -36,6 +36,7 @@
    - 4.9 CPU 机器状态全景快照导出 (StateDumper)
    - 4.10 动态库全自动拦截、热重载与延迟待决断点 (Shared Libraries & Pending Breakpoints)
    - 4.11 多进程 Follow-Fork 模式与子进程跟踪实战 (Follow-Fork & Inferiors)
+   - 4.12 多线程独立冻结与解冻实战 (Thread Freeze / Thaw & Isolated Stepping)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -561,6 +562,43 @@ set follow-fork-mode <mode>    # GDB 风格别名命令，效果相同
 
 ---
 
+### 4.12 多线程独立冻结与解冻实战 (Thread Freeze / Thaw & Isolated Stepping)
+
+在多线程高并发程序（如数据库引擎、网络服务器、加固壳多工作线程）调试中，当我们在某个断点暂停并开始单步步过或步入时，其他线程常常在后台并发推进，甚至触发新的断点或修改当前函数正在审查的全局变量，造成严重的心智负担和“竞态破坏”。
+
+`edb-next` 支持细粒度的轻量级线程独立冻结与解冻（Freeze / Thaw）以及隔离单步步进：
+
+#### 1. Threads 视图状态感知与一键控制 (Tab 10)
+切换至底部抽屉 **Threads** 标签页（Tab 10）：
+- **全景 8 列信息呈现**：展示当前进程的所有轻量级线程（TID、线程名称、运行状态、**冻结状态**、当前 RIP 指针、函数符号、RSP 栈顶、活动焦点标识）；
+- **冰蓝状态指示**：处于冻结状态的线程将呈现醒目的冰蓝色 `❄ FROZEN` 状态徽标并整行高亮；
+- **顶部快捷工具栏**：
+  - **`❄ Freeze / Thaw`**：一键切换选中线程的冻结状态；
+  - **`❄ Freeze Others`**：一键冻结除当前活动焦点线程外的所有其他并发线程；
+  - **`🔥 Thaw All`**：一键解冻所有线程，恢复全并发推进。
+- **右键上下文菜单**：在任一线程条目右键，均可快速选择 `Freeze Thread` / `Thaw Thread` 或 `Freeze All Other Threads`。
+
+#### 2. 隔离单步步进 (Isolated Stepping)
+- **典型实战场景**：调试某个产生死锁或数据竞争的工作线程。
+- **操作方式**：
+  1. 在 Threads 视图中点击 **`❄ Freeze Others`**（或在命令行输入 `freeze all`）；
+  2. 此时除当前正在调试的线程外，其余所有后台 Worker 线程均被操作系统信号与调试引擎调度器双重锁定；
+  3. 按 **F7**（单步步入）或 **F8**（单步步过），调试器将严格仅驱动当前活动线程执行指令，其余线程绝对静止，确保变量与执行现场不被破坏；
+  4. 审查完毕后，点击 **`🔥 Thaw All`**（或在命令行输入 `thaw all`），恢复全量多线程自由推进。
+
+#### 3. CommandBar 命令行极客操作
+除了图形界面操作，底栏命令行提供了迅捷的 CLI 指令：
+```text
+threads            # 打印当前所有线程列表、RIP、符号与 [FROZEN] 状态
+thread <tid>       # 快速将活动调试焦点切换至指定 TID
+freeze <tid>       # 冻结指定 TID 的线程
+freeze all         # 冻结除当前活动焦点外的所有其他线程
+thaw <tid>         # 解冻指定 TID 的线程
+thaw all           # 解冻所有线程
+```
+
+---
+
 ## 5. 高级逆向分析工具箱实战 (Advanced Reverse Engineering)
 
 在主工作台左下角，内置了 18 个按需切换的高级分析抽屉：
@@ -761,6 +799,10 @@ set follow-fork-mode <mode>    # GDB 风格别名命令，效果相同
 | `inferiors` / `processes` | `inferiors` | 打印当前受控的所有目标调试会话 (Inferiors) 状态清单 |
 | `inferior <id\|pid>` | `inferior` | 切换当前活动调试会话与工作区焦点。例：`inferior 2`、`inferior 12347` |
 | `process <id\|pid>` | `process` | 切换活动会话（`inferior` 别名） |
+| `threads` | `threads` | 打印当前进程全部轻量级线程列表、RIP、符号与冻结状态 |
+| `thread <tid>` | `thread` | 切换当前活动线程焦点至指定 TID |
+| `freeze <tid\|all>` | `freeze` | 冻结指定 TID 线程或一键冻结所有非当前焦点线程 |
+| `thaw <tid\|all>` | `thaw` | 解冻指定 TID 线程或解冻全部线程 |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
 | `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |

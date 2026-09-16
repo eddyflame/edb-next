@@ -36,6 +36,7 @@
    - 4.9 CPU Machine State Snapshot (StateDumper)
    - 4.10 Automated Shared Library Interception & Pending Breakpoints
    - 4.11 Follow-Fork Mode & Multi-Process Inferiors
+   - 4.12 Independent Thread Freeze & Thaw (Freeze / Thaw & Isolated Stepping)
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -372,6 +373,41 @@ In `follow-fork both` mode, `SessionManager` automatically spawns a dedicated ch
 
 ---
 
+### 4.12 Independent Thread Freeze & Thaw (Freeze / Thaw & Isolated Stepping)
+
+When debugging multithreaded Linux applications (such as high-throughput networking daemons or multithreaded obfuscated packers), stepping through code in one thread often causes other background worker threads to continue executing concurrently, triggering unrelated breakpoints or modifying shared state.
+
+`edb-next` introduces thread freeze/thaw control and isolated single-stepping:
+
+#### 1. ThreadsView Indicators & Controls (Tab 10)
+Switch to the **Threads** tab in the bottom drawer (Tab 10):
+- **8-Column Detail View**: Displays TID, Thread Name, State, **Frozen status**, Current RIP, Function Symbol, RSP, and Active focus marker.
+- **Ice-Blue Badge Highlighting**: Frozen threads are highlighted with a prominent ice-blue `❄ FROZEN` badge and row highlight.
+- **Toolbar Quick Actions**:
+  - **`❄ Freeze / Thaw`**: Toggles frozen state of the currently selected thread.
+  - **`❄ Freeze Others`**: Freezes all threads except the currently active debug focus thread.
+  - **`🔥 Thaw All`**: Resumes all threads to normal concurrent execution.
+- **Context Menu**: Right-click any thread entry to freeze or thaw individual threads or all background threads.
+
+#### 2. Isolated Single-Stepping
+- **Workflow**:
+  1. Click **`❄ Freeze Others`** in the Threads view (or run `freeze all` in the CommandBar).
+  2. All background threads are locked via operating system signal masking and engine event filtering.
+  3. Press **F7** (Step Into) or **F8** (Step Over). The engine drives only the focused thread forward while all other threads remain frozen.
+  4. Once analysis is complete, click **`🔥 Thaw All`** (or run `thaw all`).
+
+#### 3. CommandBar CLI Commands
+```text
+threads            # List all lightweight threads with RIP, symbol, and [FROZEN] badge
+thread <tid>       # Switch active thread focus directly by TID
+freeze <tid>       # Freeze specific thread
+freeze all         # Freeze all threads except active focus thread
+thaw <tid>         # Thaw specific thread
+thaw all           # Thaw all threads
+```
+
+---
+
 ## 5. Advanced Reverse Engineering Toolset
 
 - **Heap Analyzer (Tab 9)**: Traverses glibc `malloc_chunk` structures, parsing chunk size, flags (`A|M|P`), and allocated/free state.
@@ -438,6 +474,10 @@ flowchart LR
 | `set follow-fork-mode <mode>` | GDB-style alias to set follow-fork mode |
 | `show follow-fork-mode` | Print currently active follow-fork mode |
 | `catch fork` / `catch vfork` | Toggle breakpoint halt upon target process `fork()` |
+| `threads` | List all threads with RIP, symbol, and freeze status |
+| `thread <tid>` | Switch active thread focus to specified TID |
+| `freeze <tid|all>` | Freeze specific thread or all non-focus threads |
+| `thaw <tid|all>` | Thaw specific thread or all threads |
 | `inferiors` / `processes` | List all active debug sessions and PIDs (`inferiors`) |
 | `inferior <id\|pid>` | Switch active debugging session and workspace tab (`inferior 2`, `inferior 12347`) |
 | `process <id\|pid>` | Switch active session (alias for `inferior`) |
