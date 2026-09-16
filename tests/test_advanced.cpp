@@ -15,6 +15,8 @@
 #include "ui/MemoryHexView.hpp"
 #include "ui/BinaryInfoView.hpp"
 #include "ui/ThreadsView.hpp"
+#include "core/MemoryScanner.hpp"
+#include "ui/MemoryScannerView.hpp"
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -1060,6 +1062,133 @@ void test_thread_freeze_thaw() {
     std::cout << "[PASS] Thread Freeze & Thaw Execution Control test passed cleanly." << std::endl;
 }
 
+void test_memory_scanner() {
+    std::cout << "\n[TEST] Starting Differential Memory Scanner (CheatEngine style) test..." << std::endl;
+
+    auto session = std::make_shared<DebugSession>("test_scan_session", "ScanSession");
+    bool launched = session->launch(getTestTargetPath(), {});
+    assert(launched && "Failed to launch test target");
+
+    // Allocate remote page in target process
+    auto page = session->allocateMemory(4096, PROT_READ | PROT_WRITE);
+    assert(page.has_value() && "Remote memory allocation should succeed");
+    Address pageAddr = *page;
+
+    // Write known values to test memory
+    int32_t val1 = 1337;
+    int32_t val2 = 1337;
+    int32_t val3 = 9999;
+    double dval = 3.14159;
+    std::string sval = "EDB_SCAN_TEST";
+
+    assert(session->writeMemory(pageAddr + 0x100, &val1, sizeof(val1)));
+    assert(session->writeMemory(pageAddr + 0x200, &val2, sizeof(val2)));
+    assert(session->writeMemory(pageAddr + 0x300, &val3, sizeof(val3)));
+    assert(session->writeMemory(pageAddr + 0x400, &dval, sizeof(dval)));
+    assert(session->writeMemory(pageAddr + 0x500, sval.data(), sval.size()));
+
+    // 1. Test First Scan (ExactValue, Int32)
+    ScanOptions opt;
+    opt.dataType = ScanDataType::Int32;
+    opt.compareType = ScanCompareType::ExactValue;
+    opt.valueStr = "1337";
+    opt.writableOnly = true;
+    opt.alignment = 4;
+
+    size_t count = session->firstMemoryScan(opt);
+    std::cout << "  -> First scan found " << count << " candidates for value 1337." << std::endl;
+    assert(count >= 2 && "Should find at least 2 candidates for 1337");
+
+    bool foundAddr1 = false;
+    bool foundAddr2 = false;
+    for (const auto& res : session->memoryScanner().results()) {
+        if (res.address == pageAddr + 0x100) foundAddr1 = true;
+        if (res.address == pageAddr + 0x200) foundAddr2 = true;
+    }
+    assert(foundAddr1 && "Candidate at pageAddr + 0x100 must be found");
+    assert(foundAddr2 && "Candidate at pageAddr + 0x200 must be found");
+
+    // 2. Modify one of the candidates: change pageAddr + 0x100 to 1500 (increase by 163)
+    int32_t newVal1 = 1500;
+    assert(session->writeMemory(pageAddr + 0x100, &newVal1, sizeof(newVal1)));
+
+    // 3. Next Scan (IncreasedValue)
+    opt.compareType = ScanCompareType::IncreasedValue;
+    size_t countAfterInc = session->nextMemoryScan(opt);
+    std::cout << "  -> Next scan (IncreasedValue) converged to " << countAfterInc << " candidates." << std::endl;
+    assert(countAfterInc >= 1);
+
+    bool hasAddr1 = false;
+    bool hasAddr2 = false;
+    for (const auto& res : session->memoryScanner().results()) {
+        if (res.address == pageAddr + 0x100) {
+            hasAddr1 = true;
+            // Verify formatting and delta
+            std::string prevStr = res.formatPreviousValue(ScanDataType::Int32);
+            std::string curStr = res.formatCurrentValue(ScanDataType::Int32);
+            std::string deltaStr = res.formatDelta(ScanDataType::Int32);
+            assert(prevStr.find("1337") != std::string::npos);
+            assert(curStr.find("1500") != std::string::npos);
+            assert(deltaStr.find("+163") != std::string::npos);
+        }
+        if (res.address == pageAddr + 0x200) hasAddr2 = true;
+    }
+    assert(hasAddr1 && "Increased candidate at pageAddr + 0x100 must be retained");
+    assert(!hasAddr2 && "Unchanged candidate at pageAddr + 0x200 must be filtered out!");
+
+    // 4. Next Scan (IncreasedBy: delta = 50)
+    int32_t newVal1_plus = 1550;
+    assert(session->writeMemory(pageAddr + 0x100, &newVal1_plus, sizeof(newVal1_plus)));
+
+    opt.compareType = ScanCompareType::IncreasedBy;
+    opt.deltaStr = "50";
+    size_t countAfterDelta = session->nextMemoryScan(opt);
+    std::cout << "  -> Next scan (IncreasedBy +50) converged to " << countAfterDelta << " candidates." << std::endl;
+    assert(countAfterDelta >= 1);
+
+    // 5. Test String scan
+    opt.dataType = ScanDataType::String;
+    opt.compareType = ScanCompareType::ExactValue;
+    opt.valueStr = "EDB_SCAN_TEST";
+    opt.alignment = 1;
+    size_t strCount = session->firstMemoryScan(opt);
+    std::cout << "  -> First scan for string found " << strCount << " candidates." << std::endl;
+    assert(strCount >= 1);
+    bool foundStrAddr = false;
+    for (const auto& r : session->memoryScanner().results()) {
+        if (r.address == pageAddr + 0x500) foundStrAddr = true;
+    }
+    assert(foundStrAddr && "String candidate at pageAddr + 0x500 must be found");
+
+    // 6. Test MemoryScannerView UI component
+    MemoryScannerView scanView;
+    scanView.setSession(session);
+    scanView.refreshResults();
+
+    // 7. Test CommandBar CLI commands
+    CommandBarView cmdBar;
+    cmdBar.setSession(session);
+    QString capturedLog;
+    QObject::connect(&cmdBar, &CommandBarView::outputLogged, [&](const QString& msg, bool) {
+        capturedLog = msg;
+    });
+
+    cmdBar.executeCommand("scan 9999 int32");
+    assert(capturedLog.contains("Pass 1 complete"));
+    assert(session->memoryScanner().resultCount() >= 1);
+
+    cmdBar.executeCommand("scanresults 5");
+    assert(capturedLog.contains("Memory Scanner Results"));
+
+    cmdBar.executeCommand("scanreset");
+    assert(capturedLog.contains("Memory scanner reset"));
+    assert(session->memoryScanner().resultCount() == 0);
+
+    // Clean up
+    session->terminate();
+    std::cout << "[PASS] Differential Memory Scanner test passed cleanly." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1083,6 +1212,7 @@ int main(int argc, char* argv[]) {
     test_r_debug_rendezvous();
     test_follow_fork_mode();
     test_thread_freeze_thaw();
+    test_memory_scanner();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

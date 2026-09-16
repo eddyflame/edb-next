@@ -3,6 +3,7 @@
 #include "ExpressionEvaluator.hpp"
 #include "core/StateDumper.hpp"
 #include "core/LogManager.hpp"
+#include "core/MemoryScanner.hpp"
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QCompleter>
@@ -808,6 +809,135 @@ void CommandBarView::setupDefaultCommands() {
             Q_EMIT outputLogged("Usage: thaw <tid|all>", true);
         }
     }, "thaw <tid|all> - Thaw a frozen thread or all threads");
+
+    // Memory Scanner commands: scan, nextscan, scanresults, scanreset
+    registerCommand("scan", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: scan <value|unknown> [type=int32|int64|int16|int8|float|double|str|hex]", true);
+            return;
+        }
+        ScanOptions opt;
+        opt.writableOnly = true;
+        opt.alignment = 4;
+
+        std::string val = args[0];
+        std::string typeStr = (args.size() > 1) ? args[1] : "int32";
+
+        if (val == "unknown" || val == "?") {
+            opt.compareType = ScanCompareType::UnknownInitialValue;
+            if (args.size() > 1) opt.dataType = stringToScanDataType(args[1]);
+        } else {
+            opt.compareType = ScanCompareType::ExactValue;
+            opt.valueStr = val;
+            opt.dataType = stringToScanDataType(typeStr);
+        }
+
+        if (opt.dataType == ScanDataType::String || opt.dataType == ScanDataType::ByteArray) {
+            opt.alignment = 1;
+        } else if (opt.dataType == ScanDataType::Int64 || opt.dataType == ScanDataType::Double) {
+            opt.alignment = 8;
+        }
+
+        size_t count = session_->firstMemoryScan(opt);
+        Q_EMIT outputLogged(QString("[Scan] Pass 1 complete. Found %1 candidate addresses for '%2' (%3).")
+                            .arg(count)
+                            .arg(QString::fromStdString(val))
+                            .arg(QString::fromStdString(scanDataTypeToString(opt.dataType))), false);
+    }, "scan <value|unknown> [type] - Initiate first memory scan pass (CheatEngine style)");
+
+    registerCommand("nextscan", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: nextscan <exact|inc|dec|diff|same|+delta|-delta> [val/delta]", true);
+            return;
+        }
+        if (!session_->memoryScanner().hasSearched()) {
+            Q_EMIT outputLogged("No active scan in progress. Run 'scan <value>' first.", true);
+            return;
+        }
+
+        ScanOptions opt = session_->memoryScanner().activeOptions();
+        std::string compStr = args[0];
+
+        if (compStr == "exact" || compStr == "==" || compStr == "=") {
+            if (args.size() < 2) {
+                Q_EMIT outputLogged("Usage: nextscan exact <new_value>", true);
+                return;
+            }
+            opt.compareType = ScanCompareType::ExactValue;
+            opt.valueStr = args[1];
+        } else if (compStr == "inc" || compStr == ">" || compStr == "increased") {
+            opt.compareType = ScanCompareType::IncreasedValue;
+        } else if (compStr == "dec" || compStr == "<" || compStr == "decreased") {
+            opt.compareType = ScanCompareType::DecreasedValue;
+        } else if (compStr == "diff" || compStr == "!=" || compStr == "changed") {
+            opt.compareType = ScanCompareType::ChangedValue;
+        } else if (compStr == "same" || compStr == "unchanged") {
+            opt.compareType = ScanCompareType::UnchangedValue;
+        } else if (compStr == "+" || compStr == "increasedby") {
+            if (args.size() < 2) { Q_EMIT outputLogged("Usage: nextscan + <delta>", true); return; }
+            opt.compareType = ScanCompareType::IncreasedBy;
+            opt.deltaStr = args[1];
+        } else if (compStr == "-" || compStr == "decreasedby") {
+            if (args.size() < 2) { Q_EMIT outputLogged("Usage: nextscan - <delta>", true); return; }
+            opt.compareType = ScanCompareType::DecreasedBy;
+            opt.deltaStr = args[1];
+        } else {
+            opt.compareType = ScanCompareType::ExactValue;
+            opt.valueStr = compStr;
+        }
+
+        size_t count = session_->nextMemoryScan(opt);
+        Q_EMIT outputLogged(QString("[Scan] Pass %1 complete. Converged to %2 candidate addresses.")
+                            .arg(session_->memoryScanner().scanPass())
+                            .arg(count), false);
+    }, "nextscan <compare> [val] - Next differential scan pass (e.g. 'nextscan >', 'nextscan 105', 'nextscan + 10')");
+
+    registerCommand("scanresults", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        const auto& res = session_->memoryScanner().results();
+        if (res.empty()) {
+            Q_EMIT outputLogged("No memory scan results available.", false);
+            return;
+        }
+        size_t limit = 10;
+        if (!args.empty()) {
+            try { limit = std::stoul(args[0]); } catch (...) {}
+        }
+        limit = std::min<size_t>(limit, res.size());
+
+        auto type = session_->memoryScanner().activeOptions().dataType;
+        QString out = QString("=== Memory Scanner Results (Top %1 of %2) ===\n").arg(limit).arg(res.size());
+        for (size_t i = 0; i < limit; ++i) {
+            out += QString("  [%1] %2 | Type: %3 | Prev: %4 | Cur: %5 | Delta: %6\n")
+                       .arg(i + 1, 2)
+                       .arg(QString::fromStdString(res[i].address.toHex()))
+                       .arg(QString::fromStdString(scanDataTypeToString(type)))
+                       .arg(QString::fromStdString(res[i].formatPreviousValue(type)))
+                       .arg(QString::fromStdString(res[i].formatCurrentValue(type)))
+                       .arg(QString::fromStdString(res[i].formatDelta(type)));
+        }
+        Q_EMIT outputLogged(out, false);
+    }, "scanresults [limit] - Display top candidate addresses from current scan");
+
+    registerCommand("scanreset", [this](const std::vector<std::string>&) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        session_->resetMemoryScan();
+        Q_EMIT outputLogged("Memory scanner reset.", false);
+    }, "scanreset - Reset memory scanner and clear candidate list");
 
     // 9. Scripting: py, lua
     registerCommand("py", [](const std::vector<std::string>&) {}, "py <code...> - Execute Python 3 script statement or expression");
