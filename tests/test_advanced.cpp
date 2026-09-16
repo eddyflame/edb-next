@@ -778,6 +778,171 @@ void test_r_debug_rendezvous() {
     std::cout << "[PASS] _r_debug Rendezvous and Shared Library Hot Reload test passed cleanly." << std::endl;
 }
 
+void test_follow_fork_mode() {
+    std::cout << "\n[TEST] Starting Follow-Fork & Multi-Process Tracking test..." << std::endl;
+
+    // 1. Build a target binary that executes fork()
+    std::string forkSrc = "/home/eddy/myplace/project/edb-next/build/test_fork_target.c";
+    std::string forkBin = "/home/eddy/myplace/project/edb-next/build/test_fork_target";
+    {
+        std::ofstream ofs(forkSrc);
+        ofs << "#include <stdio.h>\n"
+            << "#include <unistd.h>\n"
+            << "#include <sys/wait.h>\n"
+            << "int child_magic() {\n"
+            << "    volatile int val = 1337;\n"
+            << "    return val + 1;\n"
+            << "}\n"
+            << "int parent_magic() {\n"
+            << "    volatile int val = 7777;\n"
+            << "    return val + 1;\n"
+            << "}\n"
+            << "int main() {\n"
+            << "    pid_t p = fork();\n"
+            << "    if (p == 0) {\n"
+            << "        // Child process\n"
+            << "        int r = child_magic();\n"
+            << "        return r;\n"
+            << "    } else {\n"
+            << "        // Parent process\n"
+            << "        int status = 0;\n"
+            << "        parent_magic();\n"
+            << "        waitpid(p, &status, 0);\n"
+            << "        return 0;\n"
+            << "    }\n"
+            << "}\n";
+    }
+    std::string compileCmd = "gcc -g -O0 " + forkSrc + " -o " + forkBin;
+    int compileRet = ::system(compileCmd.c_str());
+    assert(compileRet == 0 && "Failed to compile test_fork_target");
+
+    // 2. Test CLI commands for follow-fork
+    {
+        DebugSession session("test_cli_sess", "CLI Fork Test");
+        CommandBarView cmdBar;
+        cmdBar.setSession(std::shared_ptr<DebugSession>(&session, [](DebugSession*){}));
+
+        QString outputLog;
+        QObject::connect(&cmdBar, &CommandBarView::outputLogged, [&](const QString& msg, bool) {
+            outputLog = msg;
+        });
+
+        cmdBar.executeCommand("follow-fork");
+        assert(outputLog.contains("parent"));
+
+        cmdBar.executeCommand("follow-fork child");
+        assert(session.followForkMode() == FollowForkMode::Child);
+
+        cmdBar.executeCommand("set follow-fork-mode both");
+        assert(session.followForkMode() == FollowForkMode::Both);
+
+        cmdBar.executeCommand("catch fork");
+        assert(session.stopOnForkEvents() == true);
+
+        cmdBar.executeCommand("catch fork");
+        assert(session.stopOnForkEvents() == false);
+
+        cmdBar.executeCommand("set fork parent");
+        assert(session.followForkMode() == FollowForkMode::Parent);
+    }
+
+    // 3. Test FollowForkMode::Parent with catch fork
+    {
+        std::cout << "  -> Testing FollowForkMode::Parent with catch fork..." << std::endl;
+        SessionManager sessionMgr;
+        auto session = sessionMgr.createSession("ParentFollowTest");
+        session->setFollowForkMode(FollowForkMode::Parent);
+        session->setStopOnForkEvents(true);
+
+        bool launched = session->launch(forkBin, {});
+        assert(launched && "Launch failed for fork test target");
+
+        bool caughtFork = false;
+        Pid reportedChildPid = 0;
+        QObject::connect(session.get(), &DebugSession::eventOccurred, [&](const DebugEvent& ev) {
+            if (ev.reason == StopReason::ProcessForked) {
+                caughtFork = true;
+                reportedChildPid = ev.childPid;
+            }
+        });
+
+        session->resume();
+
+        // Wait for fork event to be trapped
+        for (int i = 0; i < 50; ++i) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            if (caughtFork && session->state() == SessionState::Paused) {
+                break;
+            }
+            usleep(50000);
+        }
+
+        assert(caughtFork && "Should have caught StopReason::ProcessForked event");
+        assert(reportedChildPid > 0 && "Child PID should be positive");
+        std::cout << "     Caught fork event! Parent PID: " << session->pid() << ", Child PID: " << reportedChildPid << std::endl;
+
+        // Resume parent to finish
+        session->resume();
+        for (int i = 0; i < 50; ++i) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            if (session->state() == SessionState::Stopped || session->state() == SessionState::Terminated) {
+                break;
+            }
+            usleep(50000);
+        }
+        session->terminate();
+    }
+
+    // 4. Test FollowForkMode::Both (Multi-Process SessionTree)
+    {
+        std::cout << "  -> Testing FollowForkMode::Both (Session tree creation)..." << std::endl;
+        SessionManager sessionMgr;
+        auto parentSession = sessionMgr.createSession("ParentBothTest");
+        parentSession->setFollowForkMode(FollowForkMode::Both);
+        parentSession->setStopOnForkEvents(false);
+
+        std::shared_ptr<DebugSession> capturedChildSession;
+        QObject::connect(&sessionMgr, &SessionManager::sessionCreated, [&](std::shared_ptr<DebugSession> s) {
+            if (s != parentSession) {
+                capturedChildSession = s;
+            }
+        });
+
+        QObject::connect(parentSession.get(), &DebugSession::childProcessForked, [&](Pid, Pid childPid) {
+            sessionMgr.createChildSession(parentSession, childPid);
+        });
+
+        bool launched = parentSession->launch(forkBin, {});
+        assert(launched);
+
+        parentSession->resume();
+
+        // Wait for fork event to trigger child session creation
+        for (int i = 0; i < 50; ++i) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            if (capturedChildSession != nullptr) {
+                break;
+            }
+            usleep(50000);
+        }
+
+        assert(capturedChildSession != nullptr && "Child session must be instantiated in SessionManager");
+        assert(capturedChildSession->pid() > 0 && "Child session must adopt valid child PID");
+        assert(capturedChildSession->pid() != parentSession->pid() && "Child session PID must differ from parent");
+        std::cout << "     Multi-Process session created! Parent [" << parentSession->name()
+                  << ", PID: " << parentSession->pid() << "] and Child ["
+                  << capturedChildSession->name() << ", PID: " << capturedChildSession->pid() << "]" << std::endl;
+
+        parentSession->terminate();
+        capturedChildSession->terminate();
+    }
+
+    ::unlink(forkSrc.c_str());
+    ::unlink(forkBin.c_str());
+
+    std::cout << "[PASS] Follow-Fork and Multi-Process Tracking tests passed cleanly." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -799,6 +964,7 @@ int main(int argc, char* argv[]) {
     test_memory_hex_view_features();
     test_page_guard_breakpoints();
     test_r_debug_rendezvous();
+    test_follow_fork_mode();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

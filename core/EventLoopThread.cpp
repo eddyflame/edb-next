@@ -37,6 +37,11 @@ void EventLoopThread::stopLoop() {
     }
 }
 
+void EventLoopThread::addDetachedChild(Pid pid) {
+    std::lock_guard<std::mutex> lock(childMutex_);
+    detachedChildren_.insert(pid);
+}
+
 void EventLoopThread::run() {
     while (running_.load()) {
         if (!engine_.isAttached() || suspended_.load()) {
@@ -85,7 +90,14 @@ void EventLoopThread::run() {
         if (waited_pid != engine_.pid()) {
             std::string task_path = "/proc/" + std::to_string(engine_.pid()) + "/task/" + std::to_string(waited_pid);
             if (::access(task_path.c_str(), F_OK) != 0) {
-                // Not a thread of our target process (e.g. lingering zombie from previous session)
+                // Not a thread of our engine's main target. Could be child process initial stop or exit.
+                DebugEvent ev;
+                ev.pid = waited_pid;
+                ev.tid = waited_pid;
+                ev.childPid = waited_pid;
+                ev.reason = StopReason::ThreadCreated;
+                ev.message = "Child process initial stop";
+                Q_EMIT eventReceived(ev);
                 continue;
             }
         }
@@ -93,7 +105,18 @@ void EventLoopThread::run() {
         if (WIFSTOPPED(status)) {
             int sig = WSTOPSIG(status);
             int ptrace_event = (status >> 16);
-            if (ptrace_event == PTRACE_EVENT_CLONE || ptrace_event == PTRACE_EVENT_FORK || ptrace_event == PTRACE_EVENT_VFORK) {
+
+            if (ptrace_event == PTRACE_EVENT_FORK || ptrace_event == PTRACE_EVENT_VFORK) {
+                DebugEvent ev;
+                ev.pid = engine_.pid();
+                ev.tid = waited_pid;
+                ev.reason = StopReason::ProcessForked;
+                ev.message = (ptrace_event == PTRACE_EVENT_VFORK) ? "vfork" : "fork";
+                Q_EMIT eventReceived(ev);
+                continue;
+            }
+
+            if (ptrace_event == PTRACE_EVENT_CLONE) {
                 DebugEvent ev;
                 ev.pid = engine_.pid();
                 ev.tid = waited_pid;

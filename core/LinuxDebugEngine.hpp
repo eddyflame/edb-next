@@ -56,8 +56,11 @@ public:
     Result<Address> remoteMmap(Address addr, size_t size, int prot, int flags);
     bool remoteMunmap(Address addr, size_t size);
 
-    // Signal inspection
+    // Signal and event inspection
     bool getSigInfo(Tid tid, siginfo_t* siginfo);
+    bool getEventMessage(Tid tid, unsigned long* message);
+    bool detachProcess(Pid pid);
+    bool adoptProcess(Pid pid);
 
     // Introspection
     [[nodiscard]] std::vector<MemoryRegion> getMemoryRegions() const;

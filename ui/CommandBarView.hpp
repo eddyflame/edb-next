@@ -33,6 +33,7 @@ Q_SIGNALS:
     void outputLogged(const QString& msg, bool isError);
     void jumpToDisassemblyRequested(Address addr);
     void jumpToMemoryRequested(Address addr);
+    void switchSessionRequested(const QString& idOrPid);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;

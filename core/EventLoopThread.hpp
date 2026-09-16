@@ -5,6 +5,9 @@
 #include <atomic>
 #include <functional>
 
+#include <mutex>
+#include <unordered_set>
+
 namespace edb_next {
 
 class LinuxDebugEngine;
@@ -25,6 +28,8 @@ public:
     void setSuspended(bool s) noexcept { suspended_.store(s); }
     [[nodiscard]] bool isSuspended() const noexcept { return suspended_.load(); }
 
+    void addDetachedChild(Pid pid);
+
 Q_SIGNALS:
     void eventReceived(const edb_next::DebugEvent& event);
 
@@ -38,6 +43,10 @@ private:
     BreakpointManager& bpMgr_;
     std::atomic<bool> running_{false};
     std::atomic<bool> suspended_{false};
+
+    std::mutex childMutex_;
+    std::unordered_set<Pid> pendingForkChildren_;
+    std::unordered_set<Pid> detachedChildren_;
 };
 
 } // namespace edb_next

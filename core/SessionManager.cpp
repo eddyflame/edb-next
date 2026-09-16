@@ -27,6 +27,23 @@ std::shared_ptr<DebugSession> SessionManager::createSession(const std::string& n
     return session;
 }
 
+std::shared_ptr<DebugSession> SessionManager::createChildSession(
+    std::shared_ptr<DebugSession> parentSession, Pid childPid)
+{
+    if (!parentSession || childPid <= 0) return nullptr;
+
+    std::string id = "session_" + std::to_string(nextSessionIndex_++);
+    std::string session_name = "Child [PID: " + std::to_string(childPid) + "]";
+
+    auto childSession = std::make_shared<DebugSession>(id, session_name, nullptr);
+    sessions_[id] = childSession;
+
+    childSession->initAsChild(parentSession, childPid);
+
+    Q_EMIT sessionCreated(childSession);
+    return childSession;
+}
+
 void SessionManager::closeSession(const std::string& id) {
     auto it = sessions_.find(id);
     if (it != sessions_.end()) {

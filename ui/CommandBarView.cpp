@@ -623,7 +623,7 @@ void CommandBarView::setupDefaultCommands() {
 
     registerCommand("catch", [this](const std::vector<std::string>& args) {
         if (args.empty()) {
-            Q_EMIT outputLogged("Usage: catch <load|dlopen|unload>", true);
+            Q_EMIT outputLogged("Usage: catch <load|dlopen|fork|vfork>", true);
             return;
         }
         if (args[0] == "load" || args[0] == "dlopen" || args[0] == "unload") {
@@ -632,12 +632,93 @@ void CommandBarView::setupDefaultCommands() {
                 session_->setStopOnLibraryEvents(newState);
                 Q_EMIT outputLogged(QString("Catch shared library events (stop on load/unload): %1").arg(newState ? "ENABLED" : "DISABLED"), false);
             }
+        } else if (args[0] == "fork" || args[0] == "vfork") {
+            if (session_) {
+                bool newState = !session_->stopOnForkEvents();
+                session_->setStopOnForkEvents(newState);
+                Q_EMIT outputLogged(QString("Catch fork events (stop on fork/vfork): %1").arg(newState ? "ENABLED" : "DISABLED"), false);
+            }
         } else {
             Q_EMIT outputLogged("Unknown catch event: " + QString::fromStdString(args[0]), true);
         }
-    }, "catch <load|dlopen> - Toggle pause on shared library load/unload");
+    }, "catch <load|dlopen|fork|vfork> - Toggle pause on runtime events");
 
-    // 8. Scripting: py, lua
+    // 8. Follow-Fork & Multi-Process Tracking
+    registerCommand("follow-fork", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty()) {
+            std::string mode_str = followForkModeToString(session_->followForkMode());
+            Q_EMIT outputLogged(QString("Current follow-fork mode: %1").arg(mode_str.c_str()), false);
+            return;
+        }
+        std::string mode = args[0];
+        if (mode == "parent") {
+            session_->setFollowForkMode(FollowForkMode::Parent);
+            Q_EMIT outputLogged("Follow-fork mode set to: PARENT (child process runs detached)", false);
+        } else if (mode == "child") {
+            session_->setFollowForkMode(FollowForkMode::Child);
+            Q_EMIT outputLogged("Follow-fork mode set to: CHILD (debugger follows child, detaches parent)", false);
+        } else if (mode == "both") {
+            session_->setFollowForkMode(FollowForkMode::Both);
+            Q_EMIT outputLogged("Follow-fork mode set to: BOTH (child process gets dedicated session tab)", false);
+        } else {
+            Q_EMIT outputLogged("Invalid mode. Usage: follow-fork <parent|child|both>", true);
+        }
+    }, "follow-fork [parent|child|both] - Set or query follow-fork mode");
+
+    registerCommand("set", [this](const std::vector<std::string>& args) {
+        if (args.size() >= 2 && (args[0] == "follow-fork-mode" || args[0] == "follow-fork" || args[0] == "fork")) {
+            executeCommand("follow-fork " + QString::fromStdString(args[1]));
+            return;
+        }
+        Q_EMIT outputLogged("Usage: set follow-fork-mode <parent|child|both>", true);
+    }, "set follow-fork-mode <parent|child|both> - Configure follow-fork mode");
+
+    registerCommand("show", [this](const std::vector<std::string>& args) {
+        if (!args.empty() && (args[0] == "follow-fork-mode" || args[0] == "follow-fork" || args[0] == "fork")) {
+            executeCommand("follow-fork");
+            return;
+        }
+        Q_EMIT outputLogged("Usage: show follow-fork-mode", true);
+    }, "show follow-fork-mode - Display current follow-fork mode");
+
+    registerCommand("inferiors", [this](const std::vector<std::string>&) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        QString out = QString("Active Inferior: [%1] PID: %2 Target: %3 (Follow-Fork: %4)")
+            .arg(QString::fromStdString(session_->name()))
+            .arg(session_->pid())
+            .arg(QString::fromStdString(session_->targetPath()))
+            .arg(followForkModeToString(session_->followForkMode()));
+        Q_EMIT outputLogged(out, false);
+    }, "inferiors - Display current active inferior process");
+
+    registerCommand("processes", [this](const std::vector<std::string>&) {
+        executeCommand("inferiors");
+    }, "Alias for inferiors");
+
+    registerCommand("inferior", [this](const std::vector<std::string>& args) {
+        if (args.empty()) {
+            executeCommand("inferiors");
+            return;
+        }
+        Q_EMIT switchSessionRequested(QString::fromStdString(args[0]));
+    }, "inferior <id|pid> - Switch active session/tab to specified inferior");
+
+    registerCommand("process", [this](const std::vector<std::string>& args) {
+        if (args.empty()) {
+            executeCommand("inferiors");
+            return;
+        }
+        Q_EMIT switchSessionRequested(QString::fromStdString(args[0]));
+    }, "Alias for inferior <id|pid>");
+
+    // 9. Scripting: py, lua
     registerCommand("py", [](const std::vector<std::string>&) {}, "py <code...> - Execute Python 3 script statement or expression");
     registerCommand("lua", [](const std::vector<std::string>&) {}, "lua <code...> - Execute Lua 5.4 script statement or expression");
 

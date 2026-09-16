@@ -70,6 +70,8 @@ Result<Pid> LinuxDebugEngine::launch(
             }
         }
 
+        ::setpgid(0, 0);
+
         if (::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) {
             int err = errno;
             (void)::write(pipe_fd[1], &err, sizeof(err));
@@ -92,6 +94,7 @@ Result<Pid> LinuxDebugEngine::launch(
     }
 
     // Parent process
+    ::setpgid(child_pid, child_pid);
     ::close(pipe_fd[1]); // Close write end
 
     int child_err = 0;
@@ -140,7 +143,12 @@ Result<void> LinuxDebugEngine::attach(Pid pid) {
         return Result<void>::Err("waitpid after ATTACH failed: " + std::string(strerror(errno)));
     }
 
-    constexpr unsigned long options = PTRACE_O_TRACECLONE | PTRACE_O_EXITKILL;
+    constexpr unsigned long options =
+        PTRACE_O_TRACECLONE |
+        PTRACE_O_TRACEFORK  |
+        PTRACE_O_TRACEVFORK |
+        PTRACE_O_TRACEEXEC  |
+        PTRACE_O_EXITKILL;
     ::ptrace(PTRACE_SETOPTIONS, pid, nullptr, options);
 
     pid_ = pid;
@@ -589,6 +597,36 @@ bool LinuxDebugEngine::getSigInfo(Tid tid, siginfo_t* siginfo) {
     if (tid <= 0 || !siginfo) return false;
     long res = ::ptrace(PTRACE_GETSIGINFO, tid, nullptr, siginfo);
     return res == 0;
+}
+
+bool LinuxDebugEngine::getEventMessage(Tid tid, unsigned long* message) {
+    if (tid <= 0 || !message) return false;
+    long res = ::ptrace(PTRACE_GETEVENTMSG, tid, nullptr, message);
+    return res == 0;
+}
+
+bool LinuxDebugEngine::detachProcess(Pid pid) {
+    if (pid <= 0) return false;
+    long res = ::ptrace(PTRACE_DETACH, pid, nullptr, nullptr);
+    return res == 0;
+}
+
+bool LinuxDebugEngine::adoptProcess(Pid pid) {
+    if (pid <= 0) return false;
+    memFd_.reset();
+    pid_ = pid;
+    mainTid_ = pid;
+    activeTid_ = pid;
+    openProcMem();
+
+    constexpr unsigned long options =
+        PTRACE_O_TRACECLONE |
+        PTRACE_O_TRACEFORK  |
+        PTRACE_O_TRACEVFORK |
+        PTRACE_O_TRACEEXEC  |
+        PTRACE_O_EXITKILL;
+    ::ptrace(PTRACE_SETOPTIONS, pid, nullptr, options);
+    return true;
 }
 
 } // namespace edb_next
