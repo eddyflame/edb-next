@@ -187,6 +187,50 @@ void BreakpointManagerView::refresh() {
         table_->setItem(r, 6, item_log);
         table_->setItem(r, 7, item_script);
     }
+
+    // Populate Pending Breakpoints
+    const auto& pending = session->pendingBreakpoints();
+    table_->setRowCount(static_cast<int>(currentBreakpoints_.size() + pending.size()));
+
+    for (size_t i = 0; i < pending.size(); ++i) {
+        int r = static_cast<int>(currentBreakpoints_.size() + i);
+        const auto& pb = pending[i];
+
+        auto* item_state = new QTableWidgetItem(pb.enabled ? "Pending" : "Disabled");
+        item_state->setCheckState(pb.enabled ? Qt::Checked : Qt::Unchecked);
+        item_state->setForeground(QColor(230, 180, 80));
+
+        auto* item_addr = new QTableWidgetItem("[Pending]");
+        item_addr->setForeground(QColor(100, 200, 220));
+
+        auto* item_sym = new QTableWidgetItem(QString::fromStdString(pb.symbol));
+        item_sym->setForeground(QColor(152, 195, 121));
+
+        auto* item_type = new QTableWidgetItem("Deferred (Pending)");
+        item_type->setForeground(QColor(180, 180, 180));
+
+        auto* item_hits = new QTableWidgetItem("0");
+        item_hits->setTextAlignment(Qt::AlignCenter);
+
+        auto* item_cond = new QTableWidgetItem(QString::fromStdString(pb.condition));
+        auto* item_log = new QTableWidgetItem(pb.isLogOnly ? QString::fromStdString(pb.logFormat) : QString(""));
+
+        QString scriptSummary;
+        if (!pb.scriptCode.empty()) {
+            scriptSummary = QString("[%1]").arg(QString::fromStdString(pb.scriptLanguage).toUpper());
+        }
+        auto* item_script = new QTableWidgetItem(scriptSummary);
+
+        table_->setItem(r, 0, item_state);
+        table_->setItem(r, 1, item_addr);
+        table_->setItem(r, 2, item_sym);
+        table_->setItem(r, 3, item_type);
+        table_->setItem(r, 4, item_hits);
+        table_->setItem(r, 5, item_cond);
+        table_->setItem(r, 6, item_log);
+        table_->setItem(r, 7, item_script);
+    }
+
     isUpdatingTable_ = false;
 }
 

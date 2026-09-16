@@ -9,9 +9,11 @@
 #include "core/OpcodeSearcher.hpp"
 #include "core/StateDumper.hpp"
 #include "core/PageGuardManager.hpp"
+#include "core/RendezvousManager.hpp"
 #include "ui/CFGGraphView.hpp"
 #include "ui/CommandBarView.hpp"
 #include "ui/MemoryHexView.hpp"
+#include "ui/BinaryInfoView.hpp"
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -633,6 +635,149 @@ void test_page_guard_breakpoints() {
     std::cout << "[PASS] Page-Guard Breakpoints test passed cleanly." << std::endl;
 }
 
+void test_r_debug_rendezvous() {
+    std::cout << "\n--- Testing 4.7 _r_debug Rendezvous & Shared Library Hot Reload ---" << std::endl;
+
+    // 1. Prepare dynamic plugin library source and dlopen launcher
+    std::string pluginC = "./build/test_plugin.c";
+    std::string pluginSo = "./build/libtest_plugin.so";
+    std::string launcherC = "./build/test_dlopen_launcher.c";
+    std::string launcherBin = "./build/test_dlopen_launcher";
+
+    {
+        std::ofstream pFile(pluginC);
+        pFile << "#include <stdio.h>\n"
+              << "int plugin_calc_magic(int a, int b) {\n"
+              << "    return a * 100 + b;\n"
+              << "}\n";
+    }
+
+    {
+        std::ofstream lFile(launcherC);
+        lFile << "#include <stdio.h>\n"
+              << "#include <unistd.h>\n"
+              << "#include <dlfcn.h>\n"
+              << "int main() {\n"
+              << "    usleep(100000);\n"
+              << "    void* h = dlopen(\"" << pluginSo << "\", RTLD_NOW);\n"
+              << "    if (!h) { printf(\"dlopen failed: %s\\n\", dlerror()); return 1; }\n"
+              << "    int (*calc)(int, int) = (int (*)(int, int))dlsym(h, \"plugin_calc_magic\");\n"
+              << "    int val = calc ? calc(7, 42) : 0;\n"
+              << "    (void)val;\n"
+              << "    usleep(100000);\n"
+              << "    dlclose(h);\n"
+              << "    return 0;\n"
+              << "}\n";
+    }
+
+    // Compile shared library and launcher
+    std::string cmdSo = "gcc -O0 -shared -fPIC -o " + pluginSo + " " + pluginC;
+    std::string cmdBin = "gcc -O0 -g -o " + launcherBin + " " + launcherC + " -ldl";
+    int r1 = ::system(cmdSo.c_str());
+    int r2 = ::system(cmdBin.c_str());
+    assert(r1 == 0 && r2 == 0);
+    ::unlink(pluginC.c_str());
+    ::unlink(launcherC.c_str());
+
+    // 2. Launch DebugSession with test_dlopen_launcher
+    auto session = std::make_shared<DebugSession>("test_rdebug_session", "RDebugSession");
+    bool launched = session->launch(launcherBin, {});
+    assert(launched && "Failed to launch dlopen launcher target");
+
+    // Verify RendezvousManager is initialized
+    assert(session->rendezvousManager().isInitialized() && "RendezvousManager should be initialized");
+    Address brkAddr = session->rendezvousManager().rBrkAddr();
+    assert(brkAddr.value() != 0 && "r_brk address should be resolved");
+
+    // 3. Set a Pending Breakpoint for 'plugin_calc_magic' BEFORE the library is loaded!
+    assert(!session->symbols().findSymbolAddress("plugin_calc_magic").has_value() && "Symbol must not exist prior to dlopen");
+    bool pbSet = session->addPendingBreakpoint("plugin_calc_magic");
+    assert(pbSet && "addPendingBreakpoint should succeed");
+    assert(session->pendingBreakpoints().size() == 1);
+
+    // 4. Test BinaryInfoView loaded libraries table
+    BinaryInfoView infoView;
+    infoView.setSession(session);
+    infoView.refresh();
+
+    // 5. Test CommandBar 'catch dlopen'
+    CommandBarView cmdBar;
+    cmdBar.setSession(session);
+    QString capturedLog;
+    QObject::connect(&cmdBar, &CommandBarView::outputLogged, [&](const QString& msg, bool isErr) {
+        Q_UNUSED(isErr);
+        capturedLog = msg;
+    });
+
+    cmdBar.executeCommand("catch dlopen");
+    assert(session->stopOnLibraryEvents() == true);
+    cmdBar.executeCommand("catch dlopen");
+    assert(session->stopOnLibraryEvents() == false);
+
+    // 6. Resume target. Target calls dlopen -> hits _dl_debug_state -> RendezvousManager catches it ->
+    // loads libtest_plugin.so symbols -> resolves 'plugin_calc_magic' -> sets active bp ->
+    // resumes -> target calls calc(7, 42) -> hits 'plugin_calc_magic' breakpoint and pauses!
+    bool hitMagicBp = false;
+    QObject::connect(session.get(), &DebugSession::eventOccurred, [&](const DebugEvent& ev) {
+        if (ev.reason == StopReason::Breakpoint) {
+            auto sym = session->symbols().findNearestSymbol(ev.address);
+            if (sym && sym->first.name == "plugin_calc_magic") {
+                hitMagicBp = true;
+            }
+        }
+    });
+
+    session->resume();
+
+    // Wait for the breakpoint hit with event processing
+    for (int i = 0; i < 50; ++i) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (hitMagicBp || session->state() == SessionState::Paused) {
+            if (hitMagicBp) break;
+        }
+        usleep(50000);
+    }
+
+    assert(hitMagicBp && "Should successfully catch dlopen, bind pending breakpoint, and hit plugin_calc_magic!");
+    assert(session->state() == SessionState::Paused);
+    assert(session->pendingBreakpoints().empty() && "Pending breakpoint should be fully resolved");
+
+    // Verify symbols() now knows plugin_calc_magic
+    auto resolvedAddr = session->symbols().findSymbolAddress("plugin_calc_magic");
+    assert(resolvedAddr.has_value() && resolvedAddr->value() != 0);
+
+    // Verify loadedLibraries contains libtest_plugin.so
+    auto libs = session->loadedLibraries();
+    bool foundPlugin = false;
+    for (const auto& l : libs) {
+        if (l.name.find("libtest_plugin.so") != std::string::npos || l.path.find("libtest_plugin.so") != std::string::npos) {
+            foundPlugin = true;
+            break;
+        }
+    }
+    assert(foundPlugin && "Loaded libraries list must contain libtest_plugin.so");
+
+    cmdBar.executeCommand("modules");
+    assert(capturedLog.contains("Loaded Shared Libraries"));
+    assert(capturedLog.contains("libtest_plugin.so"));
+
+    // 7. Resume to finish execution
+    session->resume();
+    for (int i = 0; i < 30; ++i) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (session->state() == SessionState::Stopped || session->state() == SessionState::Terminated) {
+            break;
+        }
+        usleep(50000);
+    }
+
+    session->terminate();
+    ::unlink(pluginSo.c_str());
+    ::unlink(launcherBin.c_str());
+
+    std::cout << "[PASS] _r_debug Rendezvous and Shared Library Hot Reload test passed cleanly." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -653,6 +798,7 @@ int main(int argc, char* argv[]) {
     test_cxx_demangling();
     test_memory_hex_view_features();
     test_page_guard_breakpoints();
+    test_r_debug_rendezvous();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

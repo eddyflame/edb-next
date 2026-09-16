@@ -35,8 +35,16 @@ public:
     bool setBreakpointIgnoreCount(Address addr, uint32_t ignoreCount);
     bool setBreakpointLogOnly(Address addr, bool isLogOnly, const std::string& format);
     bool setBreakpointScript(Address addr, const std::string& code, const std::string& language = "python");
-    [[nodiscard]] std::vector<Breakpoint> allBreakpoints() const;
+    [[nodiscard]] std::vector<Breakpoint> allBreakpoints(bool include_internal = false) const;
     void clear();
+
+    // Pending breakpoints
+    bool addPendingBreakpoint(const std::string& symbol, const std::string& condition = "",
+                              const std::string& scriptCode = "", const std::string& scriptLang = "python",
+                              bool isLogOnly = false, const std::string& logFormat = "");
+    bool removePendingBreakpoint(const std::string& symbol);
+    [[nodiscard]] const std::vector<PendingBreakpoint>& allPendingBreakpoints() const noexcept { return pendingBreakpoints_; }
+    std::vector<PendingBreakpoint>& allPendingBreakpointsMutable() noexcept { return pendingBreakpoints_; }
 
     // State machine for stepping over a breakpoint before resuming
     bool prepareStepOver(Address addr);
@@ -50,6 +58,7 @@ private:
     ClearHwBpFunc clearHwBp_;
 
     std::unordered_map<uint64_t, Breakpoint> breakpoints_;
+    std::vector<PendingBreakpoint> pendingBreakpoints_;
     std::array<bool, 4> slotOccupied_{false, false, false, false};
     std::optional<Address> pendingReenableAddr_;
 };

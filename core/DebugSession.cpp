@@ -33,6 +33,9 @@ DebugSession::DebugSession(std::string id, std::string name, QObject* parent)
               return changeMemoryProtection(addr, sz, prot);
           }
       ),
+      rendezvousMgr_(
+          [this](Address addr, void* buf, size_t sz) { return engine_.readMemory(addr, buf, sz); }
+      ),
       eventLoop_(engine_, bpMgr_, nullptr)
 {
     qRegisterMetaType<edb_next::SessionState>("edb_next::SessionState");
@@ -81,6 +84,7 @@ bool DebugSession::launch(const std::string& path, const std::vector<std::string
     if (slash_pos != std::string::npos) {
         SourceFileManager::instance().addSearchPath(path.substr(0, slash_pos));
     }
+    setupRendezvousHook(path, base_addr);
 
     refreshRegisters();
     setState(SessionState::Paused);
@@ -128,6 +132,7 @@ bool DebugSession::attach(Pid pid) {
         if (exe_slash != std::string::npos) {
             SourceFileManager::instance().addSearchPath(exe_path.substr(0, exe_slash));
         }
+        setupRendezvousHook(exe_path, base_addr);
     }
 
     refreshRegisters();
@@ -139,9 +144,9 @@ bool DebugSession::attach(Pid pid) {
     DebugEvent initial_ev{
         .pid = engine_.pid(),
         .tid = engine_.mainTid(),
-        .reason = StopReason::Signal,
+        .reason = StopReason::SingleStep,
         .address = currentRegs_.rip(),
-        .message = "Attached to process"
+        .message = "Attached to process " + std::to_string(pid)
     };
     Q_EMIT eventOccurred(initial_ev);
     return true;
@@ -158,6 +163,8 @@ void DebugSession::terminate() {
     pendingPageGuardRestoreAddr_ = Address(0);
     isPageGuardStepOver_ = false;
     isPageGuardResuming_ = false;
+    rendezvousMgr_.clear();
+    rendezvousBrkAddr_ = Address(0);
     symbols_.clear();
     dwarfParser_.clear();
 
@@ -173,6 +180,8 @@ void DebugSession::detach() {
     pendingPageGuardRestoreAddr_ = Address(0);
     isPageGuardStepOver_ = false;
     isPageGuardResuming_ = false;
+    rendezvousMgr_.clear();
+    rendezvousBrkAddr_ = Address(0);
     symbols_.clear();
     dwarfParser_.clear();
     setState(SessionState::Stopped);
@@ -536,6 +545,52 @@ void DebugSession::handleEvent(const DebugEvent& event) {
         DebugEvent processed_event = event;
         if (event.signal == SIGTRAP) {
             Address bp_addr = currentRegs_.rip() - 1;
+
+            if (rendezvousBrkAddr_.value() != 0 && bp_addr == rendezvousBrkAddr_) {
+                currentRegs_.setRip(bp_addr);
+                engine_.setRegisters(engine_.activeTid(), currentRegs_);
+
+                rendezvousMgr_.updateDebugState();
+                auto linkState = rendezvousMgr_.currentState();
+
+                if (linkState == LinkerState::Consistent) {
+                    auto diff = rendezvousMgr_.detectChanges();
+
+                    for (const auto& lib : diff.added) {
+                        symbols_.addSharedLibrary(lib.path, lib.baseAddress);
+                        dwarfParser_.addModule(lib.path, lib.baseAddress);
+                        LogManager::instance().info("DynamicLinker", "[Library Loaded] " + lib.name + " (" + lib.path + ") at " + lib.baseAddress.toHex());
+                        Q_EMIT libraryLoaded(QString::fromStdString(lib.name), QString::fromStdString(lib.path), lib.baseAddress);
+                    }
+
+                    for (const auto& lib : diff.removed) {
+                        LogManager::instance().info("DynamicLinker", "[Library Unloaded] " + lib.name);
+                        Q_EMIT libraryUnloaded(QString::fromStdString(lib.name));
+                    }
+
+                    checkAndResolvePendingBreakpoints();
+                    Q_EMIT memoryUpdated();
+
+                    if (stopOnLibraryEvents_ && (!diff.added.empty() || !diff.removed.empty())) {
+                        processed_event.reason = StopReason::Breakpoint;
+                        processed_event.address = bp_addr;
+                        if (!diff.added.empty()) {
+                            processed_event.message = "[Library Event] Loaded: " + diff.added.front().name;
+                        } else {
+                            processed_event.message = "[Library Event] Unloaded: " + diff.removed.front().name;
+                        }
+                        setState(SessionState::Paused);
+                        Q_EMIT eventOccurred(processed_event);
+                        return;
+                    }
+                }
+
+                bpMgr_.prepareStepOver(bp_addr);
+                isStepOverBreak_ = true;
+                engine_.singleStep(engine_.activeTid());
+                return;
+            }
+
             if (bpMgr_.hasBreakpoint(bp_addr)) {
                 // Rewind RIP by 1 on breakpoint hit
                 currentRegs_.setRip(bp_addr);
@@ -1123,6 +1178,87 @@ bool DebugSession::stepSourceInto(int maxInsnSteps) {
         }
     }
     return true;
+}
+
+void DebugSession::setupRendezvousHook(const std::string& targetPath, Address baseAddr) {
+    rendezvousMgr_.initialize(engine_.pid(), baseAddr, targetPath);
+    rendezvousBrkAddr_ = rendezvousMgr_.rBrkAddr();
+    if (rendezvousBrkAddr_.value() != 0) {
+        bpMgr_.addBreakpoint(rendezvousBrkAddr_, true, "_dl_debug_state");
+    }
+
+    // Pre-load existing shared libraries
+    auto diff = rendezvousMgr_.detectChanges();
+    for (const auto& lib : diff.added) {
+        symbols_.addSharedLibrary(lib.path, lib.baseAddress);
+        dwarfParser_.addModule(lib.path, lib.baseAddress);
+        LogManager::instance().info("DynamicLinker", "[Library Mapped] " + lib.name + " (" + lib.path + ") at " + lib.baseAddress.toHex());
+    }
+    checkAndResolvePendingBreakpoints();
+}
+
+void DebugSession::checkAndResolvePendingBreakpoints() {
+    auto& pending = bpMgr_.allPendingBreakpointsMutable();
+    if (pending.empty()) return;
+
+    std::vector<PendingBreakpoint> remaining;
+    for (const auto& pb : pending) {
+        auto addr = symbols_.findSymbolAddress(pb.symbol);
+        if (addr.has_value() && addr->value() != 0) {
+            bool ok = bpMgr_.addBreakpoint(*addr, false, pb.symbol);
+            if (ok) {
+                if (!pb.condition.empty()) bpMgr_.setBreakpointCondition(*addr, pb.condition);
+                if (!pb.scriptCode.empty()) bpMgr_.setBreakpointScript(*addr, pb.scriptCode, pb.scriptLanguage);
+                if (pb.isLogOnly) bpMgr_.setBreakpointLogOnly(*addr, true, pb.logFormat);
+                LogManager::instance().bp("PendingBreakpoint", "[Pending Breakpoint Bound] Symbol '" + pb.symbol + "' -> " + addr->toHex());
+                Q_EMIT breakpointsUpdated();
+            } else {
+                remaining.push_back(pb);
+            }
+        } else {
+            remaining.push_back(pb);
+        }
+    }
+    pending = std::move(remaining);
+}
+
+std::vector<SharedLibraryInfo> DebugSession::loadedLibraries() const {
+    return rendezvousMgr_.loadedLibraries();
+}
+
+bool DebugSession::addPendingBreakpoint(const std::string& symbol, const std::string& condition,
+                                        const std::string& scriptCode, const std::string& scriptLang,
+                                        bool isLogOnly, const std::string& logFormat) {
+    auto addr = symbols_.findSymbolAddress(symbol);
+    if (addr.has_value() && addr->value() != 0) {
+        bool ok = bpMgr_.addBreakpoint(*addr, false, symbol);
+        if (ok) {
+            if (!condition.empty()) bpMgr_.setBreakpointCondition(*addr, condition);
+            if (!scriptCode.empty()) bpMgr_.setBreakpointScript(*addr, scriptCode, scriptLang);
+            if (isLogOnly) bpMgr_.setBreakpointLogOnly(*addr, true, logFormat);
+            Q_EMIT breakpointsUpdated();
+        }
+        return ok;
+    }
+
+    bool ok = bpMgr_.addPendingBreakpoint(symbol, condition, scriptCode, scriptLang, isLogOnly, logFormat);
+    if (ok) {
+        LogManager::instance().bp("PendingBreakpoint", "[Pending Breakpoint Added] Symbol '" + symbol + "' (waiting for module load)");
+        Q_EMIT breakpointsUpdated();
+    }
+    return ok;
+}
+
+bool DebugSession::removePendingBreakpoint(const std::string& symbol) {
+    bool ok = bpMgr_.removePendingBreakpoint(symbol);
+    if (ok) {
+        Q_EMIT breakpointsUpdated();
+    }
+    return ok;
+}
+
+const std::vector<PendingBreakpoint>& DebugSession::pendingBreakpoints() const noexcept {
+    return bpMgr_.allPendingBreakpoints();
 }
 
 } // namespace edb_next

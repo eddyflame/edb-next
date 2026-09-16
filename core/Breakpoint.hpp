@@ -29,4 +29,14 @@ struct Breakpoint {
     std::string symbol;
 };
 
+struct PendingBreakpoint {
+    std::string symbol;
+    bool enabled{true};
+    std::string condition;
+    std::string scriptCode;
+    std::string scriptLanguage{"python"};
+    bool isLogOnly{false};
+    std::string logFormat;
+};
+
 } // namespace edb_next

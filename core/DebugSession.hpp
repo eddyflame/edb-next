@@ -23,6 +23,7 @@
 #include "CodeXRefFinder.hpp"
 #include "PatternSearcher.hpp"
 #include "ScriptEngineManager.hpp"
+#include "RendezvousManager.hpp"
 
 namespace edb_next {
 
@@ -104,6 +105,20 @@ public:
     [[nodiscard]] PageGuardManager& pageGuardManager() noexcept { return pageGuardMgr_; }
     [[nodiscard]] const PageGuardManager& pageGuardManager() const noexcept { return pageGuardMgr_; }
 
+    // Shared Libraries & Rendezvous (_r_debug)
+    [[nodiscard]] const RendezvousManager& rendezvousManager() const noexcept { return rendezvousMgr_; }
+    [[nodiscard]] std::vector<SharedLibraryInfo> loadedLibraries() const;
+    [[nodiscard]] bool stopOnLibraryEvents() const noexcept { return stopOnLibraryEvents_; }
+    void setStopOnLibraryEvents(bool enable) noexcept { stopOnLibraryEvents_ = enable; }
+
+    // Pending Breakpoints
+    bool addPendingBreakpoint(const std::string& symbol, const std::string& condition = "",
+                              const std::string& scriptCode = "", const std::string& scriptLang = "python",
+                              bool isLogOnly = false, const std::string& logFormat = "");
+    bool removePendingBreakpoint(const std::string& symbol);
+    [[nodiscard]] const std::vector<PendingBreakpoint>& pendingBreakpoints() const noexcept;
+    void checkAndResolvePendingBreakpoints();
+
     // Assembly & Analysis
     Result<std::vector<uint8_t>> assemble(const std::string& insn, Address origin = Address(0));
     std::vector<ROPGadget> scanROP(size_t maxGadgetLength = 4, size_t maxResults = 500, const std::string& filter = "");
@@ -175,6 +190,8 @@ Q_SIGNALS:
     void pageGuardsUpdated();
     void activeThreadChanged(Tid tid);
     void sourceLocationChanged(const edb_next::SourceLocation& loc);
+    void libraryLoaded(const QString& name, const QString& path, edb_next::Address baseAddr);
+    void libraryUnloaded(const QString& name);
 
 private Q_SLOTS:
     void handleEvent(const edb_next::DebugEvent& event);
@@ -182,6 +199,7 @@ private Q_SLOTS:
 private:
     void setState(SessionState s);
     void refreshRegisters();
+    void setupRendezvousHook(const std::string& targetPath, Address baseAddr);
 
     std::string id_;
     std::string name_;
@@ -190,6 +208,7 @@ private:
     LinuxDebugEngine engine_;
     BreakpointManager bpMgr_;
     PageGuardManager pageGuardMgr_;
+    RendezvousManager rendezvousMgr_;
     EventLoopThread eventLoop_;
     ElfParser symbols_;
     DwarfParser dwarfParser_;
@@ -204,6 +223,8 @@ private:
     Address pendingPageGuardRestoreAddr_{0};
     bool isPageGuardStepOver_{false};
     bool isPageGuardResuming_{false};
+    Address rendezvousBrkAddr_{0};
+    bool stopOnLibraryEvents_{false};
 
     std::string targetPath_;
     std::vector<std::string> targetArgs_;

@@ -179,6 +179,17 @@ void CommandBarView::setupDefaultCommands() {
         }
         Address addr = parseAddress(args[0]);
         if (addr.isNull()) {
+            if (session_) {
+                const auto& token = args[0];
+                bool looksLikeSymbol = (!token.empty() && (std::isalpha(token[0]) || token[0] == '_'));
+                if (looksLikeSymbol) {
+                    bool ok = session_->addPendingBreakpoint(token);
+                    if (ok) {
+                        Q_EMIT outputLogged(QString("Symbol '%1' not yet resolved. Added as Pending Breakpoint (auto-binds upon module load).").arg(QString::fromStdString(token)), false);
+                        return;
+                    }
+                }
+            }
             Q_EMIT outputLogged("Failed to resolve address for: " + QString::fromStdString(args[0]), true);
             return;
         }
@@ -187,6 +198,19 @@ void CommandBarView::setupDefaultCommands() {
             Q_EMIT outputLogged(QString("Breakpoint set at %1: %2").arg(QString::fromStdString(addr.toHex()), ok ? "Success" : "Failed"), !ok);
         }
     }, "bp <addr/symbol> - Set software breakpoint (int3)");
+
+    registerCommand("bpp", [this](const std::vector<std::string>& args) {
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: bpp <symbol>", true);
+            return;
+        }
+        if (!session_) {
+            Q_EMIT outputLogged("No active debug session", true);
+            return;
+        }
+        bool ok = session_->addPendingBreakpoint(args[0]);
+        Q_EMIT outputLogged(QString("Pending breakpoint for symbol '%1': %2").arg(QString::fromStdString(args[0]), ok ? "Added (waiting for module load)" : "Already exists or error"), !ok);
+    }, "bpp <symbol> - Set deferred/pending breakpoint for dynamic library");
 
     registerCommand("bph", [this](const std::vector<std::string>& args) {
         if (args.empty()) {
@@ -561,7 +585,59 @@ void CommandBarView::setupDefaultCommands() {
         Q_EMIT outputLogged(QString("AutoTrace: %1").arg(QString::fromStdString(res.message)), false);
     }, "trace [into|over] [count] [stopCondition] - Auto-trace instructions until count or condition");
 
-    // 7. Scripting: py, lua
+    // 7. Dynamic Libraries: modules, libs, solist, catch
+    registerCommand("modules", [this](const std::vector<std::string>&) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active debug session", true);
+            return;
+        }
+        auto libs = session_->loadedLibraries();
+        if (libs.empty()) {
+            Q_EMIT outputLogged("No shared libraries loaded (or process is static)", false);
+            return;
+        }
+        QString out = QString("=== Loaded Shared Libraries (%1) ===\n").arg(libs.size());
+        out += QString("  %1  %2  %3  %4\n")
+                   .arg("Base Address", -18)
+                   .arg("Dynamic (l_ld)", -18)
+                   .arg("Name", -24)
+                   .arg("Path");
+        out += "  --------------------------------------------------------------------------------------\n";
+        for (const auto& lib : libs) {
+            out += QString("  %1  %2  %3  %4\n")
+                       .arg(QString::fromStdString(lib.baseAddress.toHex()), -18)
+                       .arg(QString::fromStdString(lib.dynamicAddress.toHex()), -18)
+                       .arg(QString::fromStdString(lib.name), -24)
+                       .arg(QString::fromStdString(lib.path));
+        }
+        Q_EMIT outputLogged(out, false);
+    }, "modules (or libs, solist) - List all loaded shared libraries (_r_debug)");
+
+    registerCommand("libs", [this](const std::vector<std::string>&) {
+        executeCommand("modules");
+    }, "Alias for modules");
+
+    registerCommand("solist", [this](const std::vector<std::string>&) {
+        executeCommand("modules");
+    }, "Alias for modules");
+
+    registerCommand("catch", [this](const std::vector<std::string>& args) {
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: catch <load|dlopen|unload>", true);
+            return;
+        }
+        if (args[0] == "load" || args[0] == "dlopen" || args[0] == "unload") {
+            if (session_) {
+                bool newState = !session_->stopOnLibraryEvents();
+                session_->setStopOnLibraryEvents(newState);
+                Q_EMIT outputLogged(QString("Catch shared library events (stop on load/unload): %1").arg(newState ? "ENABLED" : "DISABLED"), false);
+            }
+        } else {
+            Q_EMIT outputLogged("Unknown catch event: " + QString::fromStdString(args[0]), true);
+        }
+    }, "catch <load|dlopen> - Toggle pause on shared library load/unload");
+
+    // 8. Scripting: py, lua
     registerCommand("py", [](const std::vector<std::string>&) {}, "py <code...> - Execute Python 3 script statement or expression");
     registerCommand("lua", [](const std::vector<std::string>&) {}, "lua <code...> - Execute Lua 5.4 script statement or expression");
 
