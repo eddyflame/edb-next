@@ -37,6 +37,7 @@
    - 4.10 动态库全自动拦截、热重载与延迟待决断点 (Shared Libraries & Pending Breakpoints)
    - 4.11 多进程 Follow-Fork 模式与子进程跟踪实战 (Follow-Fork & Inferiors)
    - 4.12 多线程独立冻结与解冻实战 (Thread Freeze / Thaw & Isolated Stepping)
+   - 4.13 动态内存特征差分扫描器实战 (Differential Memory Scanner - CheatEngine style)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -599,6 +600,62 @@ thaw all           # 解冻所有线程
 
 ---
 
+### 4.13 动态内存特征差分扫描器实战 (Differential Memory Scanner - CheatEngine style)
+
+在安全分析、CTF 攻防、外挂逆向以及漏洞挖掘中，目标程序中的敏感变量（如加密密钥缓冲区、游戏金币/生命值、解密标志位、用户权限等级）往往动态驻留于堆（Heap）、栈（Stack）或未初始化数据段（BSS）中。静态特征码搜索无法捕获动态数值的变化。
+
+`edb-next` 内置了工业级、CheatEngine 风格的多轮差分内存扫描器（Tab 21: "Memory Scanner"），支持从数百万候选地址中快速过滤收敛：
+
+#### 1. 扫描器操作面板全景 (Tab 21)
+切换至底部抽屉 **Memory Scanner**（Tab 21）：
+- **参数控制栏**：
+  - **Value（目标值）**：输入待检索数值（支持十进制如 `100`、十六进制如 `0x1337`、浮点数如 `3.1415`、字符串文本或 Hex 字节流如 `48 89 ?? 55`）；
+  - **Delta (+/-)**：配合“Increased By...”或“Decreased By...”输入特定变动差值；
+  - **Data Type（数据类型）**：支持 `Int32 (4 Bytes)`、`Int64 (8 Bytes)`、`Int16 (2 Bytes)`、`Int8 (1 Byte)`、`Float (Single)`、`Double`、`String (Text)`、`Hex Bytes (ByteArray)`；
+  - **Scan Type（扫描类型）**：
+    - `Exact Value`：精准匹配输入值；
+    - `Increased Value`：数值变大（`>`）；
+    - `Decreased Value`：数值变小（`<`）；
+    - `Changed Value`：数值发生任何变动（`!=`）；
+    - `Unchanged Value`：数值保持未变（`==`）；
+    - `Increased By...`：精准增加 Delta；
+    - `Decreased By...`：精准减少 Delta；
+    - `Unknown Initial Value`：全量抓取所有候选基准。
+  - **Writable Memory Only**：默认勾选，仅扫描可读写数据段（`rw-p`），耗时仅数十毫秒；
+  - **Alignment（内存对齐）**：支持 4 字节默认对齐、1 字节无对齐、2 字节或 8 字节对齐。
+
+#### 2. 多轮差分收敛实战流程 (Multi-Pass Convergence)
+- **第 1 轮扫描 (First Scan)**：
+  1. 在 Value 输入当前观察到的初始值（例如当前生命值 `100`）；
+  2. 点击 **`🔍 First Scan`**（或在 CommandBar 输入 `scan 100`）；
+  3. 系统瞬间检索全部内存并展示数万个候选基准；
+- **第 2 轮收敛 (Next Scan)**：
+  1. 按 F9 让目标程序继续运行并发生数值变动（例如受到攻击掉血变为 `85`，或者只知道“数值变小了”）；
+  2. 程序暂停后，选择 `Decreased Value`（或直接输入精确新值 `85`）；
+  3. 点击 **`⚡ Next Scan`**（或在 CommandBar 输入 `nextscan <` 或 `nextscan 85`）；
+  4. 候选地址数量断崖式骤降至数十个；
+- **第 3 轮最终锁定**：
+  1. 再次让目标运行并改变数值，点击 `⚡ Next Scan`；
+  2. 候选列表精准收敛至唯一定位目标地址！
+
+#### 3. 候选地址交互与原位内存修改
+- **颜色高亮感知**：变大数值以清新草绿色标注（`+15`），变小数值以浅红色标注（`-15`）；
+- **联动转储**：双击任一行候选，主工作区 Hex Dump 自动跳转至该物理地址；
+- **右键上下文菜单**：
+  - `Follow in Hex Dump` / `Follow in Disassembly`；
+  - `Copy Address`；
+  - **`Edit / Write Value...`**：直接弹窗输入新值，向目标进程物理覆写该变量（例如将血量直接修改为 `999999`），改完后自动刷新候选当前值！
+
+#### 4. CommandBar 命令行极客操作
+```text
+scan <value|unknown> [type]   # 发起首次扫描。例：scan 100 int32、scan 0x1337 int64、scan "admin" str
+nextscan <compare> [val]      # 执行下一轮差分收敛。例：nextscan >、nextscan <、nextscan ==、nextscan 105、nextscan + 10
+scanresults [limit]           # 打印当前前 N 个收敛结果详情
+scanreset                     # 重置扫描器状态并清空候选表
+```
+
+---
+
 ## 5. 高级逆向分析工具箱实战 (Advanced Reverse Engineering)
 
 在主工作台左下角，内置了 18 个按需切换的高级分析抽屉：
@@ -803,6 +860,10 @@ thaw all           # 解冻所有线程
 | `thread <tid>` | `thread` | 切换当前活动线程焦点至指定 TID |
 | `freeze <tid\|all>` | `freeze` | 冻结指定 TID 线程或一键冻结所有非当前焦点线程 |
 | `thaw <tid\|all>` | `thaw` | 解冻指定 TID 线程或解冻全部线程 |
+| `scan <val> [type]` | `scan` | 发起首次内存扫描（CheatEngine 风格）。例：`scan 100 int32`、`scan unknown` |
+| `nextscan <cmp> [val]` | `nextscan` | 执行下一轮差分收敛。例：`nextscan >`、`nextscan <`、`nextscan ==`、`nextscan 105` |
+| `scanresults [limit]` | `scanresults` | 打印当前扫描结果列表的前 N 个条目 |
+| `scanreset` | `scanreset` | 重置内存扫描器状态并清空候选表 |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
 | `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |
