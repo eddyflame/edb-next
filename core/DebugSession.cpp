@@ -184,6 +184,7 @@ void DebugSession::detach() {
     rendezvousBrkAddr_ = Address(0);
     symbols_.clear();
     dwarfParser_.clear();
+    frozenThreads_.clear();
     setState(SessionState::Stopped);
 }
 
@@ -213,7 +214,23 @@ void DebugSession::resume(bool passSignal) {
         return;
     }
 
-    engine_.continueExecution(engine_.activeTid(), sig);
+    auto allTids = engine_.enumerateTids();
+    Tid act = engine_.activeTid();
+    bool actResumed = false;
+    for (Tid t : allTids) {
+        if (isThreadFrozen(t)) {
+            continue;
+        }
+        if (t == act) {
+            engine_.continueExecution(t, sig);
+            actResumed = true;
+        } else {
+            engine_.resumeThread(t, 0);
+        }
+    }
+    if (!actResumed && !isThreadFrozen(act)) {
+        engine_.continueExecution(act, sig);
+    }
     setState(SessionState::Running);
 }
 
@@ -467,6 +484,9 @@ void DebugSession::handleEvent(const DebugEvent& event) {
                 return;
             }
         }
+        if (isThreadFrozen(event.tid)) {
+            return;
+        }
         // Resume thread (clone event or initial SIGSTOP) from the TRACER thread!
         engine_.continueExecution(event.tid);
         return;
@@ -476,7 +496,9 @@ void DebugSession::handleEvent(const DebugEvent& event) {
         // We just stepped over the original byte of the breakpoint
         bpMgr_.finishStepOver();
         isStepOverBreak_ = false;
-        engine_.continueExecution(engine_.activeTid());
+        if (!isThreadFrozen(engine_.activeTid())) {
+            engine_.continueExecution(engine_.activeTid());
+        }
         return;
     }
 
@@ -906,6 +928,7 @@ std::vector<MemoryRegion> DebugSession::memoryRegions() const {
 std::vector<ThreadInfo> DebugSession::getThreads() const {
     auto threads = engine_.getThreads();
     for (auto& t : threads) {
+        t.isFrozen = isThreadFrozen(t.tid);
         if (!t.rip.isNull()) {
             if (auto sym = symbols_.findNearestSymbol(t.rip)) {
                 t.symbol = sym->first.displayName();
@@ -924,6 +947,55 @@ bool DebugSession::switchThread(Tid tid) {
     refreshRegisters();
     Q_EMIT activeThreadChanged(tid);
     return true;
+}
+
+bool DebugSession::freezeThread(Tid tid) {
+    if (!engine_.isAttached() || tid <= 0) return false;
+    frozenThreads_.insert(tid);
+    if (state_ == SessionState::Running) {
+        engine_.pauseThread(tid);
+    }
+    LogManager::instance().info("Session", "Thread " + std::to_string(tid) + " frozen");
+    Q_EMIT threadFreezeStateChanged(tid, true);
+    return true;
+}
+
+bool DebugSession::thawThread(Tid tid) {
+    if (!engine_.isAttached() || tid <= 0) return false;
+    auto it = frozenThreads_.find(tid);
+    if (it == frozenThreads_.end()) return false;
+    frozenThreads_.erase(it);
+    if (state_ == SessionState::Running) {
+        engine_.resumeThread(tid, 0);
+    }
+    LogManager::instance().info("Session", "Thread " + std::to_string(tid) + " thawed");
+    Q_EMIT threadFreezeStateChanged(tid, false);
+    return true;
+}
+
+bool DebugSession::freezeAllOtherThreads() {
+    if (!engine_.isAttached()) return false;
+    Tid cur = activeTid();
+    auto allTids = engine_.enumerateTids();
+    for (Tid t : allTids) {
+        if (t != cur) {
+            freezeThread(t);
+        }
+    }
+    return true;
+}
+
+bool DebugSession::thawAllThreads() {
+    if (!engine_.isAttached()) return false;
+    auto toThaw = frozenThreads_;
+    for (Tid t : toThaw) {
+        thawThread(t);
+    }
+    return true;
+}
+
+bool DebugSession::isThreadFrozen(Tid tid) const {
+    return frozenThreads_.find(tid) != frozenThreads_.end();
 }
 
 bool DebugSession::setBreakpointCondition(Address addr, const std::string& cond) {

@@ -718,6 +718,97 @@ void CommandBarView::setupDefaultCommands() {
         Q_EMIT switchSessionRequested(QString::fromStdString(args[0]));
     }, "Alias for inferior <id|pid>");
 
+    // Thread control: threads, thread, freeze, thaw
+    registerCommand("threads", [this](const std::vector<std::string>&) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        auto threads = session_->getThreads();
+        QString out = QString("=== Threads (%1 total, active TID: %2) ===\n")
+            .arg(threads.size()).arg(session_->activeTid());
+        for (const auto& t : threads) {
+            out += QString("%1 [TID: %2] %3 (State: %4%5) RIP: %6 %7\n")
+                .arg(t.isActive ? "➔" : " ")
+                .arg(t.tid, 6)
+                .arg(QString::fromStdString(t.name), -16)
+                .arg(QString::fromStdString(t.state))
+                .arg(t.isFrozen ? ", ❄ FROZEN" : "")
+                .arg(QString::fromStdString(t.rip.toHex()))
+                .arg(QString::fromStdString(t.symbol));
+        }
+        Q_EMIT outputLogged(out, false);
+    }, "threads - List all threads in the current target process");
+
+    registerCommand("thread", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty()) {
+            executeCommand("threads");
+            return;
+        }
+        try {
+            Tid tid = static_cast<Tid>(std::stol(args[0], nullptr, 0));
+            if (session_->switchThread(tid)) {
+                Q_EMIT outputLogged(QString("Switched active thread to TID: %1").arg(tid), false);
+            } else {
+                Q_EMIT outputLogged(QString("Failed to switch to TID: %1").arg(tid), true);
+            }
+        } catch (...) {
+            Q_EMIT outputLogged("Usage: thread <tid>", true);
+        }
+    }, "thread [tid] - Switch to or display threads");
+
+    registerCommand("freeze", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: freeze <tid|all>", true);
+            return;
+        }
+        if (args[0] == "all") {
+            session_->freezeAllOtherThreads();
+            Q_EMIT outputLogged(QString("Frozen all threads except active TID: %1").arg(session_->activeTid()), false);
+            return;
+        }
+        try {
+            Tid tid = static_cast<Tid>(std::stol(args[0], nullptr, 0));
+            if (session_->freezeThread(tid)) {
+                Q_EMIT outputLogged(QString("Thread %1 is now FROZEN (❄).").arg(tid), false);
+            } else {
+                Q_EMIT outputLogged(QString("Failed to freeze thread %1.").arg(tid), true);
+            }
+        } catch (...) {
+            Q_EMIT outputLogged("Usage: freeze <tid|all>", true);
+        }
+    }, "freeze <tid|all> - Freeze a specific thread or all other threads");
+
+    registerCommand("thaw", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty() || args[0] == "all") {
+            session_->thawAllThreads();
+            Q_EMIT outputLogged("All threads have been THAWED (🔥).", false);
+            return;
+        }
+        try {
+            Tid tid = static_cast<Tid>(std::stol(args[0], nullptr, 0));
+            if (session_->thawThread(tid)) {
+                Q_EMIT outputLogged(QString("Thread %1 is now THAWED (🔥).").arg(tid), false);
+            } else {
+                Q_EMIT outputLogged(QString("Failed to thaw thread %1 (not found or not frozen).").arg(tid), true);
+            }
+        } catch (...) {
+            Q_EMIT outputLogged("Usage: thaw <tid|all>", true);
+        }
+    }, "thaw <tid|all> - Thaw a frozen thread or all threads");
+
     // 9. Scripting: py, lua
     registerCommand("py", [](const std::vector<std::string>&) {}, "py <code...> - Execute Python 3 script statement or expression");
     registerCommand("lua", [](const std::vector<std::string>&) {}, "lua <code...> - Execute Lua 5.4 script statement or expression");

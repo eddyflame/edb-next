@@ -16,19 +16,25 @@ void ThreadsView::setupUi() {
     layout->setSpacing(4);
 
     auto* toolLayout = new QHBoxLayout();
-    btnRefresh_ = new QPushButton("⟳ Refresh Threads", this);
-    btnSwitch_ = new QPushButton("Switch to Selected Thread", this);
+    btnRefresh_ = new QPushButton("⟳ Refresh", this);
+    btnSwitch_ = new QPushButton("Switch Thread", this);
+    btnFreezeThaw_ = new QPushButton("❄ Freeze / Thaw", this);
+    btnFreezeAll_ = new QPushButton("❄ Freeze Others", this);
+    btnThawAll_ = new QPushButton("🔥 Thaw All", this);
     statusLabel_ = new QLabel("Active Threads: 0", this);
 
     toolLayout->addWidget(btnRefresh_);
     toolLayout->addWidget(btnSwitch_);
+    toolLayout->addWidget(btnFreezeThaw_);
+    toolLayout->addWidget(btnFreezeAll_);
+    toolLayout->addWidget(btnThawAll_);
     toolLayout->addWidget(statusLabel_);
     toolLayout->addStretch();
     layout->addLayout(toolLayout);
 
     table_ = new QTableWidget(this);
-    table_->setColumnCount(7);
-    table_->setHorizontalHeaderLabels({"TID", "Thread Name", "State", "Current RIP", "Function Symbol", "RSP", "Active"});
+    table_->setColumnCount(8);
+    table_->setHorizontalHeaderLabels({"TID", "Thread Name", "State", "Frozen", "Current RIP", "Function Symbol", "RSP", "Active"});
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     table_->horizontalHeader()->setStretchLastSection(true);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -40,12 +46,20 @@ void ThreadsView::setupUi() {
 
     connect(btnRefresh_, &QPushButton::clicked, this, &ThreadsView::refresh);
     connect(btnSwitch_, &QPushButton::clicked, this, &ThreadsView::onSwitchThreadClicked);
+    connect(btnFreezeThaw_, &QPushButton::clicked, this, &ThreadsView::onFreezeThawClicked);
+    connect(btnFreezeAll_, &QPushButton::clicked, this, &ThreadsView::onFreezeAllClicked);
+    connect(btnThawAll_, &QPushButton::clicked, this, &ThreadsView::onThawAllClicked);
     connect(table_, &QTableWidget::cellDoubleClicked, this, &ThreadsView::onCellDoubleClicked);
     connect(table_, &QTableWidget::customContextMenuRequested, this, &ThreadsView::onCustomContextMenu);
 }
 
 void ThreadsView::setSession(std::shared_ptr<DebugSession> session) {
     session_ = session;
+    if (session) {
+        connect(session.get(), &DebugSession::threadFreezeStateChanged, this, [this](Tid, bool) {
+            refresh();
+        }, Qt::UniqueConnection);
+    }
     refresh();
 }
 
@@ -60,7 +74,18 @@ void ThreadsView::refresh() {
 
     currentThreads_ = session->getThreads();
     table_->setRowCount(static_cast<int>(currentThreads_.size()));
-    statusLabel_->setText(QString("Active Threads: %1 (Current TID: %2)").arg(currentThreads_.size()).arg(session->activeTid()));
+
+    size_t frozenCount = 0;
+    for (const auto& t : currentThreads_) {
+        if (t.isFrozen) frozenCount++;
+    }
+
+    QString statusText = QString("Active Threads: %1 (Current TID: %2)")
+        .arg(currentThreads_.size()).arg(session->activeTid());
+    if (frozenCount > 0) {
+        statusText += QString(" [❄ %1 Frozen]").arg(frozenCount);
+    }
+    statusLabel_->setText(statusText);
 
     for (int r = 0; r < static_cast<int>(currentThreads_.size()); ++r) {
         const auto& t = currentThreads_[r];
@@ -68,6 +93,7 @@ void ThreadsView::refresh() {
         auto* itemTid = new QTableWidgetItem(QString::number(t.tid));
         auto* itemName = new QTableWidgetItem(QString::fromStdString(t.name));
         auto* itemState = new QTableWidgetItem(QString::fromStdString(t.state));
+        auto* itemFrozen = new QTableWidgetItem(t.isFrozen ? "❄ FROZEN" : "-");
         auto* itemRip = new QTableWidgetItem(QString::fromStdString(t.rip.toHex()));
         auto* itemSym = new QTableWidgetItem(QString::fromStdString(t.symbol));
         auto* itemRsp = new QTableWidgetItem(QString::fromStdString(t.rsp.toHex()));
@@ -75,7 +101,17 @@ void ThreadsView::refresh() {
 
         itemTid->setTextAlignment(Qt::AlignCenter);
         itemState->setTextAlignment(Qt::AlignCenter);
+        itemFrozen->setTextAlignment(Qt::AlignCenter);
         itemActive->setTextAlignment(Qt::AlignCenter);
+
+        if (t.isFrozen) {
+            itemFrozen->setForeground(QColor(100, 200, 255));
+            QColor frozenBg(30, 70, 110, 80);
+            itemFrozen->setBackground(frozenBg);
+            QFont f = itemFrozen->font();
+            f.setBold(true);
+            itemFrozen->setFont(f);
+        }
 
         if (t.isActive) {
             QColor activeBg(60, 100, 70, 70);
@@ -96,10 +132,11 @@ void ThreadsView::refresh() {
         table_->setItem(r, 0, itemTid);
         table_->setItem(r, 1, itemName);
         table_->setItem(r, 2, itemState);
-        table_->setItem(r, 3, itemRip);
-        table_->setItem(r, 4, itemSym);
-        table_->setItem(r, 5, itemRsp);
-        table_->setItem(r, 6, itemActive);
+        table_->setItem(r, 3, itemFrozen);
+        table_->setItem(r, 4, itemRip);
+        table_->setItem(r, 5, itemSym);
+        table_->setItem(r, 6, itemRsp);
+        table_->setItem(r, 7, itemActive);
     }
 }
 
@@ -107,7 +144,7 @@ void ThreadsView::onCellDoubleClicked(int row, int column) {
     if (row < 0 || row >= static_cast<int>(currentThreads_.size())) return;
     const auto& t = currentThreads_[row];
 
-    if (column == 3 && !t.rip.isNull()) { // Double clicked RIP column: jump to address
+    if (column == 4 && !t.rip.isNull()) { // Double clicked RIP column: jump to address
         Q_EMIT jumpToAddressRequested(t.rip);
         return;
     }
@@ -137,6 +174,35 @@ void ThreadsView::onSwitchThreadClicked() {
     }
 }
 
+void ThreadsView::onFreezeThawClicked() {
+    int row = table_->currentRow();
+    if (row < 0 || row >= static_cast<int>(currentThreads_.size())) return;
+    const auto& t = currentThreads_[row];
+
+    if (auto session = session_.lock()) {
+        if (t.isFrozen) {
+            session->thawThread(t.tid);
+        } else {
+            session->freezeThread(t.tid);
+        }
+        refresh();
+    }
+}
+
+void ThreadsView::onFreezeAllClicked() {
+    if (auto session = session_.lock()) {
+        session->freezeAllOtherThreads();
+        refresh();
+    }
+}
+
+void ThreadsView::onThawAllClicked() {
+    if (auto session = session_.lock()) {
+        session->thawAllThreads();
+        refresh();
+    }
+}
+
 void ThreadsView::onCustomContextMenu(const QPoint& pos) {
     int row = table_->currentRow();
     if (row < 0 || row >= static_cast<int>(currentThreads_.size())) return;
@@ -146,6 +212,17 @@ void ThreadsView::onCustomContextMenu(const QPoint& pos) {
     auto* actSwitch = menu.addAction(QString("Switch to Thread %1 (%2)").arg(t.tid).arg(QString::fromStdString(t.name)));
     auto* actJump = menu.addAction("Jump to Thread RIP in Disassembly");
     menu.addSeparator();
+
+    QAction* actFreezeThaw = nullptr;
+    if (t.isFrozen) {
+        actFreezeThaw = menu.addAction(QString("🔥 Thaw Thread %1").arg(t.tid));
+    } else {
+        actFreezeThaw = menu.addAction(QString("❄ Freeze Thread %1").arg(t.tid));
+    }
+    auto* actFreezeAll = menu.addAction("❄ Freeze All Other Threads");
+    auto* actThawAll = menu.addAction("🔥 Thaw All Threads");
+
+    menu.addSeparator();
     auto* actRefresh = menu.addAction("Refresh Threads");
 
     auto* selected = menu.exec(table_->viewport()->mapToGlobal(pos));
@@ -153,6 +230,12 @@ void ThreadsView::onCustomContextMenu(const QPoint& pos) {
         onSwitchThreadClicked();
     } else if (selected == actJump && !t.rip.isNull()) {
         Q_EMIT jumpToAddressRequested(t.rip);
+    } else if (selected == actFreezeThaw) {
+        onFreezeThawClicked();
+    } else if (selected == actFreezeAll) {
+        onFreezeAllClicked();
+    } else if (selected == actThawAll) {
+        onThawAllClicked();
     } else if (selected == actRefresh) {
         refresh();
     }

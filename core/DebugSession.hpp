@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <unordered_set>
 
 #include "ElfParser.hpp"
 #include "DwarfParser.hpp"
@@ -82,10 +83,16 @@ public:
     [[nodiscard]] bool hasBreakpoint(Address addr) const;
     [[nodiscard]] std::vector<Breakpoint> breakpoints() const;
 
-    // Thread control
+    // Thread control & Freeze/Thaw
     [[nodiscard]] std::vector<ThreadInfo> getThreads() const;
     bool switchThread(Tid tid);
     [[nodiscard]] Tid activeTid() const noexcept { return engine_.activeTid(); }
+    bool freezeThread(Tid tid);
+    bool thawThread(Tid tid);
+    bool freezeAllOtherThreads();
+    bool thawAllThreads();
+    [[nodiscard]] bool isThreadFrozen(Tid tid) const;
+    [[nodiscard]] const std::unordered_set<Tid>& frozenThreads() const noexcept { return frozenThreads_; }
 
     // Advanced Breakpoints
     bool setBreakpointCondition(Address addr, const std::string& cond);
@@ -198,6 +205,7 @@ Q_SIGNALS:
     void breakpointsUpdated();
     void pageGuardsUpdated();
     void activeThreadChanged(Tid tid);
+    void threadFreezeStateChanged(Tid tid, bool frozen);
     void sourceLocationChanged(const edb_next::SourceLocation& loc);
     void libraryLoaded(const QString& name, const QString& path, edb_next::Address baseAddr);
     void libraryUnloaded(const QString& name);
@@ -237,6 +245,7 @@ private:
     bool stopOnLibraryEvents_{false};
     FollowForkMode followForkMode_{FollowForkMode::Parent};
     bool stopOnForkEvents_{false};
+    std::unordered_set<Tid> frozenThreads_;
 
     std::string targetPath_;
     std::vector<std::string> targetArgs_;

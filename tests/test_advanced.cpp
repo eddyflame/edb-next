@@ -14,6 +14,7 @@
 #include "ui/CommandBarView.hpp"
 #include "ui/MemoryHexView.hpp"
 #include "ui/BinaryInfoView.hpp"
+#include "ui/ThreadsView.hpp"
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -943,6 +944,122 @@ void test_follow_fork_mode() {
     std::cout << "[PASS] Follow-Fork and Multi-Process Tracking tests passed cleanly." << std::endl;
 }
 
+void test_thread_freeze_thaw() {
+    std::cout << "\n[TEST] Starting Thread Freeze & Thaw Execution Control test..." << std::endl;
+
+    std::string target_path = "./build/test_target";
+    if (!QFileInfo::exists(QString::fromStdString(target_path))) {
+        target_path = "./test_target";
+    }
+    assert(QFileInfo::exists(QString::fromStdString(target_path)) && "test_target binary not found");
+
+    auto session = std::make_shared<DebugSession>("test_freeze_sess", "FreezeThawWorker");
+    bool launched = session->launch(target_path, {"FreezeWorker"});
+    assert(launched && "Launch failed for test_target");
+
+    for (int i = 0; i < 10; ++i) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (session->state() == SessionState::Paused) break;
+        usleep(10000);
+    }
+    assert(session->state() == SessionState::Paused);
+
+    // Let the target run so main() executes and WorkerThread1 spawns
+    session->resume();
+    for (int i = 0; i < 25; ++i) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        usleep(20000);
+    }
+
+    session->pause();
+    for (int i = 0; i < 30; ++i) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (session->state() == SessionState::Paused) break;
+        usleep(20000);
+    }
+    assert(session->state() == SessionState::Paused);
+
+    // 1. Thread Enumeration & Identification
+    auto threads = session->getThreads();
+    assert(threads.size() >= 2 && "Target must have spawned at least 2 threads");
+
+    Tid worker_tid = 0;
+    for (const auto& t : threads) {
+        if (t.name == "WorkerThread1") {
+            worker_tid = t.tid;
+            break;
+        }
+    }
+    assert(worker_tid > 0 && "WorkerThread1 must be present in thread list");
+    assert(!session->isThreadFrozen(worker_tid) && "Worker thread should not be frozen initially");
+
+    // 2. Freeze specific thread
+    bool frozen = session->freezeThread(worker_tid);
+    assert(frozen);
+    assert(session->isThreadFrozen(worker_tid) == true);
+    assert(session->frozenThreads().count(worker_tid) == 1);
+
+    // Verify getThreads() reflects isFrozen
+    threads = session->getThreads();
+    for (const auto& t : threads) {
+        if (t.tid == worker_tid) {
+            assert(t.isFrozen == true);
+        }
+    }
+
+    // 3. UI ThreadsView testing
+    ThreadsView threadsView;
+    threadsView.setSession(session);
+    threadsView.refresh();
+
+    // 4. CommandBar CLI testing
+    CommandBarView cmdBar;
+    cmdBar.setSession(session);
+    QString capturedLog;
+    QObject::connect(&cmdBar, &CommandBarView::outputLogged, [&](const QString& msg, bool) {
+        capturedLog = msg;
+    });
+
+    cmdBar.executeCommand("threads");
+    assert(capturedLog.contains("FROZEN") && "threads CLI output should indicate FROZEN status");
+    assert(capturedLog.contains("WorkerThread1"));
+
+    // Test thaw all via CLI
+    cmdBar.executeCommand("thaw all");
+    assert(!session->isThreadFrozen(worker_tid));
+    assert(session->frozenThreads().empty());
+
+    // Test freeze specific via CLI
+    cmdBar.executeCommand(QString("freeze %1").arg(worker_tid));
+    assert(session->isThreadFrozen(worker_tid) == true);
+
+    // Test thaw specific via CLI
+    cmdBar.executeCommand(QString("thaw %1").arg(worker_tid));
+    assert(session->isThreadFrozen(worker_tid) == false);
+
+    // Test freeze all (freeze all others except active)
+    cmdBar.executeCommand("freeze all");
+    assert(session->isThreadFrozen(worker_tid) == true);
+    assert(!session->isThreadFrozen(session->activeTid()));
+
+    // 5. Single step while worker is frozen
+    session->stepInto();
+    for (int i = 0; i < 20; ++i) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (session->state() == SessionState::Paused) break;
+        usleep(30000);
+    }
+    assert(session->state() == SessionState::Paused);
+    assert(session->isThreadFrozen(worker_tid) == true);
+
+    // Clean up: thaw and terminate
+    session->thawAllThreads();
+    assert(session->frozenThreads().empty());
+    session->terminate();
+
+    std::cout << "[PASS] Thread Freeze & Thaw Execution Control test passed cleanly." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -965,6 +1082,7 @@ int main(int argc, char* argv[]) {
     test_page_guard_breakpoints();
     test_r_debug_rendezvous();
     test_follow_fork_mode();
+    test_thread_freeze_thaw();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

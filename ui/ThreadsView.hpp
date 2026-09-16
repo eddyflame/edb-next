@@ -27,6 +27,9 @@ private Q_SLOTS:
     void onCellDoubleClicked(int row, int column);
     void onCustomContextMenu(const QPoint& pos);
     void onSwitchThreadClicked();
+    void onFreezeThawClicked();
+    void onFreezeAllClicked();
+    void onThawAllClicked();
 
 private:
     void setupUi();
@@ -35,6 +38,9 @@ private:
     QTableWidget* table_{nullptr};
     QPushButton* btnRefresh_{nullptr};
     QPushButton* btnSwitch_{nullptr};
+    QPushButton* btnFreezeThaw_{nullptr};
+    QPushButton* btnFreezeAll_{nullptr};
+    QPushButton* btnThawAll_{nullptr};
     QLabel* statusLabel_{nullptr};
     std::vector<ThreadInfo> currentThreads_;
 };
