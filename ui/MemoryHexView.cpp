@@ -111,7 +111,12 @@ void MemoryHexView::refresh() {
                 auto* item_byte = new QTableWidgetItem(QString::fromStdString(oss.str()));
                 item_byte->setTextAlignment(Qt::AlignCenter);
 
-                if (byte_val == 0) {
+                Address cell_addr = row_addr + c;
+                if (session->hasBreakpoint(cell_addr)) {
+                    item_byte->setBackground(QColor(160, 40, 40, 160));
+                    item_byte->setForeground(Qt::white);
+                    item_byte->setToolTip(QString("Breakpoint active at %1").arg(QString::fromStdString(cell_addr.toHex())));
+                } else if (byte_val == 0) {
                     item_byte->setForeground(QColor(100, 100, 100));
                 } else if (std::isprint(byte_val)) {
                     item_byte->setForeground(QColor(220, 220, 220));
@@ -339,10 +344,71 @@ void MemoryHexView::handleCustomContextMenu(const QPoint& pos) {
     int c = currentColumn();
     Address sel_addr = addressAtCell(r, c);
 
+    auto session = session_.lock();
+
     QMenu menu(this);
     menu.addAction("Follow in Disassembler", [this, sel_addr]() {
         Q_EMIT jumpToDisassemblyRequested(sel_addr);
     });
+
+    if (session && session->state() != SessionState::Stopped) {
+        auto* bpMenu = menu.addMenu("Breakpoint");
+
+        bool hasBp = session->hasBreakpoint(sel_addr);
+        if (hasBp) {
+            bpMenu->addAction("Remove Breakpoint", [session, sel_addr, this]() {
+                session->removeBreakpoint(sel_addr);
+                refresh();
+            });
+        } else {
+            bpMenu->addAction("Toggle Software Breakpoint (0xCC)", [session, sel_addr, this]() {
+                session->toggleBreakpoint(sel_addr);
+                refresh();
+            });
+        }
+        bpMenu->addSeparator();
+
+        auto* hwWriteMenu = bpMenu->addMenu("Set Hardware Write Watchpoint");
+        hwWriteMenu->addAction("1 Byte", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::Write, HardwareBpSize::Byte1);
+            refresh();
+        });
+        hwWriteMenu->addAction("2 Bytes", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::Write, HardwareBpSize::Byte2);
+            refresh();
+        });
+        hwWriteMenu->addAction("4 Bytes", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::Write, HardwareBpSize::Byte4);
+            refresh();
+        });
+        hwWriteMenu->addAction("8 Bytes", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::Write, HardwareBpSize::Byte8);
+            refresh();
+        });
+
+        auto* hwAccessMenu = bpMenu->addMenu("Set Hardware Read/Write Watchpoint");
+        hwAccessMenu->addAction("1 Byte", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::ReadWrite, HardwareBpSize::Byte1);
+            refresh();
+        });
+        hwAccessMenu->addAction("2 Bytes", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::ReadWrite, HardwareBpSize::Byte2);
+            refresh();
+        });
+        hwAccessMenu->addAction("4 Bytes", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::ReadWrite, HardwareBpSize::Byte4);
+            refresh();
+        });
+        hwAccessMenu->addAction("8 Bytes", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::ReadWrite, HardwareBpSize::Byte8);
+            refresh();
+        });
+
+        bpMenu->addAction("Set Hardware Execute Breakpoint", [session, sel_addr, this]() {
+            session->addHardwareBreakpoint(sel_addr, HardwareBpType::Execute, HardwareBpSize::Byte1);
+            refresh();
+        });
+    }
 
     menu.addSeparator();
     menu.addAction("Edit Bytes... (Ctrl+E)", this, &MemoryHexView::editBytesPrompt);
