@@ -10,6 +10,7 @@
 #include "core/StateDumper.hpp"
 #include "ui/CFGGraphView.hpp"
 #include "ui/CommandBarView.hpp"
+#include "ui/MemoryHexView.hpp"
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -488,6 +489,48 @@ void test_cxx_demangling() {
     std::cout << "[PASS] C++ Demangler verified: '" << mangled1 << "' -> '" << demangled1 << "'" << std::endl;
 }
 
+void test_memory_hex_view_features() {
+    std::cout << "\n[TEST] Starting MemoryHexView Breakpoint & Watchpoint UI test..." << std::endl;
+    auto session = std::make_shared<DebugSession>("test-session", "Test Session");
+    std::string target = getTestTargetPath();
+    assert(session->launch(target, {}) && "Target launch must succeed");
+
+    MemoryHexView hexView;
+    hexView.setSession(session);
+
+    Address targetAddr = session->registers().rip();
+    assert(!targetAddr.isNull() && "Target instruction pointer must be valid");
+
+    // Initially no breakpoint
+    assert(!session->hasBreakpoint(targetAddr) && "Should not have breakpoint initially");
+
+    // Add hardware watchpoint at targetAddr
+    bool hwSet = session->addHardwareBreakpoint(targetAddr, HardwareBpType::Write, HardwareBpSize::Byte4);
+    assert(hwSet && "addHardwareBreakpoint should succeed");
+    assert(session->hasBreakpoint(targetAddr) && "hasBreakpoint should be true after setting hardware watchpoint");
+
+    // Navigate hexView to targetAddr and refresh
+    hexView.setBaseAddress(targetAddr);
+    hexView.refresh();
+
+    // Check table item at row 0, column 1 (corresponding to targetAddr)
+    QTableWidgetItem* item = hexView.item(0, 1);
+    assert(item != nullptr && "Table cell item must exist");
+    assert(item->toolTip().contains("Breakpoint active") && "Cell item must have breakpoint tooltip");
+    assert(item->background().color() == QColor(160, 40, 40, 160) && "Cell item must have breakpoint background color");
+
+    // Remove breakpoint and verify cell item resets
+    session->removeBreakpoint(targetAddr);
+    assert(!session->hasBreakpoint(targetAddr) && "Breakpoint should be removed");
+    hexView.refresh();
+    item = hexView.item(0, 1);
+    assert(item != nullptr && "Table cell item must exist");
+    assert(!item->toolTip().contains("Breakpoint active") && "Cell item must no longer have breakpoint tooltip");
+
+    session->terminate();
+    std::cout << "[PASS] MemoryHexView Breakpoint & Hardware Watchpoint UI test passed." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -506,6 +549,7 @@ int main(int argc, char* argv[]) {
     test_opcode_searcher_and_state_dumper();
     test_remote_syscalls_and_memory_mgmt();
     test_cxx_demangling();
+    test_memory_hex_view_features();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;
