@@ -31,7 +31,9 @@ jobs:
             pkg-config \
             qtbase5-dev \
             libqt5widgets5 \
-            libcapstone-dev
+            libcapstone-dev \
+            libelf-dev \
+            libdw-dev
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -41,6 +43,9 @@ jobs:
 
       - name: Run Core Regression Test Suite
         run: ./build/test_core
+
+      - name: Run DWARF Regression Test Suite
+        run: ./build/test_dwarf
 
       - name: Run Advanced Regression Test Suite
         run: ./build/test_advanced
