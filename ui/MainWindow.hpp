@@ -73,6 +73,7 @@ private Q_SLOTS:
     void onPatchManagerTriggered();
     void onPluginManagerTriggered();
     void onResetLayoutTriggered();
+    void onScriptConsoleTriggered();
 
     // Help
     void onShortcutsCheatsheetTriggered();

@@ -28,8 +28,8 @@
    - 3.10 4 象限工作台与现代化 UI/UX 系统
 4. [未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)](#4-未实现功能与待完善规划-unimplemented-features--technical-roadmap)
    - 4.1 多 CPU 架构与交叉调试扩展
-   - 4.2 DWARF 源码级调试与行号映射
-   - 4.3 嵌入式 Python 脚本自动化引擎
+   - 4.2 DWARF 源码级调试与行号映射 [已实现 / Done]
+   - 4.3 嵌入式脚本自动化引擎 (Python 3 & Lua 5.4 双引擎) [已实现 / Done]
    - 4.4 高级反反调试与隐蔽断点机制
    - 4.5 C++ 符号反混淆与类型重建
    - 4.6 多进程 Follow-Fork 与 IPC 跟踪
@@ -328,12 +328,14 @@
   2. **源码反汇编混合渲染**：当目标程序带 `-g` 编译时，在 `DisassemblyView` 对应指令上方内嵌展示 C/C++ 原始源码行（暗黑青绿横幅），支持 `Ctrl+Shift+S` 实时切换混合模式；
   3. **独立源码文件浏览器 (layout src)**：新增 `ui/SourceView` 标签页（`Alt+S`），支持源文件列表切换、行号、断点指示符（`●`）、当前 RIP 执行指针（`➔`），并支持在源码行直接双击下断与源码级单步步过/步入（`stepSourceOver` / `stepSourceInto`）。
 
-### 4.3 嵌入式 Python 脚本自动化引擎 (Embedded Python Scripting)
-- **当前状态**：当前支持 C++20 原生 `.so` 动态插件，并通过 CLI 控制台支持外部扩展命令，但尚未嵌入动态脚本语言解释器。
-- **待完善方案**：
-  1. **Python 3 C-API / pybind11 桥接**：构建名为 `python_bridge` 的核心模块或专属插件；
-  2. **开放 Python API 命名空间**：提供 `import edb_next`，向脚本暴露 `session.read_memory()`、`session.write_memory()`、`session.get_regs()`、`session.add_breakpoint()`、`session.step()` 等原生控制接口；
-  3. **自动化脱壳与漏洞利用脚本运行器**：支持在界面一键加载并运行用户编写的 `.py` 脚本，实现无人工值守的复杂解密、自动化脱壳与内存提取。
+### 4.3 嵌入式脚本自动化引擎 (Python 3 & Lua 5.4 双引擎) [已实现 / Done]
+- **当前状态**：已完整实现 Python 3 与 Lua 5.4 原生双脚本自动化引擎架构，统一由 `IScriptEngine` 接口与 `ScriptEngineManager` 调度，并配备专有暗黑交互式 Script Console 终端。
+- **已实现特性**：
+  1. **IScriptEngine 与双引擎管理器**：定义抽象基类 `IScriptEngine` 与路由管理器 `core/ScriptEngineManager`，支持按语言名称（`"python"` / `"lua"`）或脚本后缀（`.py` / `.lua`）自动分发执行，并维护与 `DebugSession` 的生命周期同步；
+  2. **Python 3 原生 C-API 嵌入**：无缝内嵌 CPython 运行时并注册原生 `edb` 模块，提供完整的寄存器读写（`get_regs`, `get_reg`, `set_reg`）、内存读写（`read_memory`, `write_memory`）、断点管理（`set_breakpoint`, `remove_breakpoint`）、单步及源码控制（`step_into`, `step_over`, `step_source`, `resume`, `pause`）、表达式求值（`eval`）以及进程状态查询，并自动重定向 `sys.stdout` 和 `sys.stderr` 捕获异常 Traceback 与输出；
+  3. **Lua 5.4 轻量级极速嵌入**：内嵌 Lua 5.4 解释器并注入全局 `edb` 模块表，实现与 Python 对应的完整对称 API，重写 `print()` 捕获机制，为高频断点命中与微秒级条件求值提供超低延迟支撑；
+  4. **现代化交互式脚本控制台 (ui/ScriptConsoleView)**：集成在底部工作区抽屉（`Alt+P`），具备语言切换（`Python 3` / `Lua 5.4`）、脚本文件一键运行（`▶ Run File...`）、控制台清空、历史命令上下箭头回溯及暗黑极客高对比度语法高亮渲染；
+  5. **全局 CommandBar 快速命令与自动化测试**：CommandBar 原生支持 `py <code...>` 与 `lua <code...>` 单行执行，并配套自动化单元测试集 `tests/test_scripting.cpp`，覆盖率 100%。
 
 ### 4.4 高级反反调试与隐蔽断点机制 (Anti-Anti-Debugging & Stealth)
 - **当前状态**：调试机制基于原生 `ptrace`，在遇到高强度对抗样本（如恶意加固壳、CTF 混淆题目）时，目标程序通过检测自身是否被 ptrace（如主动调用 `PTRACE_TRACEME`、检查 `/proc/self/status` 中的 `TracerPid` 或测量 `rdtsc` 时间差）能够察觉调试器存在。

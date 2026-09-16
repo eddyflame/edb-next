@@ -24,6 +24,7 @@
 #include "OpcodeSearcherView.hpp"
 #include "StackView.hpp"
 #include "SourceView.hpp"
+#include "ScriptConsoleView.hpp"
 #include "core/TraceEngine.hpp"
 #include <QWidget>
 #include <QSplitter>
@@ -70,6 +71,7 @@ public:
     IntermodularCallsView* intermodularCallsView() const noexcept { return intermodularCallsView_; }
     MultiDumpWidget* multiDumpWidget() const noexcept { return multiDumpWidget_; }
     OpcodeSearcherView* opcodeSearcherView() const noexcept { return opcodeSearcherView_; }
+    ScriptConsoleView* scriptConsoleView() const noexcept { return scriptConsoleView_; }
     TraceEngine& traceEngine() noexcept { return traceEngine_; }
 
     QTabWidget* bottomTabs() const noexcept { return bottomTabs_; }
@@ -120,6 +122,7 @@ private:
     IntermodularCallsView* intermodularCallsView_{nullptr};
     MultiDumpWidget* multiDumpWidget_{nullptr};
     OpcodeSearcherView* opcodeSearcherView_{nullptr};
+    ScriptConsoleView* scriptConsoleView_{nullptr};
 };
 
 } // namespace edb_next
