@@ -26,6 +26,8 @@
    - 3.8 逆向工程数据库与会话持久化
    - 3.9 交互式命令行控制台与插件体系
    - 3.10 4 象限工作台与现代化 UI/UX 系统
+   - 3.11 DWARF 源码级调试与双向行号映射系统
+   - 3.12 嵌入式 Python 3 & Lua 5.4 双自动化脚本引擎系统
 4. [未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)](#4-未实现功能与待完善规划-unimplemented-features--technical-roadmap)
    - 4.1 多 CPU 架构与交叉调试扩展
    - 4.2 DWARF 源码级调试与行号映射 [已实现 / Done]
@@ -307,6 +309,29 @@
    - 支持快速窗口切换：`Alt+C` (CPU/反汇编)、`Alt+D` (Dump)、`Alt+K` (调用栈)、`Alt+B` (断点)、`Alt+M` (内存段)、`Alt+E` (符号)、`Alt+L` (日志)。
 4. **Wayland 与多分辨率窗口自适应优化**：
    - 彻底解决 GNOME Mutter / Wayland 环境下最大化限制问题，最小约束宽度精简至 358px，在高分屏及笔记本屏幕上自由伸缩、秒级最大化。
+
+### 3.11 DWARF 源码级调试与双向行号映射系统
+1. **libdw 原生集成与行号表解析**：
+   - 接入 `libdw` 并封装 `core/DwarfParser` 与 `core/SourceFileManager`，深度解析 ELF `.debug_info`、`.debug_line` 与 `.debug_str` 节区；
+   - 构建 `Address <-> (SourceFile, Line, Column)` 高性能双向哈希索引树，支持极速反向查找；
+2. **源码反汇编混合渲染 (`DisassemblyView`)**：
+   - 支持 `Ctrl+Shift+S` 快捷切换纯汇编与混合排版模式；
+   - 指令上方以暗黑青绿横幅精确显示对应的 C/C++ 源码语句与行号，极大加速复杂业务逻辑审计；
+3. **独立源码浏览器 (`SourceView`, `Alt+S`)**：
+   - 包含多源文件下拉切换、行号指示栏、当前执行位置青蓝色箭头（`➔`）与断点红色圆点（`●`）；
+   - 支持源码行双击切换断点，并在调试引擎中原生实现 `stepSourceOver` 与 `stepSourceInto`。
+
+### 3.12 嵌入式 Python 3 & Lua 5.4 双自动化脚本引擎系统
+1. **统一双引擎架构 (`IScriptEngine` & `ScriptEngineManager`)**：
+   - 统一定义生命周期、内存读写、寄存器访问与脚本执行契约，支持根据语言类型或文件扩展名动态路由；
+2. **Python 3 原生嵌入**：
+   - 嵌入 CPython 3.12 运行时，注册原生 `edb` 内置模块，向脚本全面开放调试核心 API；
+   - 重定向 `sys.stdout` 与 `sys.stderr` 捕获所有 `print` 输出与 Python 异常 Traceback；
+3. **Lua 5.4 极速嵌入**：
+   - 内置轻量级 Lua 5.4 解释器与全局 `edb` 模块表，重写 `print` 捕获，专为高频条件判定与微秒级 Hook 打造；
+4. **交互式控制台 UI (`ScriptConsoleView`, `Alt+P`)**：
+   - 底部专用抽屉、语言切换下拉框、一键执行外部脚本（`▶ Run File...`）、上下箭头历史回溯与高对比语法色彩渲染；
+   - 底栏 CommandBar 同步支持 `py <code...>` 与 `lua <code...>` 单行执行。
 
 ---
 

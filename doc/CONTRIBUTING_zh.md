@@ -46,23 +46,34 @@
 
 ## 4. 本地测试与质量门禁 (Testing & Verification)
 
-在发起 Pull Request 之前，必须在本地编译并通过全部三大测试套件：
+在发起 Pull Request 之前，必须在本地编译并通过全部五大自动化测试套件：
 
 ```bash
-# 1. 编译全部目标
+# 1. 安装构建依赖 (包含 DWARF libdw 与 Python/Lua 脚本引擎依赖)
+sudo apt-get install -y build-essential cmake pkg-config \
+    qtbase5-dev libqt5widgets5 libcapstone-dev \
+    libelf-dev libdw-dev python3-dev liblua5.4-dev
+
+# 2. 编译全部目标
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
-# 2. 运行基础回归测试套件
+# 3. 运行基础回归测试套件 (单步、断点、寄存器、远程 Syscall 等)
 ./build/test_core
 
-# 3. 运行进阶特性全量验证套件
+# 4. 运行 DWARF 源码级调试与行号映射回归套件
+./build/test_dwarf
+
+# 5. 运行进阶特性全量验证套件 (配置持久化、动态插件、内存/文件补丁、指令 Trace、函数 CFG)
 ./build/test_advanced
 
-# 4. 运行窗口析构与进程销毁压力测试
+# 6. 运行嵌入式双脚本引擎全量测试套件 (Python 3 与 Lua 5.4 运行时、edb 模块 API)
+./build/test_scripting
+
+# 7. 运行窗口析构与活跃进程销毁压力测试
 ./build/test_exit
 ```
-若有新增功能，请在 `tests/test_core.cpp` 或 `tests/test_advanced.cpp` 中同步编写对应的单元测试用例。
+若有新增功能，请在 `tests/` 目录对应测试套件中（如 `test_core.cpp`、`test_dwarf.cpp`、`test_advanced.cpp`、`test_scripting.cpp`）同步编写对应的单元测试用例。
 
 ---
 

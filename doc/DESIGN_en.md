@@ -26,10 +26,12 @@
    - 3.8 Project Database & Session Persistence
    - 3.9 Interactive CLI Console & Plugin System
    - 3.10 4-Quadrant Golden Workspace & UI/UX Design
+   - 3.11 DWARF Source-Level Debugging & Line Mapping Subsystem
+   - 3.12 Embedded Python 3 & Lua 5.4 Dual Scripting Automation Engine
 4. [Unimplemented Features & Technical Roadmap](#4-unimplemented-features--technical-roadmap)
    - 4.1 Multi-Architecture & Cross-Debugging Support (ARM64 / x86-32)
-   - 4.2 DWARF Source-Level Debugging & Line Mapping
-   - 4.3 Embedded Python Scripting Engine (pybind11)
+   - 4.2 DWARF Source-Level Debugging & Line Mapping [Done]
+   - 4.3 Embedded Scripting Automation Engine (Python 3 & Lua 5.4) [Done]
    - 4.4 Advanced Anti-Anti-Debugging & Stealth Breakpoints
    - 4.5 C++ Symbol Demangling & Type Layout Reconstruction
    - 4.6 Multi-Process Follow-Fork & IPC Tracing
@@ -170,16 +172,27 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 - **Modern Dark Geek Theme**: Flat tabs, 2px active blue accents, high-contrast tables, and minimal scrollbars.
 - **Desktop Environment Adaptability**: Wayland window constraint resolution, sub-400px minimum width support for seamless maximizing across high-DPI and laptop screens.
 
+### 3.11 DWARF Source-Level Debugging & Line Mapping Subsystem
+- **Native libdw Extraction**: Integrates `libdw` to parse ELF `.debug_info`, `.debug_line`, and `.debug_str` sections, building a fast lookup cache for bidirectional `Address <-> (File:Line:Column)` mapping.
+- **Mixed-Mode Disassembly (`Ctrl+Shift+S`)**: Inline dark-green banners in `DisassemblyView` displaying matching C/C++ source statements and line numbers above assembly basic blocks.
+- **Dedicated Source Browser (`SourceView`, `Alt+S`)**: Central tab providing multi-file browsing, instruction pointer indicators (`➔`), breakpoint markers (`●`), double-click source breakpoints, and source step-over/step-into execution.
+
+### 3.12 Embedded Python 3 & Lua 5.4 Dual Scripting Automation Engine
+- **Unified Dual-Engine Architecture**: Managed by `IScriptEngine` and `ScriptEngineManager`, providing dynamic language routing by extension (`.py` / `.lua`) or CLI command prefix (`py` / `lua`).
+- **Python 3 C-API Embedding**: Embedded CPython 3 runtime exporting native built-in module `edb` (registers, memory I/O, breakpoints, stepping, expression evaluation, process state) with complete `sys.stdout`/`sys.stderr` capture and traceback formatting.
+- **Lua 5.4 High-Performance Embedding**: Embedded Lua 5.4 runtime providing symmetric APIs under global table `edb` and redirected `print()`, optimized for microsecond-latency condition evaluation and fast hooks.
+- **Interactive Script Console (`ScriptConsoleView`, `Alt+P`)**: Bottom drawer terminal with language switcher, one-click script file execution (`▶ Run File...`), history navigation, and dark syntax color rendering.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
 
 1. **Multi-Architecture Support**:
    - Abstract `IRegisterContext` and engine factories to support 32-bit x86 (`compat_ptrace`) and AArch64 / ARM64 (`NT_PRSTATUS` / `PTRACE_GETREGSET`).
-2. **DWARF Source-Level Debugging**:
-   - Integrate `libdw` / `libdwarf` to parse `.debug_info` and `.debug_line`, enabling inline C/C++ source rendering alongside disassembly and source breakpoints.
-3. **Embedded Python Scripting Engine**:
-   - Embed Python 3 via pybind11 (`import edb_next`), exposing session control, memory I/O, registers, and breakpoint hooks for automated unpacking and vulnerability research.
+2. **DWARF Source-Level Debugging [Implemented / Done]**:
+   - Integrated `libdw` (`core/DwarfParser`, `core/SourceFileManager`, `ui/SourceView`), bidirectional line mapping, mixed-mode disassembly (`Ctrl+Shift+S`), and source-level breakpoints/stepping.
+3. **Embedded Scripting Automation Engine (Python 3 & Lua 5.4) [Implemented / Done]**:
+   - Implemented native dual-engine architecture (`PythonScriptEngine`, `LuaScriptEngine`, `ScriptEngineManager`), built-in `edb` APIs, interactive `ScriptConsoleView` (`Alt+P`), and CommandBar execution (`py ...` / `lua ...`).
 4. **Anti-Anti-Debugging & Stealth**:
    - Cloak `TracerPid` in `/proc/<pid>/status`, smooth `rdtsc` execution differences, and introduce page-guard memory breakpoints to bypass integrity checks.
 5. **C++ Demangling & Type Reconstruction**:

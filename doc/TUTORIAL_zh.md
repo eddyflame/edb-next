@@ -49,13 +49,27 @@
    - 6.5 一键脱壳/破解后物理可执行文件落盘 (patchFileToDisk)
 7. [项目工程数据库无感持久化 (.edb_db)](#7-项目工程数据库无感持久化-edb_db)
 8. [x64dbg 风格常驻极客命令行控制台 (CommandBar CLI)](#8-x64dbg-风格常驻极客命令行控制台-commandbar-cli)
-9. [现代化 C++20 插件编写与使用全指南 (Plugin Development)](#9-现代化-c20-插件编写与使用全指南-plugin-development)
-   - 9.1 插件架构与工作原理
-   - 9.2 插件工程目录与 CMakeLists.txt 规范
-   - 9.3 编写插件头文件 (`.hpp`)
-   - 9.4 编写插件实现源码 (`.cpp`)
-   - 9.5 编译生成插件共享库 (`.so`)
-   - 9.6 插件安装、加载与实机测试
+9. [DWARF 源码级调试实战指南 (Source-Level Debugging)](#9-dwarf-源码级调试实战指南-source-level-debugging)
+   - 9.1 编译选项与 DWARF 调试符号提取
+   - 9.2 反汇编与源码混合排版模式 (`Ctrl+Shift+S`)
+   - 9.3 独立源码文件浏览器与行号断点 (`Alt+S`)
+   - 9.4 源码级单步步过与步入
+10. [嵌入式脚本自动化引擎实战指南 (Python 3 & Lua 5.4)](#10-嵌入式脚本自动化引擎实战指南-python-3--lua-54)
+   - 10.1 为什么采用 Python 与 Lua 双引擎体系
+   - 10.2 交互式 Script Console 终端 (`Alt+P`)
+   - 10.3 Python 3 自动化逆向脚本编写与 `edb` API 参考
+   - 10.4 Lua 5.4 极速条件 Hook 编写与 API 参考
+   - 10.5 运行外部脚本文件与批量脱壳/内存转储实战
+   - 10.6 CommandBar 行内快速脚本求值 (`py ...` / `lua ...`)
+11. [现代化 C++20 插件编写与使用全指南 (Plugin Development)](#11-现代化-c20-插件编写与使用全指南-plugin-development)
+   - 11.1 插件架构与工作原理
+   - 11.2 插件工程目录与 CMakeLists.txt 规范
+   - 11.3 编写插件头文件 (`.hpp`)
+   - 11.4 编写插件实现源码 (`.cpp`)
+   - 11.5 编译生成插件共享库 (`.so`)
+   - 11.6 插件安装、加载与实机测试
+12. [常用快捷键一览表 (Cheat Sheet)](#12-常用快捷键一览表-cheat-sheet)
+13. [结语](#13-结语)
 
 ---
 
@@ -77,7 +91,11 @@ sudo apt install -y \
     pkg-config \
     qtbase5-dev \
     libqt5widgets5 \
-    libcapstone-dev
+    libcapstone-dev \
+    libdw-dev \
+    libelf-dev \
+    python3-dev \
+    liblua5.4-dev
 ```
 
 #### Fedora / RHEL 安装命令：
@@ -122,7 +140,9 @@ cmake --build build -j$(nproc)
 - `build/libedb_core.a`：底层调试核心静态库；
 - `build/plugins/sample_plugin.so`：官方参考扩展插件；
 - `build/test_core`：核心能力全量回归测试套件；
+- `build/test_dwarf`：DWARF 源码级调试与行号双向映射测试套件；
 - `build/test_advanced`：高阶逆向特性全量回归测试套件；
+- `build/test_scripting`：Python 3 & Lua 5.4 嵌入式双引擎测试套件；
 - `build/test_exit`：窗口析构防崩溃压力测试套件。
 
 ---
@@ -135,8 +155,14 @@ cmake --build build -j$(nproc)
 # 运行基础核心测试 (覆盖断点状态机、单步、多会话、ELF解析、调用栈、堆分析、汇编器等)
 ./build/test_core
 
+# 运行 DWARF 源码解析与行号双向映射测试
+./build/test_dwarf
+
 # 运行进阶特性测试 (覆盖偏好配置、补丁落盘、插件网关、Trace引擎、CFG、远程系统调用等)
 ./build/test_advanced
+
+# 运行 Python 3 & Lua 5.4 双脚本自动化引擎测试
+./build/test_scripting
 
 # 运行析构防崩溃压力测试
 ./build/test_exit
@@ -582,15 +608,151 @@ cmake --build build -j$(nproc)
 | `alloc <size> [prot]` | `malloc`| 在目标进程动态分配内存页。例：`alloc 4096 7` |
 | `free <addr> <size>` | `free` | 释放目标进程中动态分配的内存。例：`free 0x7ffff7fbc000 4096` |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
+| `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
+| `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |
 | `help` | `?` | 打印出当前所有内置及外部插件注册的 CLI 命令列表 |
 
 ---
 
-## 9. 现代化 C++20 插件编写与使用全指南 (Plugin Development)
+## 9. DWARF 源码级调试实战指南 (Source-Level Debugging)
+
+`edb-next` 内置对 DWARF 调试符号的高性能原生支持，支持纯汇编与原始 C/C++ 源码之间的双向无缝映射。
+
+### 9.1 编译选项与 DWARF 调试符号提取
+当调试自己编译或拥有源码的二进制程序时，请在 GCC / Clang 编译时添加 `-g` 或 `-g3` 参数：
+```bash
+gcc -g -O0 -no-pie my_target.c -o my_target
+```
+在 `edb-next` 中加载该二进制时，底核 `core/DwarfParser` 将基于 `libdw` 自动提取 `.debug_info`、`.debug_abbrev`、`.debug_line` 与 `.debug_str` 等调试节区，构建起编译单元与所有源文件、函数及代码行号的高速查找缓存树。
+
+### 9.2 反汇编与源码混合排版模式 (`Ctrl+Shift+S`)
+在反汇编窗口 `DisassemblyView` 中，默认仅呈现纯汇编指令序列。
+- 按下快捷键 **Ctrl+Shift+S**，或在反汇编区域点击右键菜单 **"Toggle Mixed Source/ASM"**；
+- 反汇编引擎将自动将指令按源码行归类，并在对应汇编基本块上方渲染精致的**暗黑青绿色源码横幅**（例如：`main.c:24: if (user_id == 0) {`）；
+- 逆向分析人员可在审查底层 CPU 指令逻辑的同时，直接对照原始高级语言业务逻辑，逆向理解效率提升数倍！
+
+### 9.3 独立源码文件浏览器与行号断点 (`Alt+S`)
+`edb-next` 在主代码展示区引入了独立的 **Source View** 标签页：
+1. **一键聚焦**：按下快捷键 **Alt+S**，代码区自动切换至源码视图；
+2. **源文件选择**：顶部下拉框自动列出当前二进制编译所包含的所有 C/C++ 源文件（如 `main.c`, `utils.c` 等）；
+3. **行号状态指示**：
+   - **执行指针指示**：当前 CPU 的 `RIP` 所在源码行以显眼的青蓝色粗体高亮，并在行号栏标注 `➔` 指示符；
+   - **断点指示**：已下断点的源码行在行号栏标注亮红色圆点 `●`；
+4. **源码行号双击断点**：在任意源码行的行号区域**双击左键**，即可针对该行下达源码断点，系统自动将源码行转换为底层机器代码物理首地址下断！再次双击即可清除断点。
+
+### 9.4 源码级单步步过与步入
+在源码调试模式下：
+- **源码步过 (Source Step Over)**：系统执行连续单步，直至 CPU `RIP` 离开当前源码行所覆盖的所有机器指令区间，实现高级语言语句级的平滑步过；
+- **源码步入 (Source Step Into)**：遇到包含函数调用的源码行时，直接步入目标子函数的源码第一行。
+
+---
+
+## 10. 嵌入式脚本自动化引擎实战指南 (Python 3 & Lua 5.4)
+
+`edb-next` 提供业界领先的双脚本自动化引擎架构，统一由 `IScriptEngine` 与 `ScriptEngineManager` 协调调度。
+
+### 10.1 为什么采用 Python 与 Lua 双引擎体系
+- **Python 3 引擎**：面向复杂逆向、漏洞利用开发与安全生态联动。可直接利用 `pwntools`, `z3`, `scapy`, `requests`, `numpy` 等庞大的 Python 生态；
+- **Lua 5.4 引擎**：面向极致轻量、高频断点命中与微秒级条件判定。Lua 解释器启动与执行开销几乎为零，非常适合在每秒触发上万次的紧凑循环中充当高速判定 Hook。
+
+### 10.2 交互式 Script Console 终端 (`Alt+P`)
+在主界面按下快捷键 **Alt+P**，底部工作台将自动切入 **Script Console** 选项卡：
+- **Engine 语言切换**：顶部下拉框支持随时在 `Python 3` 与 `Lua 5.4` 之间自由切换；
+- **命令行输入与历史穿梭**：底栏单行输入框支持使用键盘 **Up / Down** 箭头键穿梭最近执行的历史命令；
+- **运行外部脚本文件 (`▶ Run File...`)**：点击可直接选择并运行磁盘上的 `.py` 或 `.lua` 脚本；
+- **色彩渲染**：用户指令以青色高亮，执行输出以柔软灰白呈现，异常与 Traceback 报错以珊瑚红标出。
+
+### 10.3 Python 3 自动化逆向脚本编写与 `edb` API 参考
+在 Python 环境中，原生内置模块 `edb` 自动导入，提供了操作调试会话的完整 API 接口：
+
+| Python API | 返回值 | 功能说明 |
+| :--- | :--- | :--- |
+| `edb.get_regs()` | `dict` | 获取全部寄存器字典（如 `{'rip': 0x401000, 'rax': 0x0, ...}`） |
+| `edb.get_reg(name)` | `int \| None` | 获取指定寄存器的整数值（大小写不敏感，支持 `$rax` 或 `rax`） |
+| `edb.set_reg(name, val)` | `bool` | 设置指定寄存器的数值 |
+| `edb.read_memory(addr, size)` | `bytes` | 读取指定目标虚拟地址的二进制字节串 |
+| `edb.write_memory(addr, data)`| `bool` | 将 Python `bytes` 数据覆写至目标虚拟地址 |
+| `edb.set_breakpoint(addr, symbol="")` | `bool` | 在指定地址下达断点 |
+| `edb.remove_breakpoint(addr)` | `bool` | 移除指定地址上的断点 |
+| `edb.step_into()` / `edb.step_over()` | `None` | 单步步入 / 步过一条机器指令 |
+| `edb.step_source()` | `None` | 步过一条源码行 |
+| `edb.resume()` / `edb.pause()` | `None` | 继续全速运行 / 中断暂停被调试进程 |
+| `edb.resolve_symbol(name)` | `int \| None` | 解析符号名称为物理虚拟地址 |
+| `edb.eval(expr)` | `int \| None` | 计算调试表达式（如 `"rax + 0x20"`、`"[rsp+8]"`） |
+| `edb.pid()` / `edb.tid()` | `int` | 获取目标进程 PID / 当前活动线程 TID |
+| `edb.state()` | `str` | 获取当前会话状态（`"Running"`, `"Paused"`, `"Stopped"`） |
+| `edb.log(msg)` | `None` | 向宿主系统日志视图输出一条信息 |
+
+#### Python 实战示例：扫描内存并提取解密 Flag
+```python
+import edb
+
+# 获取当前程序指针与基地址
+rip = edb.get_reg("rip")
+print(f"[*] Current RIP: {hex(rip)}")
+
+# 解析目标函数符号
+target_addr = edb.resolve_symbol("secret_buffer")
+if target_addr:
+    data = edb.read_memory(target_addr, 32)
+    # 进行 XOR 0x5A 解密
+    decrypted = bytes([b ^ 0x5A for b in data])
+    print(f"[+] Decrypted buffer: {decrypted}")
+else:
+    print("[-] Symbol not found")
+```
+
+### 10.4 Lua 5.4 极速条件 Hook 编写与 API 参考
+在 Lua 5.4 环境中，全局表 `edb` 注入了完全对称的高性能 API，且系统重写了标准 `print()` 函数，所有输出自动重定向至控制台：
+
+```lua
+-- Lua 极速循环检测与条件触发
+local rip = edb.get_reg("rip")
+local rax = edb.get_reg("rax")
+print(string.format("[Lua] Hook hit at 0x%x, RAX = 0x%x", rip, rax))
+
+if rax > 1000 then
+    print("[Lua] Threshold exceeded! Setting breakpoint at return address...")
+    local rsp = edb.get_reg("rsp")
+    local ret_bytes = edb.read_memory(rsp, 8)
+    -- 处理返回地址
+end
+```
+
+### 10.5 运行外部脚本文件与批量脱壳/内存转储实战
+1. 编写独立脚本文件 `unpack.py`：
+   ```python
+   import edb, time
+
+   oep = edb.resolve_symbol("main") or 0x401000
+   edb.set_breakpoint(oep, "OEP")
+   edb.resume()
+
+   # 等待断点命中
+   while edb.state() == "Running":
+       time.sleep(0.01)
+
+   print("[+] Reached OEP! Dumping memory...")
+   payload = edb.read_memory(0x400000, 0x10000)
+   with open("/tmp/dumped_text.bin", "wb") as f:
+       f.write(payload)
+   print("[+] Dump completed successfully!")
+   ```
+2. 在 Script Console 顶部点击 **▶ Run File...**，选中 `unpack.py`，即可全自动实现一键值守式脱壳与内存导出！
+
+### 10.6 CommandBar 行内快速脚本求值 (`py ...` / `lua ...`)
+无需专门切换到控制台标签页，逆向人员可在底栏常驻命令行中直接执行单行脚本：
+- 执行 Python 表达式：`py print("Hex RAX:", hex(edb.get_reg('rax')))`
+- 执行 Lua 语句：`lua print('PID is: ' .. edb.pid())`
+执行结果与可能产生的异常 Traceback 将即时打印在系统日志与状态栏中。
+
+---
+
+## 11. 现代化 C++20 插件编写与使用全指南 (Plugin Development)
 
 `edb-next` 拥有一套现代、安全、解耦的 C++20 插件体系。插件被编译为标准的 Linux 共享库（`.so`），由宿主通过 `QPluginLoader` 动态装载。
 
-### 9.1 插件架构与工作原理
+### 11.1 插件架构与工作原理
 
 插件只需要实现纯虚接口契约 [IPlugin](file:///home/eddy/myplace/project/edb-debugger/edb-next/core/IPlugin.hpp)，并通过 [IPluginContext](file:///home/eddy/myplace/project/edb-debugger/edb-next/core/IPluginContext.hpp) 能力网关与宿主进行交互：
 - **能力网关隔离**：插件无法直接破坏调试器的核心私有指针，必须通过 `context->activeSession()` 进行内存读写、寄存器访问与会话控制；
@@ -603,7 +765,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 9.2 插件工程目录与 CMakeLists.txt 规范
+### 11.2 插件工程目录与 CMakeLists.txt 规范
 
 建议将新插件创建为独立工程目录，例如 `MyPlugin/`：
 
@@ -651,7 +813,7 @@ target_link_libraries(my_plugin
 
 ---
 
-### 9.3 编写插件头文件 (`MyPlugin.hpp`)
+### 11.3 编写插件头文件 (`MyPlugin.hpp`)
 
 ```cpp
 #pragma once
@@ -703,7 +865,7 @@ private:
 
 ---
 
-### 9.4 编写插件实现源码 (`MyPlugin.cpp`)
+### 11.4 编写插件实现源码 (`MyPlugin.cpp`)
 
 ```cpp
 #include "MyPlugin.hpp"
@@ -800,7 +962,7 @@ QWidget* MyPlugin::createOptionsPage(QWidget* parent) {
 
 ---
 
-### 9.5 编译生成插件共享库 (`.so`)
+### 11.5 编译生成插件共享库 (`.so`)
 
 使用 CMake 进行编译：
 ```bash
@@ -812,7 +974,7 @@ cmake --build build -j$(nproc)
 
 ---
 
-### 9.6 插件安装、加载与实机测试
+### 11.6 插件安装、加载与实机测试
 
 `edb-next` 支持两种插件加载方式：
 
@@ -841,7 +1003,7 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 
 ---
 
-## 10. 常用快捷键一览表 (Cheat Sheet)
+## 12. 常用快捷键一览表 (Cheat Sheet)
 
 | 快捷键 | 功能描述 | 对应分类 |
 | :--- | :--- | :--- |
@@ -866,6 +1028,9 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 | **Ctrl+D** | Dump CPU State (一键导出 CPU 机器状态快照) | 状态导出 |
 | **Shift+S** | Toggle Stack View (快速展开/折叠右下调用栈) | 界面布局 |
 | **Alt+C** | 快速聚焦 CPU 反汇编窗口 | 视图切换 |
+| **Alt+S** | 快速聚焦源码浏览器窗口 (SourceView) | 视图切换 |
+| **Ctrl+Shift+S** | 切换反汇编与源码混合排版模式 (Mixed Mode) | 视图切换 |
+| **Alt+P** | 快速打开并聚焦 Script Console (Python/Lua) | 自动化脚本 |
 | **Alt+D** | 快速切换至内存 Dump 窗口 | 视图切换 |
 | **Alt+K** | 快速切换至调用栈 (Call Stack) 抽屉 | 视图切换 |
 | **Alt+B** | 快速切换至断点列表 (Breakpoints) 抽屉 | 视图切换 |
@@ -876,6 +1041,6 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 
 ---
 
-## 11. 结语
+## 13. 结语
 
-本教程系统化梳理了从零编译、四象限日常逆向、高阶漏洞分析、系统调用注入与 ELF 补丁磁盘落盘，直至 C++20 插件编写的全套操作规范。您可以充分发挥 `edb-next` 强大的底核控制力与极速交互体验，轻松攻克复杂 Linux 原生二进制逆向与漏洞利用分析难题！
+本教程系统化梳理了从零编译、四象限日常逆向、DWARF 源码级调试、嵌入式 Python/Lua 双脚本自动化控制、高阶漏洞分析、系统调用注入与 ELF 补丁磁盘落盘，直至 C++20 插件编写的全套操作规范。您可以充分发挥 `edb-next` 强大的底核控制力与极速交互体验，轻松攻克复杂 Linux 原生二进制逆向与漏洞利用分析难题！

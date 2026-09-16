@@ -45,25 +45,36 @@ We recommend Conventional Commits:
 ---
 
 ## 4. Testing & Verification
-
-Before submitting a Pull Request, build the codebase and verify that all test suites pass cleanly:
-
+ 
+Before submitting a Pull Request, build the codebase and verify that all automated test suites pass cleanly:
+ 
 ```bash
-# 1. Compile all targets
+# 1. Install prerequisites (including DWARF libdw and Python 3 / Lua 5.4 scripting libraries)
+sudo apt-get install -y build-essential cmake pkg-config \
+    qtbase5-dev libqt5widgets5 libcapstone-dev \
+    libelf-dev libdw-dev python3-dev liblua5.4-dev
+
+# 2. Compile all targets
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 
-# 2. Run core regression suite
+# 3. Run core regression suite (single-step, breakpoints, registers, remote syscall, etc.)
 ./build/test_core
 
-# 3. Run advanced features regression suite
+# 4. Run DWARF source-level debugging & line mapping suite
+./build/test_dwarf
+
+# 5. Run advanced features regression suite (configuration, plugins, patches, tracing, CFG)
 ./build/test_advanced
 
-# 4. Run teardown stress suite
+# 6. Run embedded scripting engine suite (Python 3 & Lua 5.4 runtimes, edb module API)
+./build/test_scripting
+
+# 7. Run teardown and active process cleanup stress suite
 ./build/test_exit
 ```
 
-If introducing new features or fixing bugs, please append unit tests in `tests/test_core.cpp` or `tests/test_advanced.cpp`.
+If introducing new features or fixing bugs, please append unit tests in the appropriate `tests/` suite (such as `test_core.cpp`, `test_dwarf.cpp`, `test_advanced.cpp`, or `test_scripting.cpp`).
 
 ---
 

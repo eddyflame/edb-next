@@ -49,14 +49,27 @@
    - 6.5 Exporting Standalone Patched ELF Binaries to Disk (`patchFileToDisk`)
 7. [Project Database & Automatic Session Persistence (.edb_db)](#7-project-database--automatic-session-persistence-edb_db)
 8. [x64dbg-Style Interactive CommandBar CLI](#8-x64dbg-style-interactive-commandbar-cli)
-9. [Modern C++20 Plugin Development Guide](#9-modern-c20-plugin-development-guide)
-   - 9.1 Architecture & Gateway Pattern
-   - 9.2 Plugin Directory & CMake Structure
-   - 9.3 Writing the Plugin Header (`.hpp`)
-   - 9.4 Implementing Plugin Business Logic (`.cpp`)
-   - 9.5 Building the Shared Library (`.so`)
-   - 9.6 Installation, Loading, and Verification
-10. [Keyboard Shortcut Cheat Sheet](#10-keyboard-shortcut-cheat-sheet)
+9. [DWARF Source-Level Debugging Guide](#9-dwarf-source-level-debugging-guide)
+   - 9.1 Compiler Options & DWARF Extraction
+   - 9.2 Mixed ASM/Source View (`Ctrl+Shift+S`)
+   - 9.3 Standalone Source Browser (`Alt+S`)
+   - 9.4 Source-Level Stepping
+10. [Embedded Scripting Automation Guide (Python 3 & Lua 5.4)](#10-embedded-scripting-automation-guide-python-3--lua-54)
+   - 10.1 Dual-Engine Architecture Rationale
+   - 10.2 Interactive Script Console (`Alt+P`)
+   - 10.3 Python 3 Automation & `edb` API Reference
+   - 10.4 Lua 5.4 Fast Condition Hooks & API Reference
+   - 10.5 Running External Script Files & Automated Unpacking
+   - 10.6 Inline CommandBar Script Evaluation (`py ...` / `lua ...`)
+11. [Modern C++20 Plugin Development Guide](#11-modern-c20-plugin-development-guide)
+   - 11.1 Architecture & Gateway Pattern
+   - 11.2 Plugin Directory & CMake Structure
+   - 11.3 Writing the Plugin Header (`.hpp`)
+   - 11.4 Implementing Plugin Business Logic (`.cpp`)
+   - 11.5 Building the Shared Library (`.so`)
+   - 11.6 Installation, Loading, and Verification
+12. [Keyboard Shortcut Cheat Sheet](#12-keyboard-shortcut-cheat-sheet)
+13. [Conclusion](#13-conclusion)
 
 ---
 
@@ -69,17 +82,28 @@
 #### Ubuntu / Debian:
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git pkg-config qtbase5-dev libqt5widgets5 libcapstone-dev
+sudo apt install -y \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    qtbase5-dev \
+    libqt5widgets5 \
+    libcapstone-dev \
+    libdw-dev \
+    libelf-dev \
+    python3-dev \
+    liblua5.4-dev
 ```
 
 #### Fedora / RHEL:
 ```bash
-sudo dnf install -y gcc-c++ cmake git pkgconf-pkg-config qt5-qtbase-devel capstone-devel
+sudo dnf install -y gcc-c++ cmake git pkgconf-pkg-config qt5-qtbase-devel capstone-devel elfutils-devel python3-devel lua-devel
 ```
 
 #### Arch Linux:
 ```bash
-sudo pacman -S --needed base-devel cmake git pkgconf qt5-base capstone
+sudo pacman -S --needed base-devel cmake git pkgconf qt5-base capstone elfutils python lua
 ```
 
 ---
@@ -97,7 +121,9 @@ Build outputs in `build/`:
 - `libedb_core.a`: Core debugging static library
 - `plugins/sample_plugin.so`: Reference plugin
 - `test_core`: Core regression suite
+- `test_dwarf`: DWARF source debugging regression suite
 - `test_advanced`: Advanced features regression suite
+- `test_scripting`: Python 3 & Lua 5.4 scripting regression suite
 - `test_exit`: Teardown and teardown stress suite
 
 ---
@@ -106,7 +132,9 @@ Build outputs in `build/`:
 
 ```bash
 ./build/test_core
+./build/test_dwarf
 ./build/test_advanced
+./build/test_scripting
 ./build/test_exit
 ```
 
@@ -284,15 +312,140 @@ flowchart LR
 | `eval <expr>` | Evaluate expression. Ex: `eval rax + 0x20`, `eval [rbp-8]` |
 | `mprotect <addr> <size> <prot>` | Change target page protections (7=RWX). Ex: `mprotect 0x555555555000 4096 7` |
 | `alloc <size> [prot]` | Allocate target memory page. Ex: `alloc 4096 7` |
+| `free <addr> <size>` | Free dynamically allocated target page. Ex: `free 0x7ffff7fbc000 4096` |
 | `dumpstate` | Format and copy full CPU state snapshot to clipboard |
+| `py <code...>` | Directly evaluate Python 3 statement or expression. Ex: `py print(hex(edb.get_reg('rip')))` |
+| `lua <code...>` | Directly evaluate Lua 5.4 statement or expression. Ex: `lua print(string.format('0x%x', edb.get_reg('rip')))` |
+| `help` | Print list of all registered built-in and plugin CLI commands |
 
 ---
 
-## 9. Modern C++20 Plugin Development Guide
+## 9. DWARF Source-Level Debugging Guide
+
+`edb-next` provides native, high-performance integration with DWARF debug info (`libdw`), bridging raw assembly instructions with original C/C++ source code.
+
+### 9.1 Compiler Options & DWARF Extraction
+When building binaries with source access, compile with `-g` or `-g3`:
+```bash
+gcc -g -O0 -no-pie target.c -o target
+```
+Upon launching or attaching to the target, `core/DwarfParser` extracts `.debug_info`, `.debug_line`, and `.debug_str` sections, building a fast lookup cache for bidirectional `Address <-> (File:Line:Column)` mapping.
+
+### 9.2 Mixed ASM/Source View (`Ctrl+Shift+S`)
+By default, the `DisassemblyView` displays pure machine disassembly.
+- Press **Ctrl+Shift+S** or right-click -> **"Toggle Mixed Source/ASM"** to enable mixed mode.
+- The disassembly engine groups instructions by their corresponding source line and renders a sleek, dark-green banner above each basic block showing the source file, line number, and original code line (e.g. `target.c:18: if (n <= 1) return n;`).
+- This dramatically accelerates vulnerability audits by correlating raw assembly with high-level program logic.
+
+### 9.3 Standalone Source Browser (`Alt+S`)
+The central code area features a dedicated **Source View** tab:
+1. **Focus**: Press **Alt+S** to switch focus directly to the source browser.
+2. **File Selection**: The top combo box lists all C/C++ source files participating in the compilation unit.
+3. **Line Indicators**:
+   - **Instruction Pointer**: The active CPU `RIP` is highlighted with an emerald arrow (`➔`) in the margin.
+   - **Breakpoints**: Lines with active breakpoints show a bright red dot (`●`).
+4. **Source Breakpoints**: Double-click any line number in the margin to toggle a breakpoint. `edb-next` automatically translates the line to the corresponding instruction start address in memory.
+
+### 9.4 Source-Level Stepping
+- **Source Step Over**: Executes instructions continuously until `RIP` exits the address range covered by the current source line.
+- **Source Step Into**: When encountering a source line containing a function call, steps into the first source line of the called function.
+
+---
+
+## 10. Embedded Scripting Automation Guide (Python 3 & Lua 5.4)
+
+`edb-next` features an industry-leading dual-engine embedded scripting architecture unified under `IScriptEngine` and `ScriptEngineManager`.
+
+### 10.1 Dual-Engine Architecture Rationale
+- **Python 3 Engine**: Geared towards complex vulnerability research and exploit generation, integrating seamlessly with the rich security ecosystem (`pwntools`, `z3`, `scapy`, `requests`, etc.).
+- **Lua 5.4 Engine**: Zero-overhead, microsecond-latency condition evaluation, perfectly suited for high-frequency breakpoint hooks executed thousands of times per second.
+
+### 10.2 Interactive Script Console (`Alt+P`)
+Press **Alt+P** to open the dedicated **Script Console** tab in the bottom drawer:
+- **Language Switcher**: Toggle dynamically between `Python 3` and `Lua 5.4`.
+- **History Navigation**: Use **Up / Down** arrow keys to recall previous commands.
+- **Run External Script Files (`▶ Run File...`)**: One-click execution of `.py` or `.lua` files from disk.
+- **Dark Geek Styling**: Monospace font with cyan prompts, soft-white outputs, and red exception tracebacks.
+
+### 10.3 Python 3 Automation & `edb` API Reference
+The embedded Python 3 runtime exports the built-in `edb` module:
+
+| Python API | Return Type | Description |
+| :--- | :--- | :--- |
+| `edb.get_regs()` | `dict` | Retrieve all register values as a dictionary |
+| `edb.get_reg(name)` | `int \| None` | Get register value (case-insensitive, e.g. `'rip'`, `'rax'`) |
+| `edb.set_reg(name, val)` | `bool` | Set register value |
+| `edb.read_memory(addr, size)` | `bytes` | Read raw bytes from target virtual memory |
+| `edb.write_memory(addr, data)`| `bool` | Write Python `bytes` to target virtual memory |
+| `edb.set_breakpoint(addr, sym="")` | `bool` | Set software breakpoint at address |
+| `edb.remove_breakpoint(addr)` | `bool` | Remove breakpoint at address |
+| `edb.step_into()` / `edb.step_over()` | `None` | Step into / Step over single instruction |
+| `edb.step_source()` | `None` | Step over one source line |
+| `edb.resume()` / `edb.pause()` | `None` | Resume / Interrupt target execution |
+| `edb.resolve_symbol(name)` | `int \| None` | Resolve symbol name to address |
+| `edb.eval(expr)` | `int \| None` | Evaluate debug expression (e.g. `"rax + 0x20"`) |
+| `edb.pid()` / `edb.tid()` | `int` | Get target PID / active TID |
+| `edb.state()` | `str` | Get session state (`"Running"`, `"Paused"`, `"Stopped"`) |
+| `edb.log(msg)` | `None` | Write message to host debug log |
+
+#### Python Script Example: Automated Buffer Decryption
+```python
+import edb
+
+rip = edb.get_reg("rip")
+print(f"[*] Current RIP: {hex(rip)}")
+
+buf_addr = edb.resolve_symbol("secret_buffer")
+if buf_addr:
+    raw = edb.read_memory(buf_addr, 32)
+    decrypted = bytes([b ^ 0x5A for b in raw])
+    print(f"[+] Decrypted: {decrypted}")
+```
+
+### 10.4 Lua 5.4 Fast Condition Hooks & API Reference
+In Lua 5.4, the global `edb` table provides symmetric APIs, and `print()` output is captured directly into the console:
+
+```lua
+local rip = edb.get_reg("rip")
+local rax = edb.get_reg("rax")
+print(string.format("[Lua Hook] RIP=0x%x, RAX=0x%x", rip, rax))
+
+if rax > 1000 then
+    print("[Lua] Threshold hit! Hooking return address...")
+    local rsp = edb.get_reg("rsp")
+    local ret_bytes = edb.read_memory(rsp, 8)
+end
+```
+
+### 10.5 Running External Script Files & Automated Unpacking
+1. Write a script `unpack.py`:
+   ```python
+   import edb, time
+   oep = edb.resolve_symbol("main") or 0x401000
+   edb.set_breakpoint(oep, "OEP")
+   edb.resume()
+   while edb.state() == "Running":
+       time.sleep(0.01)
+   print("[+] Reached OEP! Dumping unpacked text section...")
+   payload = edb.read_memory(0x400000, 0x10000)
+   with open("/tmp/dumped_payload.bin", "wb") as f:
+       f.write(payload)
+   print("[+] Dump completed successfully!")
+   ```
+2. Click **▶ Run File...** in Script Console and select `unpack.py` for unattended unpacking and payload dumping.
+
+### 10.6 Inline CommandBar Script Evaluation (`py ...` / `lua ...`)
+Evaluate one-liners directly from the bottom CommandBar without switching tabs:
+- Python: `py print("Hex RAX:", hex(edb.get_reg('rax')))`
+- Lua: `lua print('PID is: ' .. edb.pid())`
+
+---
+
+## 11. Modern C++20 Plugin Development Guide
 
 Plugins are compiled as standard Linux shared objects (`.so`) using the `IPlugin` and `IPluginContext` contracts.
 
-### 9.2 Writing a Plugin Header (`MyPlugin.hpp`)
+### 11.1 Writing a Plugin Header (`MyPlugin.hpp`)
 ```cpp
 #pragma once
 #include "core/IPlugin.hpp"
@@ -332,7 +485,7 @@ private:
 } // namespace my_plugin
 ```
 
-### 9.3 Implementing Plugin Logic (`MyPlugin.cpp`)
+### 11.2 Implementing Plugin Logic (`MyPlugin.cpp`)
 ```cpp
 #include "MyPlugin.hpp"
 #include <QMessageBox>
@@ -382,7 +535,7 @@ QMenu* MyPlugin::createMenu(QWidget* parent) {
 } // namespace my_plugin
 ```
 
-### 9.4 CMake Build Definition (`CMakeLists.txt`)
+### 11.3 CMake Build Definition (`CMakeLists.txt`)
 ```cmake
 cmake_minimum_required(VERSION 3.16)
 project(MyPlugin LANGUAGES CXX)
@@ -400,28 +553,35 @@ set_target_properties(my_plugin PROPERTIES PREFIX "")
 target_link_libraries(my_plugin PRIVATE Qt5::Widgets Qt5::Core)
 ```
 
-### 9.5 Loading and Using the Plugin
+### 11.4 Loading and Using the Plugin
 - **Auto-Loading**: Copy `my_plugin.so` to `~/.config/edb-next/plugins/`.
 - **Manual Loading**: In the GUI, select `Plugins -> Manage Plugins...` and click **Load Plugin...**.
 - **Execution**: The action appears under the **Plugins** menu, and `my_ping` is available in the bottom CommandBar.
 
 ---
 
-## 10. Keyboard Shortcut Cheat Sheet
+## 12. Keyboard Shortcut Cheat Sheet
 
 | Hotkey | Description | Hotkey | Description |
 | :--- | :--- | :--- | :--- |
-| **F9** | Continue | **Enter** | Follow Branch |
+| **F9** | Continue Execution | **Enter** | Follow Branch |
 | **F7** | Step Into | **Esc / Backspace** | Go Back in History |
 | **F8** | Step Over | **Space** | Assemble In-Place |
-| **Shift+F11** | Step Out | **; (Semicolon)** | Add / Edit Comment |
-| **F4** | Run to Selection | **Ctrl+B** | Toggle Bookmark |
-| **Ctrl+F2** | Restart Session | **X** | Show Cross References |
-| **Ctrl+\*** | Set RIP (Origin) | **Ctrl+E** | Modify Hex Bytes |
-| **F2** | Toggle Breakpoint | **Ctrl+P** | Patch Manager & Disk Export |
+| **Shift+F11** | Step Out of Function | **; (Semicolon)** | Add / Edit Comment |
+| **F4** | Run to Selection | **Ctrl+B** | Toggle Bookmark (`★`) |
+| **Ctrl+F2** | Restart Session | **X** | Show Cross References (XREFs) |
+| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+E** | Modify Hex Bytes |
+| **F2** | Toggle Software Breakpoint | **Ctrl+P** | Patch Manager & Disk Export |
 | **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump CPU State Snapshot |
 | **Shift+S** | Toggle Stack View | **Shift+F7/F8/F9** | Pass Signal Step / Run |
-| **Alt+C** | Focus CPU View | **Alt+D** | Switch to Hex Dump |
-| **Alt+K** | Switch to Call Stack | **Alt+B** | Switch to Breakpoints |
-| **Alt+M** | Switch to Memory Regions | **Alt+E** | Switch to Symbol Viewer |
-| **Alt+L** | Switch to System Log | | |
+| **Alt+C** | Focus CPU Disassembly | **Alt+D** | Switch to Memory Hex Dump |
+| **Alt+S** | Focus Source View (SourceView) | **Ctrl+Shift+S** | Toggle Mixed ASM/Source View |
+| **Alt+P** | Focus Script Console (Python/Lua) | **Alt+K** | Switch to Call Stack Drawer |
+| **Alt+B** | Switch to Breakpoints Drawer | **Alt+M** | Switch to Memory Regions Drawer |
+| **Alt+E** | Switch to Symbol Viewer | **Alt+L** | Switch to Debug System Log |
+
+---
+
+## 13. Conclusion
+
+This guide outlines the end-to-end operational workflows in `edb-next`, from source compilation and 4-quadrant dynamic debugging to DWARF source mapping, dual-engine Python/Lua scripting automation, in-target remote syscall injection, physical ELF patching to disk, and C++20 plugin extension.
