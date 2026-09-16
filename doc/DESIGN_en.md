@@ -30,13 +30,11 @@
    - 3.12 Embedded Python 3 & Lua 5.4 Dual Scripting Automation Engine
 4. [Unimplemented Features & Technical Roadmap](#4-unimplemented-features--technical-roadmap)
    - 4.1 Multi-Architecture & Cross-Debugging Support (ARM64 / x86-32)
-   - 4.2 DWARF Source-Level Debugging & Line Mapping [Done]
-   - 4.3 Embedded Scripting Automation Engine (Python 3 & Lua 5.4) [Done]
-   - 4.4 Advanced Anti-Anti-Debugging & Stealth Breakpoints
-   - 4.5 C++ Symbol Demangling & Type Layout Reconstruction
-   - 4.6 Multi-Process Follow-Fork & IPC Tracing
-   - 4.7 Fine-Grained Hardware Watchpoint UI & Page-Guard Traps
-   - 4.8 GDB Remote Serial Protocol (RSP) Client Support
+   - 4.2 Advanced Anti-Anti-Debugging & Stealth Breakpoints
+   - 4.3 C++ Symbol Demangling & Type Layout Reconstruction
+   - 4.4 Multi-Process Follow-Fork & IPC Tracing
+   - 4.5 Fine-Grained Hardware Watchpoint UI & Page-Guard Traps
+   - 4.6 GDB Remote Serial Protocol (RSP) Client Support
 5. [Codebase Structure & Module Architecture](#5-codebase-structure--module-architecture)
    - 5.1 Complete Source Tree & Responsibilities
    - 5.2 Layered System Topology
@@ -173,15 +171,16 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 - **Desktop Environment Adaptability**: Wayland window constraint resolution, sub-400px minimum width support for seamless maximizing across high-DPI and laptop screens.
 
 ### 3.11 DWARF Source-Level Debugging & Line Mapping Subsystem
-- **Native libdw Extraction**: Integrates `libdw` to parse ELF `.debug_info`, `.debug_line`, and `.debug_str` sections, building a fast lookup cache for bidirectional `Address <-> (File:Line:Column)` mapping.
+- **Native libdw Extraction & Line Mapping**: Integrates `libdw` (`core/DwarfParser` and `core/SourceFileManager`) to parse ELF `.debug_info`, `.debug_line`, and `.debug_str` sections, building a fast lookup cache for bidirectional `Address <-> (File:Line:Column)` mapping. Automatically resolves absolute and relative source paths with read-only file caching.
 - **Mixed-Mode Disassembly (`Ctrl+Shift+S`)**: Inline dark-green banners in `DisassemblyView` displaying matching C/C++ source statements and line numbers above assembly basic blocks.
-- **Dedicated Source Browser (`SourceView`, `Alt+S`)**: Central tab providing multi-file browsing, instruction pointer indicators (`➔`), breakpoint markers (`●`), double-click source breakpoints, and source step-over/step-into execution.
+- **Dedicated Source Browser (`SourceView`, `Alt+S`)**: Central tab providing multi-file browsing, instruction pointer indicators (`➔`), breakpoint markers (`●`), double-click source breakpoints, and source step-over (`stepSourceOver`) and step-into (`stepSourceInto`) execution.
 
 ### 3.12 Embedded Python 3 & Lua 5.4 Dual Scripting Automation Engine
-- **Unified Dual-Engine Architecture**: Managed by `IScriptEngine` and `ScriptEngineManager`, providing dynamic language routing by extension (`.py` / `.lua`) or CLI command prefix (`py` / `lua`).
-- **Python 3 C-API Embedding**: Embedded CPython 3 runtime exporting native built-in module `edb` (registers, memory I/O, breakpoints, stepping, expression evaluation, process state) with complete `sys.stdout`/`sys.stderr` capture and traceback formatting.
-- **Lua 5.4 High-Performance Embedding**: Embedded Lua 5.4 runtime providing symmetric APIs under global table `edb` and redirected `print()`, optimized for microsecond-latency condition evaluation and fast hooks.
+- **Unified Dual-Engine Architecture**: Managed by `IScriptEngine` and `ScriptEngineManager`, providing dynamic language routing by extension (`.py` / `.lua`) or CLI command prefix (`py` / `lua`), while synchronizing lifecycle with active `DebugSession`.
+- **Python 3 C-API Embedding**: Embedded CPython 3 runtime exporting native built-in module `edb` (registers, memory I/O, breakpoints, stepping, expression evaluation, process state) with complete `sys.stdout`/`sys.stderr` capture and traceback formatting redirected to the console.
+- **Lua 5.4 High-Performance Embedding**: Embedded Lua 5.4 runtime providing symmetric APIs under global table `edb` and redirected `print()`, optimized for microsecond-latency condition evaluation, high-frequency hooks, and GIL-free automation.
 - **Interactive Script Console (`ScriptConsoleView`, `Alt+P`)**: Bottom drawer terminal with language switcher, one-click script file execution (`▶ Run File...`), history navigation, and dark syntax color rendering.
+- **CommandBar Quick Commands & CI Coverage**: Integrated single-line execution (`py <expr>` / `lua <expr>`) with 100% automated regression test suite (`tests/test_scripting.cpp`).
 
 ---
 
@@ -189,19 +188,15 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 
 1. **Multi-Architecture Support**:
    - Abstract `IRegisterContext` and engine factories to support 32-bit x86 (`compat_ptrace`) and AArch64 / ARM64 (`NT_PRSTATUS` / `PTRACE_GETREGSET`).
-2. **DWARF Source-Level Debugging [Implemented / Done]**:
-   - Integrated `libdw` (`core/DwarfParser`, `core/SourceFileManager`, `ui/SourceView`), bidirectional line mapping, mixed-mode disassembly (`Ctrl+Shift+S`), and source-level breakpoints/stepping.
-3. **Embedded Scripting Automation Engine (Python 3 & Lua 5.4) [Implemented / Done]**:
-   - Implemented native dual-engine architecture (`PythonScriptEngine`, `LuaScriptEngine`, `ScriptEngineManager`), built-in `edb` APIs, interactive `ScriptConsoleView` (`Alt+P`), and CommandBar execution (`py ...` / `lua ...`).
-4. **Anti-Anti-Debugging & Stealth**:
+2. **Anti-Anti-Debugging & Stealth**:
    - Cloak `TracerPid` in `/proc/<pid>/status`, smooth `rdtsc` execution differences, and introduce page-guard memory breakpoints to bypass integrity checks.
-5. **C++ Demangling & Type Reconstruction**:
+3. **C++ Demangling & Type Reconstruction**:
    - Integrate `abi::__cxa_demangle` for human-readable symbols; provide struct layout visualization for memory dumps.
-6. **Multi-Process Follow-Fork**:
+4. **Multi-Process Follow-Fork**:
    - Intercept `PTRACE_EVENT_FORK` / `VFORK` / `CLONE` and manage hierarchical child sessions via multi-tab session views.
-7. **Fine-Grained Hardware Watchpoint UI**:
+5. **Fine-Grained Hardware Watchpoint UI**:
    - Context-menu based 1/2/4/8-byte read/write watchpoint assignment in Hex Dumps, with DR6 status register hit reporting.
-8. **GDB Remote Serial Protocol (RSP) Support**:
+6. **GDB Remote Serial Protocol (RSP) Support**:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
 
 ---
@@ -222,6 +217,8 @@ edb-next/
 │   ├── BreakpointManager.hpp/cpp# Breakpoint registry, conditions, ignore counts, step-over state machine
 │   ├── EventLoopThread.hpp/cpp # Background QThread event loop (waitpid + WNOHANG + atomic suspension)
 │   ├── ElfParser.hpp/cpp       # ELF64 headers, segments, sections, symbol resolution, dynamic tags
+│   ├── DwarfParser.hpp/cpp     # libdw-based DWARF debug info and line mapping parser
+│   ├── SourceFileManager.hpp/cpp# Physical source file reader and line caching manager
 │   ├── CallStackUnwinder.hpp/cpp# RBP-based safe call stack frame unwinding
 │   ├── StringScanner.hpp/cpp   # Readable memory ASCII string extraction & code cross-referencing
 │   ├── AnnotationManager.hpp/cpp# User comments & bookmark management
@@ -244,10 +241,16 @@ edb-next/
 │   ├── IntermodularCallsFinder.hpp/cpp# PLT/GOT external dynamic library call scanner
 │   ├── OpcodeSearcher.hpp/cpp  # Capstone instruction pattern search engine
 │   ├── StateDumper.hpp/cpp     # Formatted CPU machine state snapshot generator
+│   ├── IScriptEngine.hpp       # Embedded scripting engine interface contract (Python/Lua)
+│   ├── PythonScriptEngine.hpp/cpp# Embedded Python 3 interpreter and edb module exporter
+│   ├── LuaScriptEngine.hpp/cpp # Embedded Lua 5.4 interpreter and global edb table binding
+│   ├── ScriptEngineManager.hpp/cpp# Multi-engine lifecycle and language routing manager
 │   ├── DebugSession.hpp/cpp    # Facade aggregating engine, breakpoints, symbols, and thread control
 │   └── SessionManager.hpp/cpp  # Multi-session container and active session dispatcher
 ├── ui/                         # Qt5 Presentation Layer
 │   ├── DisassemblyView.hpp/cpp # Core disassembly view with branch arrows and syntax highlighting
+│   ├── SourceView.hpp/cpp      # Standalone source code viewer (file switcher, breakpoints, step)
+│   ├── ScriptConsoleView.hpp/cpp# Interactive script terminal (Python 3/Lua 5.4 dual-mode)
 │   ├── RegisterView.hpp/cpp    # Register view with smart dereferences and interactive EFLAGS badges
 │   ├── MemoryHexView.hpp/cpp   # Virtualized memory hex editor with in-place patching
 │   ├── MultiDumpWidget.hpp/cpp # Multi-tab memory dump container (Dump 1 ~ Dump 4)
@@ -284,7 +287,9 @@ edb-next/
 └── tests/                      # Automated Regression & Unit Test Suites
     ├── test_target.c           # Multithreaded test binary source
     ├── test_core.cpp           # Regression test suite for core phases 1 to 5
+    ├── test_dwarf.cpp          # DWARF source debugging and line mapping test suite
     ├── test_advanced.cpp       # Regression test suite for advanced phases 6 to 8
+    ├── test_scripting.cpp      # Python 3 & Lua 5.4 embedded scripting test suite
     └── test_exit.cpp           # Window destruction and process teardown stress test
 ```
 

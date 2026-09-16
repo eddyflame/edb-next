@@ -30,13 +30,11 @@
    - 3.12 嵌入式 Python 3 & Lua 5.4 双自动化脚本引擎系统
 4. [未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)](#4-未实现功能与待完善规划-unimplemented-features--technical-roadmap)
    - 4.1 多 CPU 架构与交叉调试扩展
-   - 4.2 DWARF 源码级调试与行号映射 [已实现 / Done]
-   - 4.3 嵌入式脚本自动化引擎 (Python 3 & Lua 5.4 双引擎) [已实现 / Done]
-   - 4.4 高级反反调试与隐蔽断点机制
-   - 4.5 C++ 符号反混淆与类型重建
-   - 4.6 多进程 Follow-Fork 与 IPC 跟踪
-   - 4.7 细粒度硬件读写监视点与页异常断点 UI
-   - 4.8 GDB 远程调试协议 (RSP) 客户端支持
+   - 4.2 高级反反调试与隐蔽断点机制
+   - 4.3 C++ 符号反混淆与类型重建
+   - 4.4 多进程 Follow-Fork 与 IPC 跟踪
+   - 4.5 细粒度硬件读写监视点与页异常断点 UI
+   - 4.6 GDB 远程调试协议 (RSP) 客户端支持
 5. [代码结构与模块拓扑关系 (Codebase Structure & Module Architecture)](#5-代码结构与模块拓扑关系-codebase-structure--module-architecture)
    - 5.1 完整源码目录树与职责清单
    - 5.2 软件分层架构图
@@ -311,27 +309,32 @@
    - 彻底解决 GNOME Mutter / Wayland 环境下最大化限制问题，最小约束宽度精简至 358px，在高分屏及笔记本屏幕上自由伸缩、秒级最大化。
 
 ### 3.11 DWARF 源码级调试与双向行号映射系统
-1. **libdw 原生集成与行号表解析**：
+1. **libdw 原生接入与行号映射**：
    - 接入 `libdw` 并封装 `core/DwarfParser` 与 `core/SourceFileManager`，深度解析 ELF `.debug_info`、`.debug_line` 与 `.debug_str` 节区；
-   - 构建 `Address <-> (SourceFile, Line, Column)` 高性能双向哈希索引树，支持极速反向查找；
+   - 提取 Compilation Units (CU) 及其 Producer、编译目录与源文件清单，构建 `Address <-> (SourceFile, Line, Column)` 高性能双向哈希索引树，支持极速反向查找；
+   - 自动解析调试二进制中的源码绝对路径与相对路径，若源码文件存在则以只读模式载入行缓存，若不存在则提供优雅退化与只读保护；
 2. **源码反汇编混合渲染 (`DisassemblyView`)**：
-   - 支持 `Ctrl+Shift+S` 快捷切换纯汇编与混合排版模式；
-   - 指令上方以暗黑青绿横幅精确显示对应的 C/C++ 源码语句与行号，极大加速复杂业务逻辑审计；
-3. **独立源码浏览器 (`SourceView`, `Alt+S`)**：
+   - 当目标程序携带 `-g` 编译时，支持 `Ctrl+Shift+S` 快捷切换纯汇编与混合排版模式；
+   - 指令上方以暗黑青绿横幅精确嵌入展示对应的 C/C++ 原始源码语句与行号，极大加速复杂业务逻辑审计；
+3. **独立源码文件浏览器 (`SourceView`, `Alt+S`)**：
    - 包含多源文件下拉切换、行号指示栏、当前执行位置青蓝色箭头（`➔`）与断点红色圆点（`●`）；
-   - 支持源码行双击切换断点，并在调试引擎中原生实现 `stepSourceOver` 与 `stepSourceInto`。
+   - 支持源码行双击切换断点，并在调试引擎中原生实现 `stepSourceOver`（单步步过源码行）与 `stepSourceInto`（单步步入源码行）。
 
 ### 3.12 嵌入式 Python 3 & Lua 5.4 双自动化脚本引擎系统
 1. **统一双引擎架构 (`IScriptEngine` & `ScriptEngineManager`)**：
-   - 统一定义生命周期、内存读写、寄存器访问与脚本执行契约，支持根据语言类型或文件扩展名动态路由；
-2. **Python 3 原生嵌入**：
-   - 嵌入 CPython 3.12 运行时，注册原生 `edb` 内置模块，向脚本全面开放调试核心 API；
-   - 重定向 `sys.stdout` 与 `sys.stderr` 捕获所有 `print` 输出与 Python 异常 Traceback；
-3. **Lua 5.4 极速嵌入**：
-   - 内置轻量级 Lua 5.4 解释器与全局 `edb` 模块表，重写 `print` 捕获，专为高频条件判定与微秒级 Hook 打造；
-4. **交互式控制台 UI (`ScriptConsoleView`, `Alt+P`)**：
-   - 底部专用抽屉、语言切换下拉框、一键执行外部脚本（`▶ Run File...`）、上下箭头历史回溯与高对比语法色彩渲染；
-   - 底栏 CommandBar 同步支持 `py <code...>` 与 `lua <code...>` 单行执行。
+   - 定义抽象基类 `IScriptEngine` 与路由管理器 `core/ScriptEngineManager`，支持按语言名称（`"python"` / `"lua"`）或脚本后缀（`.py` / `.lua`）自动分发执行；
+   - 维护与 `DebugSession` 的生命周期同步，保证多线程执行环境下的线程安全与状态一致；
+2. **Python 3 原生 C-API 嵌入**：
+   - 无缝内嵌 CPython 3 运行时并注册原生 `edb` 内置模块，提供完整的寄存器读写（`get_regs`, `get_reg`, `set_reg`）、内存读写（`read_memory`, `write_memory`）、断点管理（`set_breakpoint`, `remove_breakpoint`）、单步及源码控制（`step_into`, `step_over`, `step_source`, `resume`, `pause`）、表达式求值（`eval`）以及进程状态查询；
+   - 自动重定向 `sys.stdout` 和 `sys.stderr` 捕获异常 Traceback 与输出，实时打印至控制台；
+3. **Lua 5.4 轻量级极速嵌入**：
+   - 内嵌 Lua 5.4 解释器并注入全局 `edb` 模块表，实现与 Python 对应的完整对称 API；
+   - 重写 `print()` 捕获机制，专为高频断点命中、微秒级条件求值与无 GIL 瓶颈的高性能自动化场景打造；
+4. **现代化交互式脚本控制台 (`ui/ScriptConsoleView`, `Alt+P`)**：
+   - 集成在底部工作区抽屉，具备语言切换（`Python 3` / `Lua 5.4`）、脚本文件一键运行（`▶ Run File...`）、控制台清空、历史命令上下箭头回溯及暗黑极客高对比度语法高亮渲染；
+5. **全局 CommandBar 快速命令与自动化测试**：
+   - 底部命令行 CommandBar 原生支持 `py <code...>` 与 `lua <code...>` 单行执行；
+   - 配套自动化单元测试集 `tests/test_scripting.cpp`，覆盖率 100%。
 
 ---
 
@@ -346,48 +349,32 @@
   2. **ARM64 / AArch64 原生支持**：抽象 `IRegisterContext` 与 `IDebugEngine` 工厂，针对 ARM64 平台实现基于 `NT_PRSTATUS` / `PTRACE_GETREGSET` 的 X0~X30 寄存器组及硬件断点（`PTRACE_SETHBPREGS`）支持；
   3. **RISC-V (RV64GC) 探索**：为国内新兴开源硬件生态预留接口契约。
 
-### 4.2 DWARF 源码级调试与行号映射 (Source-Level Debugging) [已实现 / Done]
-- **当前状态**：已完整实现基于 `libdw` 的 DWARF 调试信息解析、双向行号映射、源码与反汇编混合渲染及独立源码浏览器。
-- **已实现特性**：
-  1. **libdw 原生接入与行号映射**：接入 `libdw` 并封装 `core/DwarfParser` 与 `core/SourceFileManager`，提取 `.debug_info` 与 `.debug_line`，实现 `Address <-> (File:Line:Column)` 双向高速映射；
-  2. **源码反汇编混合渲染**：当目标程序带 `-g` 编译时，在 `DisassemblyView` 对应指令上方内嵌展示 C/C++ 原始源码行（暗黑青绿横幅），支持 `Ctrl+Shift+S` 实时切换混合模式；
-  3. **独立源码文件浏览器 (layout src)**：新增 `ui/SourceView` 标签页（`Alt+S`），支持源文件列表切换、行号、断点指示符（`●`）、当前 RIP 执行指针（`➔`），并支持在源码行直接双击下断与源码级单步步过/步入（`stepSourceOver` / `stepSourceInto`）。
-
-### 4.3 嵌入式脚本自动化引擎 (Python 3 & Lua 5.4 双引擎) [已实现 / Done]
-- **当前状态**：已完整实现 Python 3 与 Lua 5.4 原生双脚本自动化引擎架构，统一由 `IScriptEngine` 接口与 `ScriptEngineManager` 调度，并配备专有暗黑交互式 Script Console 终端。
-- **已实现特性**：
-  1. **IScriptEngine 与双引擎管理器**：定义抽象基类 `IScriptEngine` 与路由管理器 `core/ScriptEngineManager`，支持按语言名称（`"python"` / `"lua"`）或脚本后缀（`.py` / `.lua`）自动分发执行，并维护与 `DebugSession` 的生命周期同步；
-  2. **Python 3 原生 C-API 嵌入**：无缝内嵌 CPython 运行时并注册原生 `edb` 模块，提供完整的寄存器读写（`get_regs`, `get_reg`, `set_reg`）、内存读写（`read_memory`, `write_memory`）、断点管理（`set_breakpoint`, `remove_breakpoint`）、单步及源码控制（`step_into`, `step_over`, `step_source`, `resume`, `pause`）、表达式求值（`eval`）以及进程状态查询，并自动重定向 `sys.stdout` 和 `sys.stderr` 捕获异常 Traceback 与输出；
-  3. **Lua 5.4 轻量级极速嵌入**：内嵌 Lua 5.4 解释器并注入全局 `edb` 模块表，实现与 Python 对应的完整对称 API，重写 `print()` 捕获机制，为高频断点命中与微秒级条件求值提供超低延迟支撑；
-  4. **现代化交互式脚本控制台 (ui/ScriptConsoleView)**：集成在底部工作区抽屉（`Alt+P`），具备语言切换（`Python 3` / `Lua 5.4`）、脚本文件一键运行（`▶ Run File...`）、控制台清空、历史命令上下箭头回溯及暗黑极客高对比度语法高亮渲染；
-  5. **全局 CommandBar 快速命令与自动化测试**：CommandBar 原生支持 `py <code...>` 与 `lua <code...>` 单行执行，并配套自动化单元测试集 `tests/test_scripting.cpp`，覆盖率 100%。
-
-### 4.4 高级反反调试与隐蔽断点机制 (Anti-Anti-Debugging & Stealth)
+### 4.2 高级反反调试与隐蔽断点机制 (Anti-Anti-Debugging & Stealth)
 - **当前状态**：调试机制基于原生 `ptrace`，在遇到高强度对抗样本（如恶意加固壳、CTF 混淆题目）时，目标程序通过检测自身是否被 ptrace（如主动调用 `PTRACE_TRACEME`、检查 `/proc/self/status` 中的 `TracerPid` 或测量 `rdtsc` 时间差）能够察觉调试器存在。
 - **待完善方案**：
   1. **`TracerPid` 伪装**：基于注入技术 Hook 或通过内核模块虚拟化目标读取 `/proc/self/status` 的行为；
   2. **RDTSC 指令陷阱抹平**：利用 CR4 寄存器标志或硬件单步对 `rdtsc` / `rdtscp` 指令进行时间戳平滑，抹平单步执行的时间延迟；
   3. **隐匿执行断点 (Page-Guard Breakpoint)**：基于内存页权限陷阱实现无 `0xCC` 注入的纯内存断点，绕过目标进程对代码段内存校验和（CRC/Hash）的自校验防篡改机制。
 
-### 4.5 C++ 符号反混淆 (Demangling) 与复合数据类型重建
+### 4.3 C++ 符号反混淆 (Demangling) 与复合数据类型重建
 - **当前状态**：当前展示的函数符号为 GCC/Clang 导出的原始 Mangled 字符串（例如 `_Z13calculate_fibi`）。
 - **待完善方案**：
   1. **Itanium ABI Demangler 原生集成**：集成 `abi::__cxa_demangle`，将修饰后的符号实时渲染为可读签名（如 `calculate_fib(int)`）；
   2. **结构体与类型布局可视化 (Type Viewer)**：允许逆向人员导入 C 语言头文件或手动定义结构体（struct/union），将内存转储视图按结构体字段格式化对齐解析。
 
-### 4.6 多进程 Follow-Fork 与 IPC 跟踪
+### 4.4 多进程 Follow-Fork 与 IPC 跟踪
 - **当前状态**：当前版本专注于单进程多线程模型，目标调用 `fork()` 或 `vfork()` 时，默认仅跟踪父进程。
 - **待完善方案**：
   1. **`PTRACE_O_TRACEFORK` / `TRACEVFORK` 拦截**：在 `LinuxDebugEngine` 中启用内核 fork 事件监听；
   2. **多进程树状会话管理**：当派生子进程时，`SessionManager` 自动生成新的 `DebugSession` 实例，主窗口通过多标签页（Tab）无缝管理父子进程。
 
-### 4.7 细粒度硬件读写监视点与页异常断点 UI 增强
+### 4.5 细粒度硬件读写监视点与页异常断点 UI 增强
 - **当前状态**：底层已完整实现 DR0~DR7 的 1/2/4/8 字节硬件执行与读写监视点，但主反汇编窗口右键菜单目前以执行断点为主。
 - **待完善方案**：
   1. **内存转储区右键直下硬件监视点**：在 Hex Dump 视图中选中 1/2/4/8 字节，右键直接下硬件写断点或硬件读写断点；
   2. **硬件断点触发溯源**：解析调试状态寄存器 DR6（`B0`~`B3` 标志位），明确在界面状态栏提示“硬件监视点命中：地址 0x... 被写入”。
 
-### 4.8 GDB 远程调试协议 (RSP) 客户端支持
+### 4.6 GDB 远程调试协议 (RSP) 客户端支持
 - **当前状态**：当前直接运行于 Linux 本地，基于操作系统原生系统调用。
 - **待完善方案**：
   1. **GDB RSP 协议后端**：实现一套 `RspDebugEngine`，通过 TCP 套接字与远端 `gdbserver`、QEMU 模拟器或嵌入式板卡通信；
@@ -411,6 +398,8 @@ edb-next/
 │   ├── BreakpointManager.hpp/cpp# 软硬件断点注册、条件与命中间隔管理、先单步后恢复状态机
 │   ├── EventLoopThread.hpp/cpp # 后台独立 QThread 事件循环 (waitpid + WNOHANG + 原子挂起)
 │   ├── ElfParser.hpp/cpp       # 64位 ELF 文件头、Program Headers、Section Headers、符号表与依赖解析
+│   ├── DwarfParser.hpp/cpp     # 基于 libdw 的 DWARF 调试信息与行号映射解析器
+│   ├── SourceFileManager.hpp/cpp# 源代码物理文件读取与行缓存管理器
 │   ├── CallStackUnwinder.hpp/cpp# 基于 RBP 栈帧链的安全回溯算法
 │   ├── StringScanner.hpp/cpp   # 可读段连续 ASCII 字符串提取与 RIP 相对寻址反向索引
 │   ├── AnnotationManager.hpp/cpp# 用户注释 (Comments) 与书签 (Bookmarks) 内存管理
@@ -433,10 +422,16 @@ edb-next/
 │   ├── IntermodularCallsFinder.hpp/cpp # 跨模块/共享库动态链接 API (PLT/GOT) 外呼分析器
 │   ├── OpcodeSearcher.hpp/cpp  # Capstone 指令操作码特征序列高级搜寻引擎
 │   ├── StateDumper.hpp/cpp     # CPU 机器状态格式化快照转储引擎 (对标 edb DumpState)
+│   ├── IScriptEngine.hpp       # 嵌入式脚本引擎纯虚契约 (Python/Lua 多态接口)
+│   ├── PythonScriptEngine.hpp/cpp# 嵌入式 Python 3 解释器与 edb 模块导出引擎
+│   ├── LuaScriptEngine.hpp/cpp # 嵌入式 Lua 5.4 解释器与全局 edb 表绑定引擎
+│   ├── ScriptEngineManager.hpp/cpp# 多脚本引擎生命周期调度与语言路由管理器
 │   ├── DebugSession.hpp/cpp    # 独立调试会话高阶门面 (外观模式，聚合引擎、断点、线程与解析器)
 │   └── SessionManager.hpp/cpp  # 多会话容器与活动会话调度器
 ├── ui/                         # 现代 Qt5 GUI 表现层
 │   ├── DisassemblyView.hpp/cpp # 核心反汇编视图 (语法着色、分支跟随、历史栈、右键联动)
+│   ├── SourceView.hpp/cpp      # 独立源码浏览器视图 (文件切换、断点指示、源码步进)
+│   ├── ScriptConsoleView.hpp/cpp# 交互式脚本控制台 (Python 3/Lua 5.4 双模式终端)
 │   ├── RegisterView.hpp/cpp    # 通用寄存器视图 (智能解引用、EFLAGS 徽章翻转条、SSE/AVX)
 │   ├── MemoryHexView.hpp/cpp   # 十六进制内存视图 (支持就地编辑、零填充、NOP填充与导出)
 │   ├── MultiDumpWidget.hpp/cpp # 多标签页独立内存转储容器 (Dump 1 ~ Dump 4)
@@ -473,7 +468,9 @@ edb-next/
 └── tests/                      # 自动化测试套件
     ├── test_target.c           # 多线程测试目标二进制源码
     ├── test_core.cpp           # 核心基础能力全量回归测试套件 (Phase 1 ~ Phase 5)
+    ├── test_dwarf.cpp          # DWARF 源码级调试与行号映射全量测试套件
     ├── test_advanced.cpp       # 进阶特性全量回归测试套件 (Phase 6 ~ Phase 8, 10 大专题)
+    ├── test_scripting.cpp      # Python 3 与 Lua 5.4 嵌入式脚本引擎全量测试套件
     └── test_exit.cpp           # 目标运行中窗口安全析构防崩溃压力测试
 ```
 
