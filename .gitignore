@@ -1,0 +1,43 @@
+# Build outputs
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+*.cmake.in
+
+# Qt artifacts
+*.moc
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+.qmake.stash
+
+# Language Server & IDE
+.cache/
+.vscode/
+.idea/
+*.swp
+*~
+*.user
+*.user.*
+
+# edb-next specific runtime and database outputs
+*.edb_db
+*.bin
+test_target
+test_target_patched
+core.*
+vgcore.*
+*.log

@@ -1,0 +1,320 @@
+#include "BreakpointManagerView.hpp"
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QHeaderView>
+#include <QFontDatabase>
+#include <QMenu>
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QColor>
+
+namespace edb_next {
+
+BreakpointManagerView::BreakpointManagerView(QWidget* parent) : QWidget(parent) {
+    setupUi();
+}
+
+void BreakpointManagerView::setupUi() {
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(2, 2, 2, 2);
+    layout->setSpacing(4);
+
+    // Top action bar
+    auto* top_bar = new QHBoxLayout();
+    top_bar->setContentsMargins(2, 2, 2, 2);
+
+    auto* btn_add = new QPushButton("+ Add Breakpoint", this);
+    connect(btn_add, &QPushButton::clicked, this, &BreakpointManagerView::onAddBreakpointClicked);
+
+    auto* btn_toggle = new QPushButton("Toggle", this);
+    connect(btn_toggle, &QPushButton::clicked, this, &BreakpointManagerView::onToggleBreakpointClicked);
+
+    auto* btn_del = new QPushButton("Delete", this);
+    connect(btn_del, &QPushButton::clicked, this, &BreakpointManagerView::onDeleteBreakpointClicked);
+
+    auto* btn_cond = new QPushButton("Edit Condition / Log...", this);
+    connect(btn_cond, &QPushButton::clicked, this, &BreakpointManagerView::onEditConditionClicked);
+
+    top_bar->addWidget(btn_add);
+    top_bar->addWidget(btn_toggle);
+    top_bar->addWidget(btn_del);
+    top_bar->addWidget(btn_cond);
+    top_bar->addStretch();
+    layout->addLayout(top_bar);
+
+    // Table
+    table_ = new QTableWidget(this);
+    table_->setColumnCount(7);
+    table_->setHorizontalHeaderLabels({"State", "Address", "Symbol / Label", "Type", "Hits", "Condition", "Log Format"});
+
+    table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    table_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    table_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Interactive);
+    table_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::Interactive);
+
+    table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    table_->verticalHeader()->setVisible(false);
+    table_->setShowGrid(false);
+
+    QFont mono_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    mono_font.setPointSize(9);
+    table_->setFont(mono_font);
+
+    table_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table_, &QTableWidget::customContextMenuRequested, this, &BreakpointManagerView::handleContextMenu);
+    connect(table_, &QTableWidget::cellDoubleClicked, this, &BreakpointManagerView::handleCellDoubleClicked);
+    connect(table_, &QTableWidget::itemChanged, this, &BreakpointManagerView::handleItemChanged);
+
+    layout->addWidget(table_);
+}
+
+void BreakpointManagerView::setSession(std::shared_ptr<DebugSession> session) {
+    session_ = session;
+    refresh();
+}
+
+void BreakpointManagerView::refresh() {
+    auto session = session_.lock();
+    if (!session) {
+        currentBreakpoints_.clear();
+        table_->setRowCount(0);
+        return;
+    }
+
+    currentBreakpoints_ = session->breakpoints();
+
+    isUpdatingTable_ = true;
+    table_->setRowCount(static_cast<int>(currentBreakpoints_.size()));
+
+    for (int r = 0; r < static_cast<int>(currentBreakpoints_.size()); ++r) {
+        const auto& bp = currentBreakpoints_[r];
+
+        // 0: State (Checkbox)
+        auto* item_state = new QTableWidgetItem(bp.enabled ? "Enabled" : "Disabled");
+        item_state->setCheckState(bp.enabled ? Qt::Checked : Qt::Unchecked);
+        if (bp.enabled) {
+            item_state->setForeground(QColor(80, 200, 120));
+        } else {
+            item_state->setForeground(QColor(140, 140, 140));
+        }
+
+        // 1: Address
+        auto* item_addr = new QTableWidgetItem(QString::fromStdString(bp.address.toHex()));
+        item_addr->setForeground(QColor(100, 180, 240));
+
+        // 2: Symbol
+        QString sym_str = QString::fromStdString(bp.symbol);
+        if (sym_str.isEmpty()) {
+            if (auto resolved = session->symbols().findNearestSymbol(bp.address)) {
+                sym_str = QString::fromStdString(resolved->first.name);
+            }
+        }
+        auto* item_sym = new QTableWidgetItem(sym_str.isEmpty() ? "-" : sym_str);
+
+        // 3: Type
+        QString type_str;
+        switch (bp.type) {
+            case BreakpointType::Software:
+                type_str = "Software (INT 3)";
+                break;
+            case BreakpointType::HardwareExecute:
+                type_str = QString("HW Exec (DR%1)").arg(bp.hardwareSlot);
+                break;
+            case BreakpointType::HardwareWrite:
+                type_str = QString("HW Write Watch (DR%1)").arg(bp.hardwareSlot);
+                break;
+            case BreakpointType::HardwareReadWrite:
+                type_str = QString("HW Access Watch (DR%1)").arg(bp.hardwareSlot);
+                break;
+        }
+        auto* item_type = new QTableWidgetItem(type_str);
+        if (bp.type != BreakpointType::Software) {
+            item_type->setForeground(QColor(230, 180, 80));
+        }
+
+        // 4: Hit Count
+        auto* item_hits = new QTableWidgetItem(QString::number(bp.hitCount));
+        item_hits->setTextAlignment(Qt::AlignCenter);
+
+        // 5: Condition
+        auto* item_cond = new QTableWidgetItem(QString::fromStdString(bp.condition));
+        item_cond->setForeground(QColor(152, 195, 121));
+
+        // 6: Log Format / Ignore
+        QString logStr;
+        if (bp.isLogOnly) {
+            logStr = "[LOG] " + QString::fromStdString(bp.logFormat);
+        } else if (bp.ignoreCount > 0) {
+            logStr = QString("Ignore next %1 hits").arg(bp.ignoreCount);
+        }
+        auto* item_log = new QTableWidgetItem(logStr);
+        item_log->setForeground(QColor(230, 200, 100));
+
+        table_->setItem(r, 0, item_state);
+        table_->setItem(r, 1, item_addr);
+        table_->setItem(r, 2, item_sym);
+        table_->setItem(r, 3, item_type);
+        table_->setItem(r, 4, item_hits);
+        table_->setItem(r, 5, item_cond);
+        table_->setItem(r, 6, item_log);
+    }
+    isUpdatingTable_ = false;
+}
+
+void BreakpointManagerView::handleCellDoubleClicked(int row, int col) {
+    Q_UNUSED(col);
+    if (row >= 0 && row < static_cast<int>(currentBreakpoints_.size())) {
+        Q_EMIT jumpToAddressRequested(currentBreakpoints_[row].address);
+    }
+}
+
+void BreakpointManagerView::handleItemChanged(QTableWidgetItem* item) {
+    if (isUpdatingTable_ || !item || item->column() != 0) return;
+
+    int row = item->row();
+    if (row >= 0 && row < static_cast<int>(currentBreakpoints_.size())) {
+        auto session = session_.lock();
+        if (!session) return;
+
+        Address addr = currentBreakpoints_[row].address;
+        if (item->checkState() == Qt::Checked) {
+            session->enableBreakpoint(addr);
+        } else {
+            session->disableBreakpoint(addr);
+        }
+        refresh();
+    }
+}
+
+void BreakpointManagerView::handleContextMenu(const QPoint& pos) {
+    int row = table_->rowAt(pos.y());
+    QMenu menu(this);
+
+    if (row >= 0 && row < static_cast<int>(currentBreakpoints_.size())) {
+        const auto& bp = currentBreakpoints_[row];
+        menu.addAction(bp.enabled ? "Disable Breakpoint" : "Enable Breakpoint", this, &BreakpointManagerView::onToggleBreakpointClicked);
+        menu.addAction("Edit Condition & Log...", this, &BreakpointManagerView::onEditConditionClicked);
+        menu.addAction("Delete Breakpoint", this, &BreakpointManagerView::onDeleteBreakpointClicked);
+        menu.addAction("Goto Address in Disassembly", this, [this, bp]() {
+            Q_EMIT jumpToAddressRequested(bp.address);
+        });
+        menu.addSeparator();
+    }
+
+    menu.addAction("Add Software Breakpoint...", this, &BreakpointManagerView::onAddBreakpointClicked);
+    menu.addAction("Refresh", this, &BreakpointManagerView::refresh);
+    menu.exec(table_->mapToGlobal(pos));
+}
+
+void BreakpointManagerView::onEditConditionClicked() {
+    int row = table_->currentRow();
+    if (row < 0 || row >= static_cast<int>(currentBreakpoints_.size())) return;
+    const auto& bp = currentBreakpoints_[row];
+    auto session = session_.lock();
+    if (!session) return;
+
+    bool ok = false;
+    QString cond = QInputDialog::getText(
+        this,
+        "Breakpoint Condition",
+        "Enter condition expression (e.g. rax == 0, rdi > 10, [rsp] != 0):",
+        QLineEdit::Normal,
+        QString::fromStdString(bp.condition),
+        &ok
+    );
+    if (!ok) return;
+
+    int ignoreCount = QInputDialog::getInt(
+        this,
+        "Ignore Count",
+        "Number of hits to ignore before stopping (0 = stop on first hit):",
+        static_cast<int>(bp.ignoreCount),
+        0,
+        1000000,
+        1,
+        &ok
+    );
+    if (!ok) return;
+
+    QString logFmt = QInputDialog::getText(
+        this,
+        "Log Breakpoint (Optional)",
+        "Enter log message format (if non-empty, will not pause process, e.g. 'secret hit {rdi}'):",
+        QLineEdit::Normal,
+        QString::fromStdString(bp.logFormat),
+        &ok
+    );
+    if (!ok) return;
+
+    session->setBreakpointCondition(bp.address, cond.trimmed().toStdString());
+    session->setBreakpointIgnoreCount(bp.address, static_cast<uint32_t>(ignoreCount));
+    session->setBreakpointLogOnly(bp.address, !logFmt.trimmed().isEmpty(), logFmt.trimmed().toStdString());
+    refresh();
+}
+
+void BreakpointManagerView::onAddBreakpointClicked() {
+    auto session = session_.lock();
+    if (!session) return;
+
+    bool ok = false;
+    QString text = QInputDialog::getText(
+        this,
+        "Add Breakpoint",
+        "Enter address (hex) or symbol name (e.g. main):",
+        QLineEdit::Normal,
+        "",
+        &ok
+    );
+
+    if (!ok || text.trimmed().isEmpty()) return;
+    std::string query = text.trimmed().toStdString();
+
+    Address target_addr(0);
+    if (auto sym = session->resolveSymbol(query)) {
+        target_addr = *sym;
+    } else {
+        bool conv = false;
+        uint64_t val = text.toULongLong(&conv, 16);
+        if (conv) target_addr = Address(val);
+    }
+
+    if (!target_addr.isNull()) {
+        session->addBreakpoint(target_addr, query);
+        refresh();
+        Q_EMIT jumpToAddressRequested(target_addr);
+    } else {
+        QMessageBox::warning(this, "Error", "Could not resolve address or symbol.");
+    }
+}
+
+void BreakpointManagerView::onToggleBreakpointClicked() {
+    int row = table_->currentRow();
+    if (row >= 0 && row < static_cast<int>(currentBreakpoints_.size())) {
+        auto session = session_.lock();
+        if (!session) return;
+        Address addr = currentBreakpoints_[row].address;
+        if (currentBreakpoints_[row].enabled) {
+            session->disableBreakpoint(addr);
+        } else {
+            session->enableBreakpoint(addr);
+        }
+        refresh();
+    }
+}
+
+void BreakpointManagerView::onDeleteBreakpointClicked() {
+    int row = table_->currentRow();
+    if (row >= 0 && row < static_cast<int>(currentBreakpoints_.size())) {
+        auto session = session_.lock();
+        if (!session) return;
+        session->removeBreakpoint(currentBreakpoints_[row].address);
+        refresh();
+    }
+}
+
+} // namespace edb_next
