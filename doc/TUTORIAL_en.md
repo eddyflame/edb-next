@@ -3,7 +3,7 @@
 > **Project**: edb-next (Next-Generation Linux Binary Debugger & Reverse Engineering Platform)  
 > **Target Version**: v1.0.0+  
 > **Platform**: Linux x86_64  
-> **Language**: C++20 / Qt 5.15+ / Capstone Engine
+> **Language**: C++20 / Pure Qt 6.4+ (GCC 13+) / Capstone Engine
 
 ---
 
@@ -193,7 +193,28 @@ Build outputs in `build/`:
 ### 3.1 Quadrant 1: Disassembly View (DisassemblyView)
 - **Visual Status**:
   - Current RIP: Cyan background with bold green arrow **`➔`**.
-  - Breakpoints: Dark red row highlight.
+  - Breakpoints: Dark red row highlight; composite highlight if RIP lands on a breakpoint.
+- **x64dbg-Style Disassembly Syntax Highlighting**:
+  The instruction column is handled by `InstructionHighlightDelegate`, implementing a high-density One Dark / x64dbg color topology:
+  - **`CALL`**: Bold warm gold (`#E5C07B`), prominently emphasizing sub-routine entry points.
+  - **`JMP`**: Warm orange (`#D19A66`), indicating unconditional control transfers.
+  - **`Jcc`** (`JE`, `JNE`, `JZ`, `JNZ`, `JG`, `JL`, `JA`, `JB`, `JAE`, etc.): Coral salmon (`#E06C75`), highlighting decision branches.
+  - **`RET` / `RETN`**: Bold violet magenta (`#C678DD`), marking function returns.
+  - **`SYSCALL` / `SYSENTER` / `INT` / `UD2` / `HLT`**: Bold deep crimson (`#E06C75`), flagging kernel traps and faults.
+  - **`PUSH` / `POP`**: Cyan teal (`#56B6C2`), tracking stack balancing.
+  - **`CMP` / `TEST`**: Muted gold (`#E5C07B`), highlighting flag comparison sites.
+  - **`NOP`**: Italic dim gray (`#5C6370`).
+  - **Registers** (`RAX`..`R15`, `EAX`..`R15D`, `RSP`, `RBP`, `RIP`, etc.): Bright sky blue (`#61AFEF`).
+  - **Memory Brackets** (`[...]`): Soft grass green (`#98C379`).
+  - **Immediates & Constants** (hex `0x...` and numbers): Coral orange (`#D19A66`).
+- **Rich HTML Dynamic Branch Prediction & Memory Operand Preview**:
+  A dedicated live status bar beneath the disassembly listing evaluates runtime CPU context:
+  - **Dynamic Branch Prediction**: Evaluates `EFLAGS` (`ZF`, `SF`, etc.) in real time:
+    - Branch taken: Emerald green `Branch Taken: YES (ZF=1)`.
+    - Branch not taken: Rose red `Branch Taken: NO (ZF=0)`.
+  - **Chained Memory Operand Dereferencing**: For complex effective addresses like `[rbp - 0x14]` or `[rax + rcx*4 + 0x20]`, resolves the virtual address and fetches the 8-byte value:
+    `[rbp - 0x14] => 0x7fffffffe00c => 0x00000001`.
+  - **Target Symbol Resolution**: Resolves call and jump targets into human-readable symbols (e.g. `call <calculate_fib>`).
 - **Keyboard Branch Navigation**:
   - Press **Enter** on any `CALL`, `JMP`, or `Jcc` instruction to follow the branch target and record position in the navigation history stack.
   - Press **Esc**, **Backspace**, or **Alt+Left** to return; press **Alt+Right** to advance.
@@ -202,24 +223,47 @@ Build outputs in `build/`:
 - **Inline Assembler (`Space`)**:
   - Press **Space** on an instruction. Type Intel assembly (e.g. `xor eax, eax`).
   - Enable **Auto Fill with NOPs** to maintain subsequent instruction alignment.
-- **Set RIP (`Ctrl+*`)**:
-  - Right-click any instruction and choose **Set New Origin Here (Set RIP)**.
+- **Set RIP / Set Origin (`Ctrl+*`)**:
+  - Press **Ctrl+\*** or right-click any instruction and select **Set New Origin Here (Set RIP)** to force CPU instruction pointer RIP to the selected instruction.
+
+---
 
 ### 3.2 Quadrant 2: Register View (RegisterView)
 - **GPR Table**:
   - Displays all 16 GPRs. Changed values are highlighted in red.
   - **Smart Dereferencing**: Resolves nearest function symbols (`<main+0x10>`), stack pointer positions (`=> [RSP]`), ASCII strings (`"Hello world"`), and pointer chains (`-> 0x5555...`).
   - **In-Place Modification**: Double-click any value to edit in hex.
+- **Quick GPR Increment / Decrement (`+1` / `-1`)**:
+  - Right-click any GPR (RAX~R15) and select **`+1 (Increment)`** or **`-1 (Decrement)`** to immediately adjust the register value via `ptrace(PTRACE_SETREGS)` without modal dialogs.
+- **Follow in Stack**:
+  - Right-click any register holding a stack address and select **`Follow in Stack`** to smoothly focus that offset in the dedicated 64-bit Stack View.
+- **Multi-Format Copy Submenu (`Copy As...`)**:
+  - Right-click any register and choose **`Copy As...`**:
+    - `Hex (0x...)`: Standard 64-bit hex string.
+    - `Decimal`: Signed and unsigned decimal integer.
+    - `Dereferenced String/Bytes`: Dereferences the register as a memory pointer and copies ASCII string or hex bytes to clipboard.
 - **Interactive EFLAGS Badges**:
   - Badges for CF, PF, AF, ZF, SF, TF, IF, DF, OF.
   - Emerald green indicates set (`1`), dark gray indicates cleared (`0`). Click any badge to physically toggle the flag in CPU state.
 - **FPU / SSE Panel**:
   - Displays 128-bit hex, 4x Float32, and 2x Double64 for all 16 XMM registers.
 
+---
+
 ### 3.3 Quadrant 3: Multi-Tab Memory Dump (MultiDumpWidget)
 - **Dump 1 ~ Dump 4 Multi-Tabs**:
   - 4 parallel, independent hex dump windows with separate addresses and scroll positions.
   - Context menu "Follow in Dump" automatically routes data to the active tab.
+- **Navigation History Stack**:
+  - Tracks navigation history across `Goto Address`, `Follow in Dump`, and pointer jumps.
+  - Press **Alt+Left** or **Backspace** to go back; press **Alt+Right** to go forward.
+- **Cross-View QWORD Follow**:
+  - Right-click any byte cell in Hex Dump:
+    - **`Follow QWORD in Dump`**: Reads 8-byte QWORD and follows address in Hex Dump.
+    - **`Follow QWORD in Disassembly`**: Follows 8-byte QWORD in Disassembly View.
+    - **`Follow QWORD in Stack`**: Follows 8-byte QWORD in Quadrant 4 Stack View.
+- **Direct Struct Layout Linking (`View as Struct...`)**:
+  - Right-click any byte cell and select **`View as Struct (Type Viewer)...`** to instantly open bottom **Tab 22: Type Viewer** with the address prefilled for structured C-style decoding.
 - **In-Place Hex Editing (`Ctrl+E`)**:
   - Modify bytes directly; right-click to fill with zeros or NOPs.
 - **Direct Hardware Watchpoints & Cell Highlights**:
@@ -234,12 +278,19 @@ Build outputs in `build/`:
 - **Raw Binary Export**:
   - In Tab 5 (Memory Regions), right-click any page to export as `.bin`.
 
+---
+
 ### 3.4 Quadrant 4: Dedicated 64-Bit Stack View (StackView)
 - **QWORD Aligned Layout**:
   - Each row presents an 8-byte QWORD.
   - Highlights current stack top as **`=> RSP`** with relative offsets (`+0x08`, `+0x10`, `[RBP]`).
   - **Smart Double-Click**: Code pointers jump to Disassembly; data pointers jump to Hex Dump.
-  - Quick action: Click `[RSP]` to return to stack top; press **Shift+S** to expand/collapse.
+- **Return Address Detection & Amber Highlighting**:
+  - Evaluates stack QWORDs against executable module segments and preceding `CALL` instructions.
+  - Automatically identifies return addresses, rendering a bright amber label in the comment column: **`[Return Address] <symbol+offset>`** (e.g. `[Return Address] __libc_start_main+0x80`).
+  - Context menu options: `Follow in Disassembly`, `Follow in Dump`, `Copy Address`, and `Copy QWORD Value`.
+- **Quick Action Bar**:
+  - Click `[RSP]` to return to stack top; click `[RBP]` to jump to base pointer; press **Shift+S** to expand/collapse.
 
 ---
 
@@ -890,23 +941,45 @@ target_link_libraries(my_plugin PRIVATE Qt6::Widgets Qt6::Core)
 
 ## 12. Keyboard Shortcut Cheat Sheet
 
-| Hotkey | Description | Hotkey | Description |
-| :--- | :--- | :--- | :--- |
-| **F9** | Continue Execution | **Enter** | Follow Branch |
-| **F7** | Step Into | **Esc / Backspace** | Go Back in History |
-| **F8** | Step Over | **Space** | Assemble In-Place |
-| **Shift+F11** | Step Out of Function | **; (Semicolon)** | Add / Edit Comment |
-| **F4** | Run to Selection | **Ctrl+B** | Toggle Bookmark (`★`) |
-| **Ctrl+F2** | Restart Session | **X** | Show Cross References (XREFs) |
-| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+E** | Modify Hex Bytes |
-| **F2** | Toggle Software Breakpoint | **Ctrl+P** | Patch Manager & Disk Export |
-| **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump CPU State Snapshot |
-| **Shift+S** | Toggle Stack View | **Shift+F7/F8/F9** | Pass Signal Step / Run |
-| **Alt+C** | Focus CPU Disassembly | **Alt+D** | Switch to Memory Hex Dump |
-| **Alt+S** | Focus Source View (SourceView) | **Ctrl+Shift+S** | Toggle Mixed ASM/Source View |
-| **Alt+P** | Focus Script Console (Python/Lua) | **Alt+K** | Switch to Call Stack Drawer |
-| **Alt+B** | Switch to Breakpoints Drawer | **Alt+M** | Switch to Memory Regions Drawer |
-| **Alt+E** | Switch to Symbol Viewer | **Alt+L** | Switch to Debug System Log |
+| Hotkey / Interaction | Description | Category |
+| :--- | :--- | :--- |
+| **F9** | Continue Execution | Execution |
+| **F7** | Step Into | Execution |
+| **F8** | Step Over | Execution |
+| **Shift+F11** | Step Out of Function | Execution |
+| **F4** | Run to Selection | Execution |
+| **Ctrl+F2** | Restart Session | Execution |
+| **Ctrl+\*** | Set RIP (New Origin) | Execution |
+| **F2** | Toggle Software Breakpoint | Breakpoints |
+| **Enter** | Follow Branch | Disassembly |
+| **Esc / Backspace** | Go Back in History (Disasm & Dump) | Navigation |
+| **Alt+Left / Alt+Right** | Navigate History Back / Forward (Disasm & Dump) | Navigation |
+| **Right-Click GPR -> +1 / -1** | Increment / Decrement Register (+1 / -1) | Registers |
+| **Right-Click GPR -> Follow in Stack** | Navigate Register Stack Pointer to Quadrant 4 | Linking |
+| **Right-Click GPR -> Copy As...** | Copy As Hex, Decimal, or Dereferenced String/Bytes | Registers |
+| **Right-Click Dump -> Follow QWORD** | Follow QWORD in Dump / Disassembly / Stack | Memory Analysis |
+| **Right-Click Dump -> View as Struct** | Instant Struct Layout Decoding in Tab 22 Type Viewer | Struct Analysis |
+| **Right-Click Stack -> Follow in Disasm** | Follow `[Return Address]` to Call Site | Stack Analysis |
+| **Space** | Assemble In-Place | Patching |
+| **; (Semicolon)** | Add / Edit Comment | Reverse Engineering |
+| **Ctrl+B** | Toggle Bookmark (`★`) | Reverse Engineering |
+| **X** | Show Cross References (XREFs) | Reverse Engineering |
+| **Ctrl+E** | Modify Hex Bytes | Memory Patching |
+| **Ctrl+P** | Patch Manager & Disk Export | Patching & Unpacking |
+| **Ctrl+S** | Save Project Database | Project Persistence |
+| **Ctrl+D** | Dump CPU State Snapshot | State Export |
+| **Shift+S** | Toggle Stack View | Layout |
+| **Alt+C** | Focus CPU Disassembly | View Switch |
+| **Alt+S** | Focus Source View (SourceView) | View Switch |
+| **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | View Switch |
+| **Alt+P** | Focus Script Console (Python/Lua) | Automation |
+| **Alt+D** | Switch to Memory Hex Dump | View Switch |
+| **Alt+K** | Switch to Call Stack Drawer | View Switch |
+| **Alt+B** | Switch to Breakpoints Drawer | View Switch |
+| **Alt+M** | Switch to Memory Regions Drawer | View Switch |
+| **Alt+E** | Switch to Symbol Viewer | View Switch |
+| **Alt+L** | Switch to Debug System Log | View Switch |
+| **Shift+F7/F8/F9** | Pass Signal Step / Run | Signal Handling |
 
 ---
 

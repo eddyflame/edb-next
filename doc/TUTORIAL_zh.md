@@ -3,7 +3,7 @@
 > **项目名称**：edb-next (Next-Generation Linux Binary Debugger & Reverse Engineering Platform)  
 > **适用版本**：v1.0.0+  
 > **适用平台**：Linux x86_64  
-> **开发语言**：C++20 / Qt 5.15+ / Capstone Engine
+> **开发语言**：C++20 / 纯 Qt 6.4+ (GCC 13+) / Capstone Engine
 
 ---
 
@@ -255,6 +255,27 @@ cmake --build build -j$(nproc)
 - **行号与视觉标识**：
   - **当前执行行 (RIP)**：背景以深青色高亮，行首带有醒目翠绿粗体指示箭头 **`➔`**；
   - **断点行**：整行呈现深红背景；若当前 RIP 恰好停在断点上，则呈现复合强调色。
+- **x64dbg 风格反汇编语法着色 (Syntax Highlighting)**：
+  指令列由定制委托 `InstructionHighlightDelegate` 接管，全面采用现代 One Dark / x64dbg 高信息密度色彩体系：
+  - **`CALL`**：粗体暖金黄色（`#E5C07B`），醒目标注子函数调用点；
+  - **`JMP`**：暖橙色（`#D19A66`），无条件分支清晰明朗；
+  - **`Jcc`**（`JE`, `JNE`, `JZ`, `JNZ`, `JG`, `JL`, `JA`, `JB`, `JAE`, `JBE` 等）：珊瑚粉红色（`#E06C75`），突出决策分流节点；
+  - **`RET` / `RETN`**：粗体紫罗兰品红（`#C678DD`），函数返回尾声一目了然；
+  - **`SYSCALL` / `SYSENTER` / `INT` / `UD2` / `HLT`**：粗体深绯红（`#E06C75`），系统调用与内核态陷入警戒；
+  - **`PUSH` / `POP`**：青碧色（`#56B6C2`），快速辨识栈平衡操作；
+  - **`CMP` / `TEST`**：金黄暗色（`#E5C07B`），标志位计算点；
+  - **`NOP`**：斜体暗灰色（`#5C6370`）；
+  - **通用/段/控制寄存器**（`RAX`..`R15`, `EAX`..`R15D`, `RSP`, `RBP`, `RIP`, `CR0`..`CR4` 等）：亮天蓝（`#61AFEF`）；
+  - **内存解引用定界符**（方括号 `[...]`）：柔嫩草绿色（`#98C379`）；
+  - **十六进制与数值立即数**（`0x...` 与数字）：橙粉色（`#D19A66`）。
+- **富文本动态分支预测与内存操作数求值预览**：
+  紧邻反汇编视图底部的常驻状态预览条，结合 Capstone 指令结构与当前 CPU 真实物理状态，在单步或光标悬停时提供极具价值的推导：
+  - **动态分支预测 (Dynamic Branch Prediction)**：结合 `EFLAGS`（`ZF`, `SF`, `OF`, `CF`, `PF`）实时推断当前 `Jcc` 指令是否即将发生跳转：
+    - 即将跳转：翡翠绿 `Branch Taken: YES (ZF=1)`；
+    - 不发生跳转：玫瑰红 `Branch Taken: NO (ZF=0)`；
+  - **内存操作数解引用链式解析**：针对 `[rbp - 0x14]` 或 `[rax + rcx*4 + 0x20]` 等间接寻址，实时计算物理内存有效地址，并读取目标内存中的 8 字节数值，链式直观呈现为：
+    `[rbp - 0x14] => 0x7fffffffe00c => 0x00000001`；
+  - **目标符号跨模块引用解析**：自动解析调用与跳转的目标符号（如 `call <calculate_fib>` 或 `call <main+147>`）。
 - **键盘极速分支导航 (Branch Navigation)**：
   - 在任何 `CALL`、`JMP`、`Jcc` 指令行上按下 **Enter** 键，光标将瞬间跳至目标分支地址，并将当前位置自动压入导航历史栈；
   - 按下 **Esc** 或 **Backspace**（或 **Alt+Left**），瞬间原路回退到跳转前的位置；按 **Alt+Right** 重新前进。彻底解决在多层嵌套函数逆向时迷失上下文的痛点。
@@ -265,9 +286,9 @@ cmake --build build -j$(nproc)
   - 光标停在欲修改的指令行，按下快捷键 **Space**（空格键）；
   - 弹出汇编对话框，输入标准 Intel 汇编指令（如 `xor eax, eax` 或 `mov rdi, 1`）；
   - 勾选 **"Auto Fill with NOPs"**，汇编器将基于 GNU `as` + `objcopy` 动态编译，并在指令长度不足时自动用 `0x90` 铺满，确保后续指令地址完全对齐。
-- **强制改变执行指针 (Set RIP)**：
+- **强制改变执行指针 (Set Origin / Set RIP)**：
   - 右键任意反汇编行，选择 **"Set New Origin Here (Set RIP)"**（或快捷键 **Ctrl+\***）；
-  - 调试器将原子修改物理 CPU 的 RIP 寄存器并写回内核，强制目标从该行开始执行。
+  - 调试器将原子修改物理 CPU 的 RIP 寄存器并写回内核，强制目标从该行开始执行，秒级绕过注册校验或强行进入漏洞代码路径。
 
 ---
 
@@ -282,6 +303,17 @@ cmake --build build -j$(nproc)
     - 内存字符串探测：如果寄存器指向有效字符串，直接打印预览（如 `"Hello world"`）；
     - 二级指针链推导：直观呈现 `-> 0x555555555120 <main>`。
   - **就地双击修改**：双击数值直接输入新的十六进制数写入物理寄存器。
+- **极客快捷数值微调 (+1 / -1)**：
+  - 右键任意通用寄存器（RAX~R15），在右键菜单中直接点击 **`+1 (Increment)`** 或 **`-1 (Decrement)`**；
+  - 调试器无需弹出任何修改对话框，直接原子下发 `ptrace(PTRACE_SETREGS)` 将内核寄存器值增减 1，极大简化了逆向循环计数器与条件标志的手工干涉流程。
+- **快速追踪至栈视图 (Follow in Stack)**：
+  - 右键任意存放栈地址的寄存器（如 RSP, RBP 或计算出的局部变量地址），选择 **`Follow in Stack`**；
+  - 象限 4 栈视图将立即平滑定位到对应栈槽，方便瞬时观察函数帧与局部变量。
+- **多格式复制子菜单 (Copy As...)**：
+  - 右键寄存器展开 **`Copy As...`**：
+    - `Hex (0x...)`：复制为标准 64 位十六进制格式（如 `0x00007FFFFFFFD7D0`）；
+    - `Decimal`：复制为有符号与无符号十进制数值；
+    - `Dereferenced String/Bytes`：将寄存器作为内存指针自动解引用，读取对应的 ASCII 字符串或 Hex 字节流至剪贴板。
 - **EFLAGS 互动翻转徽章条**：
   - 顶部常驻 `CF`, `PF`, `AF`, `ZF`, `SF`, `TF`, `IF`, `DF`, `OF` 按钮；
   - 翡翠绿色代表置位（1），暗灰色代表清零（0）；
@@ -298,6 +330,19 @@ cmake --build build -j$(nproc)
   - 彻底告别单一转储区限制，拥有 4 个互相独立的内存标签页；
   - 每个 Dump 页拥有完全独立的起始地址、滚动游标与历史记录；
   - 在反汇编、寄存器或栈视图右键点击 **"Follow in Dump"**，数据将自动流入当前选中的 Dump 标签页。
+- **转储区历史导航栈 (Dump Navigation History Stack)**：
+  - 完整继承 x64dbg 人体工程学导航体验：每次通过 `Goto Address`、`Follow in Dump` 或指针跳转时，自动记录历史地址；
+  - 按下快捷键 **Alt+Left** 或 **Backspace**：瞬时原路后退（Back）至上一处转储地址；
+  - 按下快捷键 **Alt+Right**：历史前进（Forward）；
+  - 在复杂多级数据结构或指针链逆向时，来回穿梭如丝般顺滑。
+- **单元格跨视图穿梭联动 (Follow QWORD in...)**：
+  - 在 Hex Dump 视图中选中任意字节，右键提供：
+    - **`Follow QWORD in Dump`**：读取从该字节起始的 8 字节 QWORD 并作为目标地址在转储区跳转；
+    - **`Follow QWORD in Disassembly`**：将 8 字节 QWORD 作为代码地址在反汇编视图定位；
+    - **`Follow QWORD in Stack`**：将 8 字节 QWORD 作为栈地址在象限 4 栈视图定位。
+- **结构体布局分析直达 (View as Struct (Type Viewer)...)**：
+  - 右键任意内存单元格，选择 **`View as Struct (Type Viewer)...`**；
+  - 调试器瞬时激活底部抽屉 **Tab 22: Type Viewer**，并将当前光标所在物理内存地址自动填充至地址输入框，一键完成从原始十六进制字节到结构体高维语义字段的视觉映射。
 - **十六进制就地热补丁**：
   - 选中欲修改的字节，按下快捷键 **Ctrl+E**；
   - 实时输入新的十六进制字节序列并确认，修改立即生效于目标内存并被 `PatchManager` 自动记录；
@@ -324,6 +369,11 @@ cmake --build build -j$(nproc)
   - **Value 列**：高亮呈现 64 位整字值；**双击智能路由**：若数值是代码段地址，反汇编视图自动跳转跟随；若是指向数据的指针，Dump 视图自动跳转跟随；
   - **Offset 列**：动态计算相对当前 RSP 的偏移，当前栈顶整行翠绿高亮标注 **`=> RSP`**，后续行依次计算 `+0x08`, `+0x10`；当遇到 RBP 时自动标注 `[RBP]` 及 `[RBP-0x08]`；
   - **Symbol / Comment 列**：自动解析返回地址对应的函数符号及局部字符串。
+- **函数返回地址智能识别与亮琥珀金高亮**：
+  - 栈引擎实时推导当前栈上每个 8 字节 QWORD 的语义归属；
+  - 若某个 QWORD 落在具有可执行权限的代码段内，且其上一指令槽位为 `CALL`，调试器在描述列呈现醒目的亮琥珀金标签 **`[Return Address] <函数名+偏移>`**（例如 `[Return Address] __libc_start_main+0x80`）；
+  - 帮助逆向人员一眼辨识函数调用链层级，在攻防分析中瞬间捕捉栈溢出漏洞导致的返回地址覆盖篡改；
+  - 右键提供 **`Follow in Disassembly`**、**`Follow in Dump`**、**`Copy Address`** 与 **`Copy QWORD Value`**。
 - **快捷操作条**：
   - 点击 **`[RSP]`** 按钮：一键瞬间归位回栈顶；
   - 点击 **`[RBP]`** 按钮：一键跳转至基址指针；
@@ -1362,7 +1412,7 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 
 ## 12. 常用快捷键一览表 (Cheat Sheet)
 
-| 快捷键 | 功能描述 | 对应分类 |
+| 快捷键 / 交互操作 | 功能描述 | 对应分类 |
 | :--- | :--- | :--- |
 | **F9** | Continue (继续全速运行) | 调试执行 |
 | **F7** | Step Into (单步步入) | 调试执行 |
@@ -1370,11 +1420,17 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 | **Shift+F11** | Step Out (跳出当前函数) | 调试执行 |
 | **F4** | Run to Selection (运行到光标所在行) | 调试执行 |
 | **Ctrl+F2** | Restart (重启会话) | 调试执行 |
-| **Ctrl+\*** | Set New Origin Here (强制设置当前 RIP) | 调试执行 |
+| **Ctrl+\*** | Set New Origin Here (强制重设当前 RIP) | 调试执行 |
 | **F2** | Toggle Breakpoint (切换软件断点) | 断点控制 |
 | **Enter** | Follow Branch (跟随分支跳转/函数跟入) | 反汇编导航 |
-| **Esc / Backspace** | Go Back (沿导航历史栈瞬时回退) | 反汇编导航 |
-| **Alt+Left / Right** | Navigate History (历史前进 / 后退) | 反汇编导航 |
+| **Esc / Backspace** | Go Back (沿反汇编/转储历史栈瞬时回退) | 历史导航 |
+| **Alt+Left / Alt+Right** | Navigate History (反汇编与转储历史后退 / 前进) | 历史导航 |
+| **右键寄存器 -> +1 / -1** | GPR 极速加 1 / 减 1 (Increment / Decrement) | 寄存器微调 |
+| **右键寄存器 -> Follow in Stack** | 快速追踪寄存器栈指针至象限 4 栈视图 | 视图联动 |
+| **右键寄存器 -> Copy As...** | 多格式复制寄存器值 (Hex / Decimal / String) | 数据提取 |
+| **右键转储 -> Follow QWORD** | 智能跨视图追踪 QWORD (Dump / Disasm / Stack) | 内存分析 |
+| **右键转储 -> View as Struct** | 一键携带当前地址直达 Tab 22 Type Viewer 解析 | 结构体分析 |
+| **右键栈单元 -> Follow in Disasm** | 追踪函数返回地址 `[Return Address]` 至调用点 | 调用栈分析 |
 | **Space** | Assemble (就地呼出内联汇编框) | 代码修补 |
 | **; (分号)** | Add / Edit Comment (为指令添加/编辑注释) | 逆向分析 |
 | **Ctrl+B** | Toggle Bookmark (打下/清除黄色五角星书签) | 逆向分析 |

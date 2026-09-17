@@ -2,7 +2,7 @@
 
 > **Project Name**: edb-next (Next-Generation Linux Binary Debugger & Reverse Engineering Platform)  
 > **Document Version**: v1.0.0 (Release Candidate)  
-> **Language & Standards**: C++20 / Qt 5.15+ / Capstone Disassembly Engine  
+> **Language & Standards**: C++20 / Pure Qt 6.4+ (GCC 13+) / Capstone Disassembly Engine  
 > **Target Architecture**: Linux x86_64  
 > **Project Goal**: Standalone, industrial-grade open-source binary analysis and dynamic reverse engineering platform for Linux on GitHub.
 
@@ -15,7 +15,7 @@
    - 1.2 Competitive Analysis (edb-next vs. Original edb vs. x64dbg)
    - 1.3 Core Engineering Principles
 2. [Key Characteristics & Architectural Highlights](#2-key-characteristics--architectural-highlights)
-3. [Implemented Features Breakdown (21 Core Subsystems)](#3-implemented-features-breakdown-21-core-subsystems)
+3. [Implemented Features Breakdown (22 Core Subsystems)](#3-implemented-features-breakdown-22-core-subsystems)
    - 3.1 Core Kernel & Execution Control Engine
    - 3.2 Disassembly & Control Flow Analysis
    - 3.3 CPU Registers & Machine State Management
@@ -37,6 +37,7 @@
    - 3.19 Independent Thread Freeze & Thaw with Isolated Stepping
    - 3.20 Differential Memory Pattern & Value Scanner (CheatEngine style)
    - 3.21 Compound Type Reconstruction & Struct Layout Visualizer
+   - 3.22 x64dbg-Style UI/UX & Ergonomics System
 4. [Unimplemented Features & Technical Roadmap](#4-unimplemented-features--technical-roadmap)
    - 4.1 Multi-Architecture & Cross-Debugging Support (ARM64 / x86-32)
    - 4.2 Anti-Anti-Debugging Deep Extensions
@@ -318,11 +319,58 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - `struct <name> <addr_or_expr>`: Evaluate and print struct fields at the specified address.
   - `defstruct <c_code...>`: Dynamically parse and register a new C struct directly from the command bar.
 
+### 3.22 x64dbg-Style UI/UX & Ergonomics System
+
+High information density, semantic color differentiation, and fluid keyboard/mouse navigation ergonomics are vital for industrial binary reverse engineering. `edb-next` directly mirrors and optimizes the battle-tested design patterns and tactile workflows of Windows' legendary **x64dbg**:
+
+- **Disassembly Syntax Highlighting Delegate (`InstructionHighlightDelegate`)**:
+  - Implements a custom `QStyledItemDelegate` that intercepts and controls the `paint()` lifecycle of the `DisassemblyView` instruction column (`ColInstruction`).
+  - Strict semantic tokenization and color palette aligned with modern One Dark and classic x64dbg conventions:
+    - **CALL**: Bold warm gold (`#E5C07B`), prominently emphasizing sub-routine entry points.
+    - **JMP**: Warm orange (`#D19A66`), denoting unconditional control transfers.
+    - **Conditional Jumps (Jcc)** (`JE`, `JNE`, `JZ`, `JNZ`, `JG`, `JL`, `JA`, `JB`, `JAE`, `JBE`, etc.): Coral salmon (`#E06C75`), pinpointing decision branches.
+    - **RET / RETN**: Bold violet magenta (`#C678DD`), highlighting function termination and frame collapses.
+    - **Interrupts & Syscalls** (`SYSCALL`, `SYSENTER`, `INT`, `UD2`, `HLT`): Bold deep crimson (`#E06C75`), flagging kernel transitions and trap barriers.
+    - **Stack Operations** (`PUSH`, `POP`): Soft cyan teal (`#56B6C2`).
+    - **Comparisons & Tests** (`CMP`, `TEST`): Muted gold (`#E5C07B`).
+    - **NOP**: Italic dim gray (`#5C6370`).
+    - **Full Register Suite** (`RAX`..`R15`, `EAX`..`R15D`, `AX`, `AL`, `RSP`, `RBP`, `RIP`, `CR0`..`CR4`, `DR0`..`DR7`): Bright sky blue (`#61AFEF`).
+    - **Memory Dereferences** (brackets `[...]`): Soft grass green (`#98C379`).
+    - **Immediates & Constants** (hex `0x...` and numerical literals): Coral orange (`#D19A66`).
+  - High-performance tokenized rendering: Pre-fills active selection highlights using `QPainter` (retaining native Qt selection styling), followed by tokenized character offset measurements for zero-flicker 60 FPS scrolling across multi-megabyte binaries.
+
+- **Rich HTML Dynamic Branch Prediction & Memory Operand Preview**:
+  - Live status bar located beneath the disassembly listing, fusing Capstone operand analysis with real-time target CPU registers:
+  - **Dynamic Branch Prediction**: Evaluates `EFLAGS` (`ZF`, `SF`, `OF`, `CF`, `PF`) in real-time to compute whether a conditional branch will be taken:
+    - Branch taken: Emerald green `Branch Taken: YES (ZF=1)`.
+    - Branch not taken: Rose red `Branch Taken: NO (ZF=0)`.
+  - **Chained Memory Operand Dereferencing**: For complex effective address modes such as `[rbp - 0x14]` or `[rax + rcx*4 + 0x20]`, calculates the virtual address and reads 8 bytes from target memory, presenting the dereference chain as:
+    `[rbp - 0x14] => 0x7fffffffe00c => 0x00000001`.
+  - **Target Address Symbol Resolution**: Automatically resolves branch targets and call destinations to human-readable symbols (e.g. `call 0x555555555297 <calculate_fib>`).
+
+- **Stack View Return Address Detection (`StackView`)**:
+  - Traverses stack QWORD entries, correlating memory pointers against loaded ELF segments to identify pointers into executable segments (`PF_X`). Cross-references preceding memory for `CALL` opcodes.
+  - Formats detected return addresses in the description column with a prominent amber badge: `[Return Address] <symbol+offset>` (e.g., `[Return Address] __libc_start_main+0x80`).
+  - Context menu shortcuts: `Follow in Disassembly`, `Follow in Dump`, `Copy Address`, and `Copy QWORD Value`.
+
+- **Register View Ergonomics (`RegisterView`)**:
+  - **Quick GPR Increment / Decrement**: Right-clicking any of the 16 GPRs (RAX~R15) offers `+1 (Increment)` and `-1 (Decrement)` actions, writing directly via `ptrace(PTRACE_SETREGS)` without opening modal dialogs.
+  - **Follow in Stack**: Right-clicking any register holding a stack address navigates directly to that offset in the dedicated 64-bit Stack View (Quadrant 4).
+  - **Multi-Format Copy Submenu**: Copy register values as standard `Hex (0x...)`, `Decimal`, or `Dereferenced String/Bytes`.
+
+- **Hex Dump History Stack & Type Viewer Integration (`MultiDumpWidget`)**:
+  - **Navigation History Stack**: Automatically tracks navigation history across `Goto Address`, `Follow in Dump`, and pointer jumps, supporting `Alt+Left` / `Backspace` (Back) and `Alt+Right` (Forward).
+  - **Multi-Destination QWORD Follow**: Context menu options to `Follow QWORD in Dump`, `Follow QWORD in Disassembly`, and `Follow QWORD in Stack`.
+  - **Type Viewer Linking**: `View as Struct (Type Viewer)...` instantly switches to bottom Tab 22, prefilling the current cursor address into the Type Viewer.
+
+- **Ergonomic Shortcuts Alignment**:
+  - `Ctrl+*`: Set Origin (forces instruction pointer RIP to the selected instruction).
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
 
-All completed core features (such as §3.13 C++ Demangling, §3.14 Hardware Watchpoints, §3.15 Script Hooking, §3.16 Page-Guard Breakpoints, §3.17 Shared Library Rendezvous, §3.18 Multi-Process Tracing, §3.19 Thread Freeze/Thaw, §3.20 Differential Memory Scanner, and §3.21 Struct Layout Visualizer) have been permanently recorded in Chapter 3. This chapter strictly documents the remaining unimplemented features and architectural extensions:
+All completed core features (such as §3.13 C++ Demangling, §3.14 Hardware Watchpoints, §3.15 Script Hooking, §3.16 Page-Guard Breakpoints, §3.17 Shared Library Rendezvous, §3.18 Multi-Process Tracing, §3.19 Thread Freeze/Thaw, §3.20 Differential Memory Scanner, §3.21 Struct Layout Visualizer, and §3.22 x64dbg-Style UI/UX & Ergonomics) have been permanently recorded in Chapter 3. This chapter strictly documents the remaining unimplemented features and architectural extensions:
 
 ### 4.1. **Multi-Architecture Support (ARM64 / x86-32 / RISC-V)**:
    - Abstract `IRegisterContext` and engine factories to support 32-bit x86 (`compat_ptrace`) and AArch64 / ARM64 (`NT_PRSTATUS` / `PTRACE_GETREGSET`).

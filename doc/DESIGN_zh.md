@@ -2,7 +2,7 @@
 
 > **项目名称**：edb-next (Next-Generation Linux Binary Debugger & Reverse Engineering Platform)  
 > **文档版本**：v1.0.0 (Release Candidate)  
-> **开发语言**：C++20 / Qt 5.15+ / Capstone Engine  
+> **开发语言**：C++20 / 纯 Qt 6.4+ (GCC 13+) / Capstone Engine  
 > **面向平台**：Linux x86_64  
 > **发布目标**：作为独立、现代化、工业级的开源逆向调试项目发布至 GitHub
 
@@ -37,6 +37,7 @@
    - 3.19 多线程独立冻结与解冻控制及隔离单步步进 (Thread Freeze / Thaw & Isolated Stepping)
    - 3.20 动态内存特征差分扫描器与多轮数值收敛 (Differential Memory Scanner - CheatEngine style)
    - 3.21 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout Visualizer)
+   - 3.22 x64dbg 风格现代化逆向工效与 UI/UX 增强系统 (x64dbg-Style UI/UX & Ergonomics)
 4. [未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)](#4-未实现功能与待完善规划-unimplemented-features--technical-roadmap)
    - 4.1 多 CPU 架构与交叉调试扩展
    - 4.2 高级反反调试深度扩展
@@ -556,11 +557,61 @@
    - `struct <name> <addr_or_expr>`：按指定结构体模板解析并格式化打印目标地址内存；
    - `defstruct <c_code...>`：直接在命令行动态注册新的 C 语言结构体定义。
 
+### 3.22 x64dbg 风格现代化逆向工效与 UI/UX 增强系统 (x64dbg-Style UI/UX & Ergonomics)
+
+在工业级二进制逆向与动态漏洞分析中，GUI 的信息呈现密度、色彩语义辨析度以及键鼠穿梭工效对分析者的效率起着决定性作用。`edb-next` 深度对齐 Windows 平台逆向神器 **x64dbg** 的经典操作范式与人体工程学设计，构建了全套现代化的逆向工效增强体系：
+
+1. **反汇编语法高亮定制委托 (`InstructionHighlightDelegate`)**：
+   - **架构设计**：基于 Qt 6 纯虚委托抽象，继承 `QStyledItemDelegate` 接管 `DisassemblyView` 中指令列（`ColInstruction`）的重绘流程；
+   - **语法分词与色系拓扑**（采用与现代 One Dark 兼容的 x64dbg 经典逆向调色板）：
+     - **CALL**：粗体金黄色（`#E5C07B`），醒目标注子函数调用点；
+     - **JMP**：暖橙色（`#D19A66`），无条件跳转清晰明朗；
+     - **条件跳转 (Jcc)**（`JE`, `JNE`, `JZ`, `JNZ`, `JG`, `JL`, `JA`, `JB`, `JAE`, `JBE` 等）：珊瑚粉红色（`#E06C75`），凸显分支决策分流节点；
+     - **RET / RETN**：粗体紫罗兰品红（`#C678DD`），一目了然函数返回收尾；
+     - **系统调用与高危中断**（`SYSCALL`, `SYSENTER`, `INT`, `UD2`, `HLT`）：粗体深绯红（`#E06C75`），呈现内核态陷入与异常边界；
+     - **栈操作**（`PUSH`, `POP`）：青碧色（`#56B6C2`）；
+     - **比较测试**（`CMP`, `TEST`）：金黄微暗色（`#E5C07B`）；
+     - **空操作**（`NOP`）：斜体暗灰色（`#5C6370`）；
+     - **全系寄存器**（`RAX`..`R15`, `EAX`..`R15D`, `AX`, `AL`, `RSP`, `RBP`, `RIP`, `CR0`..`CR4`, `DR0`..`DR7`）：亮天蓝色（`#61AFEF`）；
+     - **内存解引用定界**（方括号 `[...]`）：柔和草绿色（`#98C379`）；
+     - **立即数与常量**（十六进制 `0x...` 与十进制常数）：橙粉色（`#D19A66`）；
+   - **高性能流式绘制与选区融合**：在 `paint()` 中利用 `QPainter` 预先绘制系统选区高亮底色（完整保留 Qt 原生深蓝选中态），随后通过快速分词器计算字符水平偏移，逐段渲染彩色文本，即使面对数百万行反汇编代码滚动依然稳健维持 60fps 刷新。
+
+2. **富文本动态分支预测与内存操作数求值预览条 (`InstructionInspector` & Disassembly Status Bar)**：
+   - 位于反汇编视图底部的常驻状态预览条，结合 Capstone 指令结构与当前 CPU 真实物理状态，在单步或光标悬停时提供极具价值的预判：
+   - **动态条件分支判定 (Dynamic Branch Prediction)**：结合 `EFLAGS`（`ZF`, `SF`, `OF`, `CF`, `PF`）实时推断当前 `Jcc` 指令是否即将发生跳转：
+     - 即将跳转：翡翠绿 `Branch Taken: YES (ZF=1)`；
+     - 不发生跳转：玫瑰红 `Branch Taken: NO (ZF=0)`；
+   - **内存操作数解引用链式解析**：针对 `[rbp - 0x14]` 或 `[rax + rcx*4 + 0x20]` 等复杂间接寻址，实时计算物理内存有效地址（Effective Address），并进一步读取内存中的 8 字节数值，链式直观呈现为：
+     `[rbp - 0x14] => 0x7fffffffe00c => 0x00000001`；
+   - **目标符号跨模块引用解析**：自动解析跳转或调用的目标地址符号（如 `call 0x555555555297 <calculate_fib>`），彻底摆脱死记裸地址的困扰。
+
+3. **专有 64 位栈视图函数返回地址识别与高亮 (`StackView`)**：
+   - **栈帧语义推断机制**：遍历当前线程调用栈中的每一个 8 字节 QWORD，比对进程映射段表判断该数值是否落在具有执行权限（`PF_X`）的代码段内；若是，进一步反向解析上一个指令槽位是否为 `CALL`；
+   - **视觉增强**：被确认为返回地址的栈单元，在描述列渲染为亮琥珀金色标签：`[Return Address] <函数名+偏移>`（如 `[Return Address] __libc_start_main+0x80`），与普通局部变量与指针形成鲜明语义分流；
+   - **右键便捷穿梭**：支持 `Follow in Disassembly`、`Follow in Dump`、`Copy Address` 与 `Copy QWORD Value`。
+
+4. **寄存器视图极客微调与多格式复制 (`RegisterView`)**：
+   - **极客快捷数值微调**：右键任意 16 大通用寄存器（RAX~R15），提供 `+1 (Increment)` 与 `-1 (Decrement)` 瞬时就地增减指令，直接下发 `ptrace(PTRACE_SETREGS)` 覆写内核，免去弹出修改框重新输入 16 位十六进制的繁琐流程；
+   - **栈区穿梭直达**：对于指向栈空间的寄存器（如 RSP, RBP 或计算后的局部变量地址），右键提供 `Follow in Stack`，快速驱动象限 4 栈视图定位；
+   - **多格式复制子菜单 (Copy As...)**：
+     - `Hex (0x...)`：标准 64 位大写十六进制字符串；
+     - `Decimal`：有符号与无符号十进制数值；
+     - `Dereferenced String/Bytes`：将寄存器值作为内存指针自动解引用，提取 ASCII 字符串或 Hex 字节流并写入剪贴板。
+
+5. **多标签内存 Hex 转储历史栈与结构体一键穿梭 (`MultiDumpWidget`)**：
+   - **导航历史栈 (Dump History Stack)**：每次执行 `Goto Address`、`Follow in Dump` 或指针跳转时，自动记录前向与后向地址节点，支持 `Alt+Left` / `Backspace` 瞬时后退（Back）与 `Alt+Right` 历史前进（Forward）；
+   - **任意单元格多维联动**：右键任意字节提供 `Follow QWORD in Dump`、`Follow QWORD in Disassembly`、`Follow QWORD in Stack`；
+   - **结构体可视化工作台无缝直达**：右键提供 `View as Struct (Type Viewer)...`，自动携带当前单元格物理地址切换到底部抽屉 Tab 22（Type Viewer），并自动填充地址输入框，瞬间完成从原始散落字节到结构体字段布局的逆向跃迁。
+
+6. **核心快捷键体验对齐 (`Ctrl+*` Set Origin)**：
+   - 反汇编区提供 `Ctrl+*` 全局快捷键，强制将目标 CPU 当前的 RIP 重定位至光标选中行，支持任意跳过特定校验逻辑或强行进入漏洞代码路径。
+
 ---
 
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
-作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。所有已完成的核心功能（如 3.13 C++ 反混淆、3.14 硬件监视点、3.15 脚本打桩、3.16 页保护断点、3.17 动态库热重载、3.18 多进程跟踪、3.19 线程冻结、3.20 差分内存扫描、3.21 复合结构体解析）已全部移入第 3 章已实现功能清单中。本章仅保留当前版本尚未实现的进阶特性，作为后续版本的官方演进路线图 (Roadmap)。
+作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。所有已完成的核心功能（如 3.13 C++ 反混淆、3.14 硬件监视点、3.15 脚本打桩、3.16 页保护断点、3.17 动态库热重载、3.18 多进程跟踪、3.19 线程冻结、3.20 差分内存扫描、3.21 复合结构体解析、3.22 x64dbg 风格现代化逆向工效系统）已全部移入第 3 章已实现功能清单中。本章仅保留当前版本尚未实现的进阶特性，作为后续版本的官方演进路线图 (Roadmap)。
 
 ### 4.1 多 CPU 架构与交叉调试扩展 (Multi-Architecture Support)
 - **当前状态**：当前引擎深度绑定 Linux x86_64 架构（依赖 `user_regs_struct`、`user_fpregs_struct` 以及 x86_64 DR0~DR7 调试寄存器）。
