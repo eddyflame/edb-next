@@ -10,38 +10,107 @@ namespace {
 
 uint64_t getCapstoneRegValue(x86_reg reg, const RegisterContext& regs) {
     switch (reg) {
-        case X86_REG_RAX: case X86_REG_EAX: case X86_REG_AX: case X86_REG_AL: case X86_REG_AH:
-            return regs.rax();
-        case X86_REG_RBX: case X86_REG_EBX: case X86_REG_BX: case X86_REG_BL: case X86_REG_BH:
-            return regs.rbx();
-        case X86_REG_RCX: case X86_REG_ECX: case X86_REG_CX: case X86_REG_CL: case X86_REG_CH:
-            return regs.rcx();
-        case X86_REG_RDX: case X86_REG_EDX: case X86_REG_DX: case X86_REG_DL: case X86_REG_DH:
-            return regs.rdx();
-        case X86_REG_RSI: case X86_REG_ESI: case X86_REG_SI: case X86_REG_SIL:
-            return regs.rsi();
-        case X86_REG_RDI: case X86_REG_EDI: case X86_REG_DI: case X86_REG_DIL:
-            return regs.rdi();
-        case X86_REG_RBP: case X86_REG_EBP: case X86_REG_BP: case X86_REG_BPL:
-            return regs.rbp().value();
-        case X86_REG_RSP: case X86_REG_ESP: case X86_REG_SP: case X86_REG_SPL:
-            return regs.rsp().value();
-        case X86_REG_R8: case X86_REG_R8D: case X86_REG_R8W: case X86_REG_R8B:
-            return regs.r8();
-        case X86_REG_R9: case X86_REG_R9D: case X86_REG_R9W: case X86_REG_R9B:
-            return regs.r9();
-        case X86_REG_R10: case X86_REG_R10D: case X86_REG_R10W: case X86_REG_R10B:
-            return regs.r10();
-        case X86_REG_R11: case X86_REG_R11D: case X86_REG_R11W: case X86_REG_R11B:
-            return regs.r11();
-        case X86_REG_R12: case X86_REG_R12D: case X86_REG_R12W: case X86_REG_R12B:
-            return regs.r12();
-        case X86_REG_R13: case X86_REG_R13D: case X86_REG_R13W: case X86_REG_R13B:
-            return regs.r13();
-        case X86_REG_R14: case X86_REG_R14D: case X86_REG_R14W: case X86_REG_R14B:
-            return regs.r14();
-        case X86_REG_R15: case X86_REG_R15D: case X86_REG_R15W: case X86_REG_R15B:
-            return regs.r15();
+        // RAX / EAX / AX / AH / AL
+        case X86_REG_RAX: return regs.rax();
+        case X86_REG_EAX: return static_cast<uint32_t>(regs.rax());
+        case X86_REG_AX:  return static_cast<uint16_t>(regs.rax());
+        case X86_REG_AH:  return static_cast<uint8_t>((regs.rax() >> 8) & 0xFF);
+        case X86_REG_AL:  return static_cast<uint8_t>(regs.rax() & 0xFF);
+
+        // RBX / EBX / BX / BH / BL
+        case X86_REG_RBX: return regs.rbx();
+        case X86_REG_EBX: return static_cast<uint32_t>(regs.rbx());
+        case X86_REG_BX:  return static_cast<uint16_t>(regs.rbx());
+        case X86_REG_BH:  return static_cast<uint8_t>((regs.rbx() >> 8) & 0xFF);
+        case X86_REG_BL:  return static_cast<uint8_t>(regs.rbx() & 0xFF);
+
+        // RCX / ECX / CX / CH / CL
+        case X86_REG_RCX: return regs.rcx();
+        case X86_REG_ECX: return static_cast<uint32_t>(regs.rcx());
+        case X86_REG_CX:  return static_cast<uint16_t>(regs.rcx());
+        case X86_REG_CH:  return static_cast<uint8_t>((regs.rcx() >> 8) & 0xFF);
+        case X86_REG_CL:  return static_cast<uint8_t>(regs.rcx() & 0xFF);
+
+        // RDX / EDX / DX / DH / DL
+        case X86_REG_RDX: return regs.rdx();
+        case X86_REG_EDX: return static_cast<uint32_t>(regs.rdx());
+        case X86_REG_DX:  return static_cast<uint16_t>(regs.rdx());
+        case X86_REG_DH:  return static_cast<uint8_t>((regs.rdx() >> 8) & 0xFF);
+        case X86_REG_DL:  return static_cast<uint8_t>(regs.rdx() & 0xFF);
+
+        // RSI / ESI / SI / SIL
+        case X86_REG_RSI: return regs.rsi();
+        case X86_REG_ESI: return static_cast<uint32_t>(regs.rsi());
+        case X86_REG_SI:  return static_cast<uint16_t>(regs.rsi());
+        case X86_REG_SIL: return static_cast<uint8_t>(regs.rsi() & 0xFF);
+
+        // RDI / EDI / DI / DIL
+        case X86_REG_RDI: return regs.rdi();
+        case X86_REG_EDI: return static_cast<uint32_t>(regs.rdi());
+        case X86_REG_DI:  return static_cast<uint16_t>(regs.rdi());
+        case X86_REG_DIL: return static_cast<uint8_t>(regs.rdi() & 0xFF);
+
+        // RBP / EBP / BP / BPL
+        case X86_REG_RBP: return regs.rbp().value();
+        case X86_REG_EBP: return static_cast<uint32_t>(regs.rbp().value());
+        case X86_REG_BP:  return static_cast<uint16_t>(regs.rbp().value());
+        case X86_REG_BPL: return static_cast<uint8_t>(regs.rbp().value() & 0xFF);
+
+        // RSP / ESP / SP / SPL
+        case X86_REG_RSP: return regs.rsp().value();
+        case X86_REG_ESP: return static_cast<uint32_t>(regs.rsp().value());
+        case X86_REG_SP:  return static_cast<uint16_t>(regs.rsp().value());
+        case X86_REG_SPL: return static_cast<uint8_t>(regs.rsp().value() & 0xFF);
+
+        // R8
+        case X86_REG_R8:  return regs.r8();
+        case X86_REG_R8D: return static_cast<uint32_t>(regs.r8());
+        case X86_REG_R8W: return static_cast<uint16_t>(regs.r8());
+        case X86_REG_R8B: return static_cast<uint8_t>(regs.r8() & 0xFF);
+
+        // R9
+        case X86_REG_R9:  return regs.r9();
+        case X86_REG_R9D: return static_cast<uint32_t>(regs.r9());
+        case X86_REG_R9W: return static_cast<uint16_t>(regs.r9());
+        case X86_REG_R9B: return static_cast<uint8_t>(regs.r9() & 0xFF);
+
+        // R10
+        case X86_REG_R10:  return regs.r10();
+        case X86_REG_R10D: return static_cast<uint32_t>(regs.r10());
+        case X86_REG_R10W: return static_cast<uint16_t>(regs.r10());
+        case X86_REG_R10B: return static_cast<uint8_t>(regs.r10() & 0xFF);
+
+        // R11
+        case X86_REG_R11:  return regs.r11();
+        case X86_REG_R11D: return static_cast<uint32_t>(regs.r11());
+        case X86_REG_R11W: return static_cast<uint16_t>(regs.r11());
+        case X86_REG_R11B: return static_cast<uint8_t>(regs.r11() & 0xFF);
+
+        // R12
+        case X86_REG_R12:  return regs.r12();
+        case X86_REG_R12D: return static_cast<uint32_t>(regs.r12());
+        case X86_REG_R12W: return static_cast<uint16_t>(regs.r12());
+        case X86_REG_R12B: return static_cast<uint8_t>(regs.r12() & 0xFF);
+
+        // R13
+        case X86_REG_R13:  return regs.r13();
+        case X86_REG_R13D: return static_cast<uint32_t>(regs.r13());
+        case X86_REG_R13W: return static_cast<uint16_t>(regs.r13());
+        case X86_REG_R13B: return static_cast<uint8_t>(regs.r13() & 0xFF);
+
+        // R14
+        case X86_REG_R14:  return regs.r14();
+        case X86_REG_R14D: return static_cast<uint32_t>(regs.r14());
+        case X86_REG_R14W: return static_cast<uint16_t>(regs.r14());
+        case X86_REG_R14B: return static_cast<uint8_t>(regs.r14() & 0xFF);
+
+        // R15
+        case X86_REG_R15:  return regs.r15();
+        case X86_REG_R15D: return static_cast<uint32_t>(regs.r15());
+        case X86_REG_R15W: return static_cast<uint16_t>(regs.r15());
+        case X86_REG_R15B: return static_cast<uint8_t>(regs.r15() & 0xFF);
+
+        // RIP
         case X86_REG_RIP:
             return regs.rip().value();
         default:

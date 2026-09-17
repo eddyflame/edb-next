@@ -70,8 +70,6 @@ Result<Pid> LinuxDebugEngine::launch(
             }
         }
 
-        ::setpgid(0, 0);
-
         if (::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) {
             int err = errno;
             (void)::write(pipe_fd[1], &err, sizeof(err));
