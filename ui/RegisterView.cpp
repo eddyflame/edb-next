@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstring>
+#include <bit>
 
 namespace edb_next {
 
@@ -304,19 +305,21 @@ void RegisterView::updateFpDisplay() {
         itemHex->setFont(fpTable_->font());
 
         // 4x float
-        const float* f32 = reinterpret_cast<const float*>(bytes);
+        uint32_t u32[4];
+        std::memcpy(u32, bytes, sizeof(u32));
         QString floatStr = QString("[%1, %2, %3, %4]")
-            .arg(f32[0], 0, 'g', 4)
-            .arg(f32[1], 0, 'g', 4)
-            .arg(f32[2], 0, 'g', 4)
-            .arg(f32[3], 0, 'g', 4);
+            .arg(std::bit_cast<float>(u32[0]), 0, 'g', 4)
+            .arg(std::bit_cast<float>(u32[1]), 0, 'g', 4)
+            .arg(std::bit_cast<float>(u32[2]), 0, 'g', 4)
+            .arg(std::bit_cast<float>(u32[3]), 0, 'g', 4);
         auto* itemFloat = new QTableWidgetItem(floatStr);
 
         // 2x double
-        const double* f64 = reinterpret_cast<const double*>(bytes);
+        uint64_t u64[2];
+        std::memcpy(u64, bytes, sizeof(u64));
         QString doubleStr = QString("[%1, %2]")
-            .arg(f64[0], 0, 'g', 6)
-            .arg(f64[1], 0, 'g', 6);
+            .arg(std::bit_cast<double>(u64[0]), 0, 'g', 6)
+            .arg(std::bit_cast<double>(u64[1]), 0, 'g', 6);
         auto* itemDouble = new QTableWidgetItem(doubleStr);
 
         fpTable_->setItem(i, 0, itemName);

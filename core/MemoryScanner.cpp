@@ -84,10 +84,10 @@ size_t MemoryScanner::getDataTypeSize(ScanDataType type, const std::string& inpu
 
 namespace {
 
-template<typename T>
-T readVal(const std::vector<uint8_t>& buf) {
+template<typename T, typename Container>
+T readVal(const Container& buf) {
     if (buf.size() < sizeof(T)) return T{0};
-    T val;
+    T val{};
     std::memcpy(&val, buf.data(), sizeof(T));
     return val;
 }
@@ -321,7 +321,7 @@ size_t MemoryScanner::firstScan(LinuxDebugEngine& engine, const ScanOptions& opt
             for (size_t i = 0; i < validLimit; i += align) {
                 Address curAddr = chunkAddr + i;
                 bool match = false;
-                std::vector<uint8_t> valBytes(buffer.begin() + i, buffer.begin() + i + dataSize);
+                std::span<const uint8_t> valBytes(buffer.data() + i, dataSize);
 
                 if (options.compareType == ScanCompareType::UnknownInitialValue) {
                     match = true;
@@ -381,8 +381,8 @@ size_t MemoryScanner::firstScan(LinuxDebugEngine& engine, const ScanOptions& opt
                 if (match) {
                     ScanResult res;
                     res.address = curAddr;
-                    res.previousValue = valBytes;
-                    res.currentValue = valBytes;
+                    res.previousValue = SmallBuffer(valBytes);
+                    res.currentValue = SmallBuffer(valBytes);
                     results_.push_back(std::move(res));
 
                     if (results_.size() >= options.maxResults) {
