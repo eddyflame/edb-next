@@ -24,6 +24,7 @@ public:
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
     void jumpToMemoryRequested(Address addr);
+    void jumpToStackRequested(Address addr);
 
 private Q_SLOTS:
     void onCellDoubleClicked(int row, int column);
