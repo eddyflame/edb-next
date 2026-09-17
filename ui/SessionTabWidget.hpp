@@ -26,6 +26,7 @@
 #include "SourceView.hpp"
 #include "ScriptConsoleView.hpp"
 #include "MemoryScannerView.hpp"
+#include "TypeViewer.hpp"
 #include "core/TraceEngine.hpp"
 #include <QWidget>
 #include <QSplitter>
@@ -74,6 +75,7 @@ public:
     OpcodeSearcherView* opcodeSearcherView() const noexcept { return opcodeSearcherView_; }
     ScriptConsoleView* scriptConsoleView() const noexcept { return scriptConsoleView_; }
     MemoryScannerView* memoryScannerView() const noexcept { return memScannerView_; }
+    TypeViewer* typeViewer() const noexcept { return typeViewer_; }
     TraceEngine& traceEngine() noexcept { return traceEngine_; }
 
     QTabWidget* bottomTabs() const noexcept { return bottomTabs_; }
@@ -126,6 +128,7 @@ private:
     OpcodeSearcherView* opcodeSearcherView_{nullptr};
     ScriptConsoleView* scriptConsoleView_{nullptr};
     MemoryScannerView* memScannerView_{nullptr};
+    TypeViewer* typeViewer_{nullptr};
 };
 
 } // namespace edb_next

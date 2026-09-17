@@ -26,6 +26,7 @@
 #include "ScriptEngineManager.hpp"
 #include "RendezvousManager.hpp"
 #include "MemoryScanner.hpp"
+#include "TypeManager.hpp"
 
 namespace edb_next {
 
@@ -207,6 +208,8 @@ public:
     [[nodiscard]] const ScriptEngineManager& scriptEngines() const noexcept { return scriptEngines_; }
     [[nodiscard]] MemoryScanner& memoryScanner() noexcept { return memoryScanner_; }
     [[nodiscard]] const MemoryScanner& memoryScanner() const noexcept { return memoryScanner_; }
+    [[nodiscard]] TypeManager& typeManager() noexcept { return typeMgr_; }
+    [[nodiscard]] const TypeManager& typeManager() const noexcept { return typeMgr_; }
 
 Q_SIGNALS:
     void stateChanged(edb_next::SessionState state);
@@ -244,6 +247,7 @@ private:
     AnnotationManager annotations_;
     ScriptEngineManager scriptEngines_;
     MemoryScanner memoryScanner_;
+    TypeManager typeMgr_;
 
     RegisterContext currentRegs_;
     RegisterContext previousRegs_;

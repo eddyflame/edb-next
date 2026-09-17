@@ -4,6 +4,7 @@
 #include "core/StateDumper.hpp"
 #include "core/LogManager.hpp"
 #include "core/MemoryScanner.hpp"
+#include "core/TypeManager.hpp"
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QCompleter>
@@ -939,7 +940,98 @@ void CommandBarView::setupDefaultCommands() {
         Q_EMIT outputLogged("Memory scanner reset.", false);
     }, "scanreset - Reset memory scanner and clear candidate list");
 
-    // 9. Scripting: py, lua
+    // 9. Type Viewer / Struct commands: structs, struct, defstruct
+    registerCommand("structs", [this](const std::vector<std::string>&) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        const auto& typeMgr = session_->typeManager();
+        auto names = typeMgr.structNames();
+        if (names.empty()) {
+            Q_EMIT outputLogged("No registered structs.", false);
+            return;
+        }
+        QString out = QString("Registered Structs (%1):\n").arg(names.size());
+        for (const auto& name : names) {
+            const auto* def = typeMgr.findStruct(name);
+            if (def) {
+                out += QString("  struct %1 (size: %2 bytes, align: %3, fields: %4)\n")
+                           .arg(QString::fromStdString(name))
+                           .arg(def->totalSize)
+                           .arg(def->alignment)
+                           .arg(def->fields.size());
+            }
+        }
+        Q_EMIT outputLogged(out, false);
+    }, "structs - List all registered struct types");
+
+    registerCommand("struct", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.size() < 2) {
+            Q_EMIT outputLogged("Usage: struct <name> <addr_or_expr>", true);
+            return;
+        }
+        std::string sname = args[0];
+        std::string expr = args[1];
+        auto res = ExpressionEvaluator::evaluate(expr, session_->registers(), nullptr);
+        if (!res.has_value()) {
+            Q_EMIT outputLogged(QString("Failed to evaluate address expression: %1").arg(QString::fromStdString(expr)), true);
+            return;
+        }
+        Address baseAddr(*res);
+        auto evalOpt = session_->typeManager().evaluate(sname, baseAddr, session_->engine());
+        if (!evalOpt.has_value()) {
+            Q_EMIT outputLogged(QString("Failed to evaluate struct '%1' at %2 (struct not found or read memory failed)").arg(QString::fromStdString(sname), QString::fromStdString(baseAddr.toHex())), true);
+            return;
+        }
+        const auto& eval = *evalOpt;
+        QString out = QString("struct %1 @ %2 (size %3):\n")
+                          .arg(QString::fromStdString(eval.structName))
+                          .arg(QString::fromStdString(eval.baseAddress.toHex()))
+                          .arg(eval.totalSize);
+        for (const auto& f : eval.fields) {
+            QString hexStr;
+            for (auto b : f.rawBytes) {
+                hexStr += QString("%1 ").arg(b, 2, 16, QChar('0'));
+            }
+            out += QString("  +0x%1 : %2 %3 [%4] = %5\n")
+                       .arg(f.offset, 3, 16, QChar('0'))
+                       .arg(QString::fromStdString(f.typeName), -12)
+                       .arg(QString::fromStdString(f.name), -16)
+                       .arg(hexStr.trimmed(), -18)
+                       .arg(QString::fromStdString(f.formattedValue));
+        }
+        Q_EMIT outputLogged(out, false);
+    }, "struct <name> <addr> - Evaluate and print struct fields at memory address");
+
+    registerCommand("defstruct", [this](const std::vector<std::string>& args) {
+        if (!session_) {
+            Q_EMIT outputLogged("No active session.", true);
+            return;
+        }
+        if (args.empty()) {
+            Q_EMIT outputLogged("Usage: defstruct <C struct declaration>", true);
+            return;
+        }
+        std::string cCode;
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) cCode += " ";
+            cCode += args[i];
+        }
+        std::string err;
+        bool ok = session_->typeManager().parseAndRegister(cCode, &err);
+        if (ok) {
+            Q_EMIT outputLogged("Struct registered successfully.", false);
+        } else {
+            Q_EMIT outputLogged(QString("Error parsing struct: %1").arg(QString::fromStdString(err)), true);
+        }
+    }, "defstruct <c_code...> - Define and register a new C struct type");
+
+    // 10. Scripting: py, lua
     registerCommand("py", [](const std::vector<std::string>&) {}, "py <code...> - Execute Python 3 script statement or expression");
     registerCommand("lua", [](const std::vector<std::string>&) {}, "lua <code...> - Execute Lua 5.4 script statement or expression");
 

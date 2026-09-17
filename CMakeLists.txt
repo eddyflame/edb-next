@@ -80,6 +80,7 @@ set(CORE_SOURCES
     core/LuaScriptEngine.cpp
     core/ScriptEngineManager.cpp
     core/MemoryScanner.cpp
+    core/TypeManager.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -129,6 +130,7 @@ set(UI_SOURCES
     ui/OpcodeSearcherView.cpp
     ui/StackView.cpp
     ui/MemoryScannerView.cpp
+    ui/TypeViewer.cpp
     ui/MainWindow.cpp
 )
 

@@ -17,6 +17,8 @@
 #include "ui/ThreadsView.hpp"
 #include "core/MemoryScanner.hpp"
 #include "ui/MemoryScannerView.hpp"
+#include "core/TypeManager.hpp"
+#include "ui/TypeViewer.hpp"
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -1189,6 +1191,177 @@ void test_memory_scanner() {
     std::cout << "[PASS] Differential Memory Scanner test passed cleanly." << std::endl;
 }
 
+void test_type_viewer() {
+    std::cout << "\n>>> Testing Type Viewer and Struct Layout Visualizer (P2-3)..." << std::endl;
+
+    // 1. Test Static C Struct Parsing & Layout Calculation
+    std::string cCode = R"(
+        struct Player {
+            char id;
+            short level;
+            int health;
+            long score;
+            void* target;
+            float speed;
+            double mana;
+            char name[16];
+        };
+    )";
+
+    std::string err;
+    auto defOpt = TypeManager::parseCStruct(cCode, &err);
+    assert(defOpt.has_value() && "Parsing C struct Player should succeed");
+    const auto& def = *defOpt;
+
+    assert(def.name == "Player");
+    assert(def.fields.size() == 8);
+
+    // Verify offsets & alignment
+    // id (char: size 1, offset 0)
+    assert(def.fields[0].name == "id");
+    assert(def.fields[0].offset == 0);
+    assert(def.fields[0].size == 1);
+
+    // level (short: size 2, offset 2 due to 2-byte alignment)
+    assert(def.fields[1].name == "level");
+    assert(def.fields[1].offset == 2);
+    assert(def.fields[1].size == 2);
+
+    // health (int: size 4, offset 4)
+    assert(def.fields[2].name == "health");
+    assert(def.fields[2].offset == 4);
+    assert(def.fields[2].size == 4);
+
+    // score (long: size 8, offset 8)
+    assert(def.fields[3].name == "score");
+    assert(def.fields[3].offset == 8);
+    assert(def.fields[3].size == 8);
+
+    // target (void*: size 8, offset 16)
+    assert(def.fields[4].name == "target");
+    assert(def.fields[4].offset == 16);
+    assert(def.fields[4].size == 8);
+    assert(def.fields[4].isPointer);
+
+    // speed (float: size 4, offset 24)
+    assert(def.fields[5].name == "speed");
+    assert(def.fields[5].offset == 24);
+    assert(def.fields[5].size == 4);
+
+    // mana (double: size 8, offset 32 due to 8-byte alignment)
+    assert(def.fields[6].name == "mana");
+    assert(def.fields[6].offset == 32);
+    assert(def.fields[6].size == 8);
+
+    // name (char[16]: size 16, offset 40)
+    assert(def.fields[7].name == "name");
+    assert(def.fields[7].offset == 40);
+    assert(def.fields[7].size == 16);
+    assert(def.fields[7].arrayCount == 16);
+
+    // Total size: 56 bytes, alignment: 8
+    assert(def.totalSize == 56);
+    assert(def.alignment == 8);
+
+    // 2. Test Default Types in TypeManager
+    TypeManager mgr;
+    mgr.registerDefaultTypes();
+    assert(mgr.findStruct("timespec") != nullptr);
+    assert(mgr.findStruct("timeval") != nullptr);
+    assert(mgr.findStruct("sockaddr_in") != nullptr);
+    assert(mgr.findStruct("list_head") != nullptr);
+    assert(mgr.findStruct("io_vec") != nullptr);
+
+    const auto* ts = mgr.findStruct("timespec");
+    assert(ts->totalSize == 16);
+    assert(ts->fields.size() == 2);
+    assert(ts->fields[0].name == "tv_sec" && ts->fields[0].offset == 0);
+    assert(ts->fields[1].name == "tv_nsec" && ts->fields[1].offset == 8);
+
+    // 3. Test Live Target Session Memory Evaluation
+    auto session = std::make_shared<DebugSession>("test_type_session", "TypeSession");
+    bool launched = session->launch(getTestTargetPath(), {});
+    assert(launched && "Failed to launch test target");
+
+    session->typeManager().registerStruct(def);
+
+    auto page = session->allocateMemory(4096, PROT_READ | PROT_WRITE);
+    assert(page.has_value() && "Remote memory allocation should succeed");
+    Address pageAddr = *page;
+
+    // Pack binary representation of Player struct
+    std::vector<uint8_t> buffer(56, 0);
+    int8_t id = 42;
+    int16_t level = 100;
+    int32_t health = 2500;
+    int64_t score = 9876543210LL;
+    uint64_t target = 0xdeadbeefcafebabeULL;
+    float speed = 12.5f;
+    double mana = 100.25;
+    char name[16] = "TestHero";
+
+    std::memcpy(buffer.data() + 0, &id, sizeof(id));
+    std::memcpy(buffer.data() + 2, &level, sizeof(level));
+    std::memcpy(buffer.data() + 4, &health, sizeof(health));
+    std::memcpy(buffer.data() + 8, &score, sizeof(score));
+    std::memcpy(buffer.data() + 16, &target, sizeof(target));
+    std::memcpy(buffer.data() + 24, &speed, sizeof(speed));
+    std::memcpy(buffer.data() + 32, &mana, sizeof(mana));
+    std::memcpy(buffer.data() + 40, name, sizeof(name));
+
+    assert(session->writeMemory(pageAddr, buffer.data(), buffer.size()));
+
+    // Evaluate live memory
+    auto evalOpt = session->typeManager().evaluate("Player", pageAddr, session->engine());
+    assert(evalOpt.has_value() && "Evaluation of struct Player should succeed");
+    const auto& eval = *evalOpt;
+    assert(eval.structName == "Player");
+    assert(eval.baseAddress == pageAddr);
+    assert(eval.totalSize == 56);
+    assert(eval.fields.size() == 8);
+
+    // Check evaluated formatted fields
+    assert(eval.fields[0].formattedValue.find("42") != std::string::npos);
+    assert(eval.fields[1].formattedValue.find("100") != std::string::npos);
+    assert(eval.fields[2].formattedValue.find("2500") != std::string::npos);
+    assert(eval.fields[3].formattedValue.find("9876543210") != std::string::npos);
+    assert(eval.fields[4].formattedValue.find("deadbeefcafebabe") != std::string::npos);
+    assert(eval.fields[4].pointerTarget == target);
+    assert(eval.fields[5].formattedValue.find("12.5") != std::string::npos);
+    assert(eval.fields[6].formattedValue.find("100.25") != std::string::npos);
+    assert(eval.fields[7].formattedValue.find("TestHero") != std::string::npos);
+
+    // 4. Test UI TypeViewer Component
+    TypeViewer tv;
+    tv.setSession(session);
+    tv.setInspectAddress(pageAddr);
+    tv.refresh();
+
+    // 5. Test CommandBar CLI commands
+    CommandBarView cmdBar;
+    cmdBar.setSession(session);
+    QString capturedLog;
+    QObject::connect(&cmdBar, &CommandBarView::outputLogged, [&](const QString& msg, bool) {
+        capturedLog = msg;
+    });
+
+    cmdBar.executeCommand("structs");
+    assert(capturedLog.contains("Registered Structs"));
+    assert(capturedLog.contains("Player"));
+
+    cmdBar.executeCommand(QString("struct Player %1").arg(QString::fromStdString(pageAddr.toHex())));
+    assert(capturedLog.contains("TestHero"));
+    assert(capturedLog.contains("deadbeefcafebabe"));
+
+    cmdBar.executeCommand("defstruct struct TestNode { int node_val; void* next; };");
+    assert(capturedLog.contains("Struct registered successfully"));
+    assert(session->typeManager().findStruct("TestNode") != nullptr);
+
+    // Clean up
+    session->terminate();
+    std::cout << "[PASS] Type Viewer and Struct Layout Visualizer test passed cleanly." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1213,6 +1386,7 @@ int main(int argc, char* argv[]) {
     test_follow_fork_mode();
     test_thread_freeze_thaw();
     test_memory_scanner();
+    test_type_viewer();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;
