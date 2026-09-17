@@ -43,6 +43,7 @@ Q_SIGNALS:
     void breakpointToggled(Address addr);
     void instructionInspected(const QString& summary);
     void jumpToMemoryRequested(Address addr);
+    void jumpToStackRequested(Address addr);
 
 private Q_SLOTS:
     void handleCellDoubleClicked(int row, int col);

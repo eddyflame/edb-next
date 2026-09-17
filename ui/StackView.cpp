@@ -158,6 +158,7 @@ void StackView::updateTable() {
 
     Address cur_rsp = session_->registers().rsp();
     Address cur_rbp = session_->registers().rbp();
+    auto regions = session_->memoryRegions();
 
     constexpr int kRowCount = 64; // Display 64 QWORDs (512 bytes of stack)
     table_->setRowCount(kRowCount);
@@ -169,6 +170,38 @@ void StackView::updateTable() {
         auto optVal = session_->read<uint64_t>(saddr);
         bool read_ok = optVal.has_value();
         uint64_t val = optVal.value_or(0);
+        Address val_addr(val);
+
+        // Check if value points to executable module memory following a call instruction (Return Address)
+        bool is_return_addr = false;
+        if (read_ok && val != 0) {
+            for (const auto& r : regions) {
+                if (r.contains(val_addr) && r.isExecutable()) {
+                    if (val_addr.value() >= 7) {
+                        auto preBytes = session_->readMemory(val_addr - 7, 7);
+                        if (preBytes.size() == 7) {
+                            // Direct call: E8 xx xx xx xx -> byte at offset 2 (val_addr - 5) is 0xE8
+                            if (preBytes[2] == 0xe8) {
+                                is_return_addr = true;
+                            }
+                            // Indirect call reg/mem: FF /2 -> byte at offset 5 is 0xFF and reg field is 2
+                            else if (preBytes[5] == 0xff && ((preBytes[6] >> 3) & 7) == 2) {
+                                is_return_addr = true;
+                            }
+                            // Indirect call with disp8: FF /2
+                            else if (preBytes[4] == 0xff && ((preBytes[5] >> 3) & 7) == 2) {
+                                is_return_addr = true;
+                            }
+                            // Indirect call rip-relative disp32: FF 15 xx xx xx xx -> byte at offset 1 is 0xFF
+                            else if (preBytes[1] == 0xff && ((preBytes[2] >> 3) & 7) == 2) {
+                                is_return_addr = true;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
 
         // 1. Address Item
         auto* item_addr = new QTableWidgetItem(saddr.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
@@ -179,7 +212,12 @@ void StackView::updateTable() {
         QString val_str = read_ok ? QString("0x%1").arg(static_cast<qulonglong>(val), 16, 16, QChar('0')) : "????????????????";
         auto* item_val = new QTableWidgetItem(val_str);
         if (read_ok) {
-            if (val == 0) {
+            if (is_return_addr) {
+                item_val->setForeground(QBrush(QColor("#ffb74d"))); // Amber for return address
+                QFont bfont = item_val->font();
+                bfont.setBold(true);
+                item_val->setFont(bfont);
+            } else if (val == 0) {
                 item_val->setForeground(QBrush(QColor("#777777")));
             } else {
                 item_val->setForeground(QBrush(QColor("#50fa7b"))); // Emerald green
@@ -247,8 +285,23 @@ void StackView::updateTable() {
             }
         }
 
+        if (is_return_addr) {
+            if (comment_str.isEmpty()) {
+                comment_str = "[Return Address]";
+            } else {
+                comment_str = QString("[Return Address] %1").arg(comment_str);
+            }
+        }
+
         auto* item_comment = new QTableWidgetItem(comment_str);
-        item_comment->setForeground(QBrush(QColor("#8be9fd")));
+        if (is_return_addr) {
+            item_comment->setForeground(QBrush(QColor("#ffb74d"))); // Amber
+            QFont bfont = item_comment->font();
+            bfont.setBold(true);
+            item_comment->setFont(bfont);
+        } else {
+            item_comment->setForeground(QBrush(QColor("#8be9fd")));
+        }
 
         // Highlight RSP row
         if (saddr == cur_rsp) {
@@ -312,13 +365,34 @@ void StackView::onCustomContextMenuRequested(const QPoint& pos) {
 
     auto* act_follow_disasm = menu.addAction("Follow Value in Disassembly");
     auto* act_follow_dump = menu.addAction("Follow Value in Dump");
+    auto* act_follow_stack = menu.addAction("Follow Value in Stack");
     menu.addSeparator();
     auto* act_follow_saddr_dump = menu.addAction("Follow Stack Address in Dump");
+    auto* act_follow_saddr_disasm = menu.addAction("Follow Stack Address in Disassembly");
     auto* act_modify_val = menu.addAction("Modify Stack Value (QWORD)...");
     menu.addSeparator();
-    auto* act_copy_addr = menu.addAction("Copy Address");
-    auto* act_copy_val = menu.addAction("Copy Value");
-    auto* act_copy_row = menu.addAction("Copy Row");
+
+    auto* copyMenu = menu.addMenu("Copy");
+    copyMenu->addAction("Copy Address", [item_addr] {
+        QApplication::clipboard()->setText(item_addr->text());
+    });
+    copyMenu->addAction("Copy Value (Hex)", [item_val] {
+        QApplication::clipboard()->setText(item_val->text());
+    });
+    copyMenu->addAction("Copy Value (Unsigned Dec)", [val] {
+        QApplication::clipboard()->setText(QString::number(val));
+    });
+    copyMenu->addAction("Copy Value (Signed Dec)", [val] {
+        QApplication::clipboard()->setText(QString::number(static_cast<int64_t>(val)));
+    });
+    copyMenu->addAction("Copy Row", [this, row] {
+        QString row_text = QString("%1\t%2\t%3\t%4")
+                           .arg(table_->item(row, 0)->text())
+                           .arg(table_->item(row, 1)->text())
+                           .arg(table_->item(row, 2)->text())
+                           .arg(table_->item(row, 3)->text());
+        QApplication::clipboard()->setText(row_text);
+    });
     menu.addSeparator();
     auto* act_sync_rsp = menu.addAction("Sync to RSP");
     auto* act_goto = menu.addAction("Go to Address...");
@@ -329,24 +403,19 @@ void StackView::onCustomContextMenuRequested(const QPoint& pos) {
     connect(act_follow_dump, &QAction::triggered, this, [this, val_addr] {
         if (!val_addr.isNull()) Q_EMIT jumpToMemoryRequested(val_addr);
     });
+    connect(act_follow_stack, &QAction::triggered, this, [this, val_addr] {
+        if (!val_addr.isNull()) {
+            setBaseAddress(val_addr);
+            Q_EMIT jumpToStackRequested(val_addr);
+        }
+    });
     connect(act_follow_saddr_dump, &QAction::triggered, this, [this, saddr] {
         Q_EMIT jumpToMemoryRequested(saddr);
     });
+    connect(act_follow_saddr_disasm, &QAction::triggered, this, [this, saddr] {
+        Q_EMIT jumpToDisassemblyRequested(saddr);
+    });
     connect(act_modify_val, &QAction::triggered, this, &StackView::onModifyValueClicked);
-    connect(act_copy_addr, &QAction::triggered, this, [item_addr] {
-        QApplication::clipboard()->setText(item_addr->text());
-    });
-    connect(act_copy_val, &QAction::triggered, this, [item_val] {
-        QApplication::clipboard()->setText(item_val->text());
-    });
-    connect(act_copy_row, &QAction::triggered, this, [this, row] {
-        QString row_text = QString("%1\t%2\t%3\t%4")
-                           .arg(table_->item(row, 0)->text())
-                           .arg(table_->item(row, 1)->text())
-                           .arg(table_->item(row, 2)->text())
-                           .arg(table_->item(row, 3)->text());
-        QApplication::clipboard()->setText(row_text);
-    });
     connect(act_sync_rsp, &QAction::triggered, this, &StackView::onSyncToRspClicked);
     connect(act_goto, &QAction::triggered, this, &StackView::onGotoAddressClicked);
 

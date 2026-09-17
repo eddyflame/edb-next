@@ -438,6 +438,30 @@ void RegisterView::handleFpDoubleClicked(int row, int /*col*/) {
     }
 }
 
+namespace {
+
+static void setNamedGpr(RegisterContext& regs, const QString& regName, uint64_t newVal) {
+    if (regName == "RAX") regs.raw().rax = newVal;
+    else if (regName == "RBX") regs.raw().rbx = newVal;
+    else if (regName == "RCX") regs.raw().rcx = newVal;
+    else if (regName == "RDX") regs.raw().rdx = newVal;
+    else if (regName == "RSI") regs.raw().rsi = newVal;
+    else if (regName == "RDI") regs.raw().rdi = newVal;
+    else if (regName == "RBP") regs.raw().rbp = newVal;
+    else if (regName == "RSP") regs.raw().rsp = newVal;
+    else if (regName == "RIP") regs.raw().rip = newVal;
+    else if (regName == "R8")  regs.raw().r8 = newVal;
+    else if (regName == "R9")  regs.raw().r9 = newVal;
+    else if (regName == "R10") regs.raw().r10 = newVal;
+    else if (regName == "R11") regs.raw().r11 = newVal;
+    else if (regName == "R12") regs.raw().r12 = newVal;
+    else if (regName == "R13") regs.raw().r13 = newVal;
+    else if (regName == "R14") regs.raw().r14 = newVal;
+    else if (regName == "R15") regs.raw().r15 = newVal;
+}
+
+} // namespace
+
 void RegisterView::handleGprContextMenu(const QPoint& pos) {
     int row = gprTable_->currentRow();
     if (row < 0 || row >= gprTable_->rowCount()) return;
@@ -462,32 +486,38 @@ void RegisterView::handleGprContextMenu(const QPoint& pos) {
         Q_EMIT jumpToMemoryRequested(regAddr);
     });
 
+    menu.addAction(QString("Follow %1 (%2) in Stack").arg(regName, QString::fromStdString(regAddr.toHex())), [this, regAddr]() {
+        Q_EMIT jumpToStackRequested(regAddr);
+    });
+
     menu.addSeparator();
 
     menu.addAction("Modify Value...", [this, row]() {
         handleGprDoubleClicked(row, 1);
     });
 
+    menu.addAction("Increment (+1)", [this, regName, val]() {
+        if (auto s = session_.lock()) {
+            auto regs = s->registers();
+            setNamedGpr(regs, regName, val + 1);
+            s->setRegisters(regs);
+            refresh();
+        }
+    });
+
+    menu.addAction("Decrement (-1)", [this, regName, val]() {
+        if (auto s = session_.lock()) {
+            auto regs = s->registers();
+            setNamedGpr(regs, regName, val - 1);
+            s->setRegisters(regs);
+            refresh();
+        }
+    });
+
     menu.addAction("Zero Register (Set to 0)", [this, regName]() {
         if (auto s = session_.lock()) {
             auto regs = s->registers();
-            if (regName == "RAX") regs.raw().rax = 0;
-            else if (regName == "RBX") regs.raw().rbx = 0;
-            else if (regName == "RCX") regs.raw().rcx = 0;
-            else if (regName == "RDX") regs.raw().rdx = 0;
-            else if (regName == "RSI") regs.raw().rsi = 0;
-            else if (regName == "RDI") regs.raw().rdi = 0;
-            else if (regName == "RBP") regs.raw().rbp = 0;
-            else if (regName == "RSP") regs.raw().rsp = 0;
-            else if (regName == "RIP") regs.raw().rip = 0;
-            else if (regName == "R8")  regs.raw().r8 = 0;
-            else if (regName == "R9")  regs.raw().r9 = 0;
-            else if (regName == "R10") regs.raw().r10 = 0;
-            else if (regName == "R11") regs.raw().r11 = 0;
-            else if (regName == "R12") regs.raw().r12 = 0;
-            else if (regName == "R13") regs.raw().r13 = 0;
-            else if (regName == "R14") regs.raw().r14 = 0;
-            else if (regName == "R15") regs.raw().r15 = 0;
+            setNamedGpr(regs, regName, 0);
             s->setRegisters(regs);
             refresh();
         }
@@ -496,24 +526,7 @@ void RegisterView::handleGprContextMenu(const QPoint& pos) {
     menu.addAction("Toggle Value (~val)", [this, regName, val]() {
         if (auto s = session_.lock()) {
             auto regs = s->registers();
-            uint64_t newVal = ~val;
-            if (regName == "RAX") regs.raw().rax = newVal;
-            else if (regName == "RBX") regs.raw().rbx = newVal;
-            else if (regName == "RCX") regs.raw().rcx = newVal;
-            else if (regName == "RDX") regs.raw().rdx = newVal;
-            else if (regName == "RSI") regs.raw().rsi = newVal;
-            else if (regName == "RDI") regs.raw().rdi = newVal;
-            else if (regName == "RBP") regs.raw().rbp = newVal;
-            else if (regName == "RSP") regs.raw().rsp = newVal;
-            else if (regName == "RIP") regs.raw().rip = newVal;
-            else if (regName == "R8")  regs.raw().r8 = newVal;
-            else if (regName == "R9")  regs.raw().r9 = newVal;
-            else if (regName == "R10") regs.raw().r10 = newVal;
-            else if (regName == "R11") regs.raw().r11 = newVal;
-            else if (regName == "R12") regs.raw().r12 = newVal;
-            else if (regName == "R13") regs.raw().r13 = newVal;
-            else if (regName == "R14") regs.raw().r14 = newVal;
-            else if (regName == "R15") regs.raw().r15 = newVal;
+            setNamedGpr(regs, regName, ~val);
             s->setRegisters(regs);
             refresh();
         }
@@ -521,10 +534,17 @@ void RegisterView::handleGprContextMenu(const QPoint& pos) {
 
     menu.addSeparator();
 
-    menu.addAction("Copy Value", [curHex]() {
+    auto* copyMenu = menu.addMenu("Copy");
+    copyMenu->addAction("Copy Hex Value", [curHex]() {
         QApplication::clipboard()->setText(curHex);
     });
-    menu.addAction("Copy Register Name", [regName]() {
+    copyMenu->addAction("Copy Unsigned Decimal", [val]() {
+        QApplication::clipboard()->setText(QString::number(val));
+    });
+    copyMenu->addAction("Copy Signed Decimal", [val]() {
+        QApplication::clipboard()->setText(QString::number(static_cast<int64_t>(val)));
+    });
+    copyMenu->addAction("Copy Register Name", [regName]() {
         QApplication::clipboard()->setText(regName);
     });
 

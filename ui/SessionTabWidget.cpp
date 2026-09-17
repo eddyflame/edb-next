@@ -291,6 +291,15 @@ void SessionTabWidget::setupUi() {
         multiDumpWidget_->jumpToAddress(addr);
         bottomTabs_->setCurrentWidget(multiDumpWidget_);
     });
+    connect(stackView_, &StackView::jumpToStackRequested, this, [this](Address addr) {
+        stackView_->setBaseAddress(addr);
+    });
+    connect(disasmView_, &DisassemblyView::jumpToStackRequested, this, [this](Address addr) {
+        stackView_->setBaseAddress(addr);
+    });
+    connect(regView_, &RegisterView::jumpToStackRequested, this, [this](Address addr) {
+        stackView_->setBaseAddress(addr);
+    });
 
     bottomSplitter_->addWidget(bottomTabs_);
     bottomSplitter_->addWidget(stackView_);

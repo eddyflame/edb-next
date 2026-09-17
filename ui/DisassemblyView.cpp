@@ -311,6 +311,9 @@ void DisassemblyView::setupUi() {
     auto* sc_runto = new QShortcut(QKeySequence("F4"), this);
     connect(sc_runto, &QShortcut::activated, this, &DisassemblyView::runToSelection);
 
+    auto* sc_origin = new QShortcut(QKeySequence("Ctrl+*"), this);
+    connect(sc_origin, &QShortcut::activated, this, &DisassemblyView::setOriginToSelection);
+
     auto* sc_comment = new QShortcut(QKeySequence(";"), this);
     connect(sc_comment, &QShortcut::activated, this, &DisassemblyView::editCommentPrompt);
 
@@ -870,6 +873,17 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
             Address memAddr = details.effectiveAddress;
             dumpSub->addAction(QString("Follow Memory Address (%1) in Dump").arg(QString::fromStdString(memAddr.toHex())), [this, memAddr]() {
                 Q_EMIT jumpToMemoryRequested(memAddr);
+            });
+        }
+
+        auto* stackSub = menu.addMenu("Follow in Stack");
+        stackSub->addAction(QString("Follow Selection (%1) in Stack").arg(QString::fromStdString(addr->toHex())), [this, addr]() {
+            Q_EMIT jumpToStackRequested(*addr);
+        });
+        if (details.hasMemoryOperand && !details.effectiveAddress.isNull()) {
+            Address memAddr = details.effectiveAddress;
+            stackSub->addAction(QString("Follow Memory Address (%1) in Stack").arg(QString::fromStdString(memAddr.toHex())), [this, memAddr]() {
+                Q_EMIT jumpToStackRequested(memAddr);
             });
         }
 
