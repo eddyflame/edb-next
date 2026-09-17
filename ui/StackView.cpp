@@ -1,4 +1,5 @@
 #include "StackView.hpp"
+#include "core/ConfigurationManager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -71,9 +72,12 @@ void StackView::setupUi() {
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
 
-    QFont mono_font("Monospace", 9);
-    mono_font.setStyleHint(QFont::TypeWriter);
-    table_->setFont(mono_font);
+    table_->setFont(ConfigurationManager::instance().appearance().stackFont);
+
+    connect(&ConfigurationManager::instance(), &ConfigurationManager::configurationChanged, this, [this]() {
+        table_->setFont(ConfigurationManager::instance().appearance().stackFont);
+        refresh();
+    });
     table_->horizontalHeader()->setFont(QFont("sans-serif", 8, QFont::Bold));
 
     table_->setColumnWidth(0, 145);
@@ -167,7 +171,7 @@ void StackView::updateTable() {
         uint64_t val = optVal.value_or(0);
 
         // 1. Address Item
-        auto* item_addr = new QTableWidgetItem(saddr.toQString());
+        auto* item_addr = new QTableWidgetItem(saddr.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
         item_addr->setForeground(QBrush(QColor("#70d0ff")));
         item_addr->setData(Qt::UserRole, QVariant::fromValue(static_cast<qulonglong>(saddr.value())));
 

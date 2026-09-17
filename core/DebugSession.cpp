@@ -845,6 +845,12 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
         return result;
     }
 
+    if (ConfigurationManager::instance().disasm().syntax == DisassemblySyntax::ATT) {
+        cs_option(cs_handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
+    } else {
+        cs_option(cs_handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_INTEL);
+    }
+
     size_t buffer_size = count * 15; // Max x86 instruction is 15 bytes
     std::vector<uint8_t> code(buffer_size, 0);
 
@@ -905,9 +911,16 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
                 }
             }
 
+            std::string mnem_str = insn[i].mnemonic;
+            if (ConfigurationManager::instance().disasm().uppercaseMnemonics) {
+                for (char& c : mnem_str) {
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                }
+            }
+
             result.push_back(DisassembledInstruction{
                 .address = addr,
-                .mnemonic = insn[i].mnemonic,
+                .mnemonic = std::move(mnem_str),
                 .operands = insn[i].op_str,
                 .bytes = std::move(insn_bytes),
                 .symbol = std::move(sym_str),
