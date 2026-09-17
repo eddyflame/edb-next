@@ -1,4 +1,5 @@
 #include "RegisterView.hpp"
+#include "core/ConfigurationManager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -110,6 +111,15 @@ void RegisterView::setupUi() {
     tabWidget_->addTab(fpTable_, "FPU / SSE (XMM)");
 
     mainLayout->addWidget(tabWidget_, 1);
+
+    gprTable_->setFont(ConfigurationManager::instance().appearance().registerFont);
+    fpTable_->setFont(ConfigurationManager::instance().appearance().registerFont);
+
+    connect(&ConfigurationManager::instance(), &ConfigurationManager::configurationChanged, this, [this]() {
+        gprTable_->setFont(ConfigurationManager::instance().appearance().registerFont);
+        fpTable_->setFont(ConfigurationManager::instance().appearance().registerFont);
+        refresh();
+    });
 
     connect(gprTable_, &QTableWidget::cellDoubleClicked, this, &RegisterView::handleGprDoubleClicked);
     connect(fpTable_, &QTableWidget::cellDoubleClicked, this, &RegisterView::handleFpDoubleClicked);
@@ -256,7 +266,7 @@ void RegisterView::updateGprDisplay() {
 
         auto* item_dec = new QTableWidgetItem(QString::number(item_data.value));
 
-        if (item_data.modified) {
+        if (item_data.modified && ConfigurationManager::instance().appearance().highlightChangedRegisters) {
             QColor change_color(230, 80, 80);
             item_name->setForeground(change_color);
             item_hex->setForeground(change_color);

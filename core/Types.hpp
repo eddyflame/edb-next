@@ -65,12 +65,23 @@ public:
     [[nodiscard]] constexpr uint64_t value() const noexcept { return value_; }
     [[nodiscard]] constexpr bool isNull() const noexcept { return value_ == 0; }
 
-    [[nodiscard]] std::string toHex(bool prefix = true) const {
+    [[nodiscard]] std::string toHex(bool prefix = true, bool colon = false) const {
+        if (colon) {
+            uint32_t hi = static_cast<uint32_t>(value_ >> 32);
+            uint32_t lo = static_cast<uint32_t>(value_ & 0xffffffffULL);
+            return prefix ? std::format("0x{:08x}:{:08x}", hi, lo) : std::format("{:08x}:{:08x}", hi, lo);
+        }
         return prefix ? std::format("0x{:016x}", value_) : std::format("{:016x}", value_);
     }
 
 #if __has_include(<QString>)
-    [[nodiscard]] QString toQString(bool prefix = true) const {
+    [[nodiscard]] QString toQString(bool prefix = true, bool colon = false) const {
+        if (colon) {
+            uint32_t hi = static_cast<uint32_t>(value_ >> 32);
+            uint32_t lo = static_cast<uint32_t>(value_ & 0xffffffffULL);
+            return prefix ? QString::asprintf("0x%08x:%08x", hi, lo)
+                          : QString::asprintf("%08x:%08x", hi, lo);
+        }
         return prefix ? QString::asprintf("0x%016llx", static_cast<unsigned long long>(value_))
                       : QString::asprintf("%016llx", static_cast<unsigned long long>(value_));
     }

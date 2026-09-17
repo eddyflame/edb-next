@@ -1,5 +1,6 @@
 #include "DisassemblyView.hpp"
 #include "XRefDialog.hpp"
+#include "core/ConfigurationManager.hpp"
 #include <QHeaderView>
 #include <QFontDatabase>
 #include <QMenu>
@@ -39,9 +40,14 @@ void DisassemblyView::setupUi() {
     verticalHeader()->setVisible(false);
     verticalHeader()->setDefaultSectionSize(22);
 
-    QFont monoFont("Monospace", 9);
-    monoFont.setStyleHint(QFont::Monospace);
-    setFont(monoFont);
+    setFont(ConfigurationManager::instance().appearance().disasmFont);
+    setColumnHidden(2, !ConfigurationManager::instance().disasm().showBytesInHex);
+
+    connect(&ConfigurationManager::instance(), &ConfigurationManager::configurationChanged, this, [this]() {
+        setFont(ConfigurationManager::instance().appearance().disasmFont);
+        setColumnHidden(2, !ConfigurationManager::instance().disasm().showBytesInHex);
+        refresh();
+    });
 
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QTableWidget::customContextMenuRequested, this, &DisassemblyView::handleCustomContextMenu);
@@ -228,7 +234,7 @@ void DisassemblyView::refresh() {
         }
 
         // Column 1: Address
-        auto* item_addr = new QTableWidgetItem(insn.address.toQString());
+        auto* item_addr = new QTableWidgetItem(insn.address.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
 
         // Column 2: Bytes
         QString bytes_str;

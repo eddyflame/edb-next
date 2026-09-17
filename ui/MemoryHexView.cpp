@@ -1,4 +1,5 @@
 #include "MemoryHexView.hpp"
+#include "core/ConfigurationManager.hpp"
 #include <QHeaderView>
 #include <QFontDatabase>
 #include <QInputDialog>
@@ -45,9 +46,12 @@ void MemoryHexView::setupUi() {
     verticalHeader()->setVisible(false);
     setShowGrid(false);
 
-    QFont mono_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    mono_font.setPointSize(9);
-    setFont(mono_font);
+    setFont(ConfigurationManager::instance().appearance().hexDumpFont);
+
+    connect(&ConfigurationManager::instance(), &ConfigurationManager::configurationChanged, this, [this]() {
+        setFont(ConfigurationManager::instance().appearance().hexDumpFont);
+        refresh();
+    });
 
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested, this, &MemoryHexView::handleCustomContextMenu);
@@ -95,7 +99,7 @@ void MemoryHexView::refresh() {
         Address row_addr = baseAddress_ + (r * 16);
 
         // Address
-        auto* item_addr = new QTableWidgetItem(row_addr.toQString());
+        auto* item_addr = new QTableWidgetItem(row_addr.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
         item_addr->setForeground(QColor(100, 150, 200));
         setItem(static_cast<int>(r), 0, item_addr);
 
