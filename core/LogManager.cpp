@@ -13,10 +13,8 @@ std::string LogEntry::formatTime() const {
     std::tm bt{};
     localtime_r(&in_time_t, &bt);
 
-    std::ostringstream ss;
-    ss << std::put_time(&bt, "%H:%M:%S")
-       << '.' << std::setfill('0') << std::setw(3) << ms.count();
-    return ss.str();
+    return std::format("{:02d}:{:02d}:{:02d}.{:03d}",
+                       bt.tm_hour, bt.tm_min, bt.tm_sec, static_cast<int>(ms.count()));
 }
 
 std::string LogEntry::levelString() const {

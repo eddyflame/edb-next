@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <string_view>
+#include <format>
 #include <vector>
 #include <mutex>
 #include <functional>
@@ -44,6 +46,31 @@ public:
     void plugin(const std::string& category, const std::string& message);
     void cmd(const std::string& category, const std::string& message);
     void error(const std::string& category, const std::string& message);
+
+    template<typename... Args>
+    void info(std::string_view category, std::format_string<Args...> fmt, Args&&... args) {
+        info(std::string(category), std::format(fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void event(std::string_view category, std::format_string<Args...> fmt, Args&&... args) {
+        event(std::string(category), std::format(fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void bp(std::string_view category, std::format_string<Args...> fmt, Args&&... args) {
+        bp(std::string(category), std::format(fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void trace(std::string_view category, std::format_string<Args...> fmt, Args&&... args) {
+        trace(std::string(category), std::format(fmt, std::forward<Args>(args)...));
+    }
+
+    template<typename... Args>
+    void error(std::string_view category, std::format_string<Args...> fmt, Args&&... args) {
+        error(std::string(category), std::format(fmt, std::forward<Args>(args)...));
+    }
 
     [[nodiscard]] std::vector<LogEntry> entries() const;
     void clear();
