@@ -92,9 +92,9 @@ void ThreadsView::refresh() {
         auto* itemName = new QTableWidgetItem(QString::fromStdString(t.name));
         auto* itemState = new QTableWidgetItem(QString::fromStdString(t.state));
         auto* itemFrozen = new QTableWidgetItem(t.isFrozen ? "❄ FROZEN" : "-");
-        auto* itemRip = new QTableWidgetItem(QString::fromStdString(t.rip.toHex()));
+        auto* itemRip = new QTableWidgetItem(t.rip.toQString());
         auto* itemSym = new QTableWidgetItem(QString::fromStdString(t.symbol));
-        auto* itemRsp = new QTableWidgetItem(QString::fromStdString(t.rsp.toHex()));
+        auto* itemRsp = new QTableWidgetItem(t.rsp.toQString());
         auto* itemActive = new QTableWidgetItem(t.isActive ? "➔ ACTIVE" : "");
 
         itemTid->setTextAlignment(Qt::AlignCenter);

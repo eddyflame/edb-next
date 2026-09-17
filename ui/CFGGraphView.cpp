@@ -212,7 +212,7 @@ void CFGGraphView::layoutAndDrawBlocks(const std::vector<CFGBasicBlock>& blocks)
         // Title text item
         auto* title = new QGraphicsTextItem(box);
         title->setHtml(QString("<b style='color: #64b5f6;'>loc_%1:</b>")
-            .arg(QString::fromStdString(b.startAddr.toHex())));
+            .arg(b.startAddr.toQString()));
         title->setPos(x + 8, curY + 4);
         title->setFont(QFont("Monospace", 9));
 
@@ -225,7 +225,7 @@ void CFGGraphView::layoutAndDrawBlocks(const std::vector<CFGBasicBlock>& blocks)
             else if (insn.mnemonic == "ret") mColor = "#e57373";
 
             insnHtml += QString("<span style='color: #888;'>%1</span>  <span style='color: %2; font-weight: bold;'>%3</span> %4<br>")
-                .arg(QString::fromStdString(insn.address.toHex()))
+                .arg(insn.address.toQString())
                 .arg(mColor)
                 .arg(QString::fromStdString(insn.mnemonic))
                 .arg(QString::fromStdString(insn.operands).toHtmlEscaped());

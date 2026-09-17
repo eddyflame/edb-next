@@ -152,6 +152,7 @@ void MemoryScannerView::setupUi() {
     resultsTable_->setAlternatingRowColors(true);
     resultsTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     resultsTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+    resultsTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     resultsTable_->setContextMenuPolicy(Qt::CustomContextMenu);
     resultsTable_->setStyleSheet(
         "QTableWidget { background-color: #1e1e1e; alternate-background-color: #252526; color: #d4d4d4; gridline-color: #333333; selection-background-color: #264f78; }"
@@ -262,7 +263,7 @@ void MemoryScannerView::refreshResults() {
     for (size_t i = 0; i < displayLimit; ++i) {
         const auto& item = results[i];
         // Col 0: Address
-        auto* addrItem = new QTableWidgetItem(QString::fromStdString(item.address.toHex()));
+        auto* addrItem = new QTableWidgetItem(item.address.toQString());
         addrItem->setForeground(QColor(100, 200, 255));
         addrItem->setFont(QFont("Monospace"));
         resultsTable_->setItem(static_cast<int>(i), 0, addrItem);

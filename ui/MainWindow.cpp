@@ -420,6 +420,14 @@ void MainWindow::setupMenusAndToolbars() {
     act_tab_script->setShortcut(QKeySequence("Alt+P"));
     connect(act_tab_script, &QAction::triggered, this, &MainWindow::onScriptConsoleTriggered);
 
+    auto* act_tab_memscanner = menuView_->addAction("🔍 &Memory Scanner (CheatEngine-style)");
+    act_tab_memscanner->setShortcut(QKeySequence("Alt+M"));
+    connect(act_tab_memscanner, &QAction::triggered, this, [this]{ onSelectBottomTabTriggered(19); });
+
+    auto* act_tab_types = menuView_->addAction("🧱 &Type Viewer & Struct Layout");
+    act_tab_types->setShortcut(QKeySequence("Alt+T"));
+    connect(act_tab_types, &QAction::triggered, this, [this]{ onSelectBottomTabTriggered(20); });
+
     menuView_->addSeparator();
     auto* act_cpu = menuView_->addAction("Focus CPU / Disassembly");
     act_cpu->setShortcut(QKeySequence("Alt+C"));

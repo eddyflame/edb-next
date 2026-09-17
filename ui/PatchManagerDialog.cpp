@@ -48,6 +48,7 @@ void PatchManagerDialog::setupUi() {
     tablePatches_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
     tablePatches_->setSelectionBehavior(QAbstractItemView::SelectRows);
     tablePatches_->setSelectionMode(QAbstractItemView::SingleSelection);
+    tablePatches_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     root_layout->addWidget(tablePatches_);
 
     auto* btn_layout = new QHBoxLayout();
@@ -84,7 +85,7 @@ void PatchManagerDialog::onRefreshTable() {
         auto* idx_item = new QTableWidgetItem(QString::number(i + 1));
         tablePatches_->setItem(row, 0, idx_item);
 
-        auto* addr_item = new QTableWidgetItem(QString::fromStdString(p.address.toHex()));
+        auto* addr_item = new QTableWidgetItem(p.address.toQString());
         tablePatches_->setItem(row, 1, addr_item);
 
         auto* orig_item = new QTableWidgetItem(bytesToHex(p.originalBytes));
