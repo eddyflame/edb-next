@@ -100,6 +100,7 @@ sudo apt install -y \
     pkg-config \
     qt6-base-dev \
     qt6-tools-dev \
+    libgl1-mesa-dev \
     libcapstone-dev \
     libdw-dev \
     libelf-dev \
