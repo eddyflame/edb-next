@@ -608,7 +608,7 @@
 
 ```text
 edb-next/
-├── CMakeLists.txt              # 顶层 CMake 构建脚本 (C++20, Qt5, Capstone)
+├── CMakeLists.txt              # 顶层 CMake 构建脚本 (C++20, Qt6, Capstone)
 ├── main.cpp                    # 入口文件 (QApplication 初始化、暗黑 QSS 注入、MainWindow 启动)
 ├── core/                       # 核心业务逻辑与调试引擎 (纯 C++，低 GUI 依赖)
 │   ├── Types.hpp               # Address, Pid, Tid, DebugEvent, MemoryRegion 等基石类型
@@ -652,7 +652,7 @@ edb-next/
 │   ├── TypeManager.hpp/cpp     # 复合数据类型管理、C 结构体语法解析、ABI 自然对齐与实时取样
 │   ├── DebugSession.hpp/cpp    # 独立调试会话高阶门面 (外观模式，聚合引擎、断点、线程与解析器)
 │   └── SessionManager.hpp/cpp  # 多会话容器与活动会话调度器
-├── ui/                         # 现代 Qt5 GUI 表现层
+├── ui/                         # 现代 Qt6 GUI 表现层
 │   ├── DisassemblyView.hpp/cpp # 核心反汇编视图 (语法着色、分支跟随、历史栈、右键联动)
 │   ├── SourceView.hpp/cpp      # 独立源码浏览器视图 (文件切换、断点指示、源码步进)
 │   ├── ScriptConsoleView.hpp/cpp# 交互式脚本控制台 (Python 3/Lua 5.4 双模式终端)
@@ -1096,8 +1096,8 @@ sudo apt install -y \
     cmake \
     git \
     pkg-config \
-    qtbase5-dev \
-    libqt5widgets5 \
+    qt6-base-dev \
+    qt6-tools-dev \
     libcapstone-dev
 ```
 
@@ -1234,7 +1234,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config qtbase5-dev libqt5widgets5 libcapstone-dev
+          sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev qt6-tools-dev libcapstone-dev
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release

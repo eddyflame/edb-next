@@ -354,7 +354,7 @@ To guide future version milestones effectively, each unimplemented roadmap capab
 
 ```text
 edb-next/
-├── CMakeLists.txt              # Top-level CMake configuration (C++20, Qt5, Capstone)
+├── CMakeLists.txt              # Top-level CMake configuration (C++20, Qt6, Capstone)
 ├── main.cpp                    # Application entry point, dark QSS injection, MainWindow boot
 ├── core/                       # Headless Core Logic & Debugging Subsystems
 │   ├── Types.hpp               # Core domain types: Address, Pid, Tid, DebugEvent, MemoryRegion
@@ -398,7 +398,7 @@ edb-next/
 │   ├── TypeManager.hpp/cpp     # Compound data type manager, C struct parser, AMD64 ABI alignment & live evaluator
 │   ├── DebugSession.hpp/cpp    # Facade aggregating engine, breakpoints, symbols, and thread control
 │   └── SessionManager.hpp/cpp  # Multi-session container and active session dispatcher
-├── ui/                         # Qt5 Presentation Layer
+├── ui/                         # Qt6 Presentation Layer
 │   ├── DisassemblyView.hpp/cpp # Core disassembly view with branch arrows and syntax highlighting
 │   ├── SourceView.hpp/cpp      # Standalone source code viewer (file switcher, breakpoints, step)
 │   ├── ScriptConsoleView.hpp/cpp# Interactive script terminal (Python 3/Lua 5.4 dual-mode)

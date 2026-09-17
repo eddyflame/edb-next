@@ -51,7 +51,7 @@
 ```bash
 # 1. 安装构建依赖 (包含 DWARF libdw 与 Python/Lua 脚本引擎依赖)
 sudo apt-get install -y build-essential cmake pkg-config \
-    qtbase5-dev libqt5widgets5 libcapstone-dev \
+    qt6-base-dev qt6-tools-dev libcapstone-dev \
     libelf-dev libdw-dev python3-dev liblua5.4-dev
 
 # 2. 编译全部目标
