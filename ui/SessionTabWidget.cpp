@@ -300,6 +300,14 @@ void SessionTabWidget::setupUi() {
     connect(regView_, &RegisterView::jumpToStackRequested, this, [this](Address addr) {
         stackView_->setBaseAddress(addr);
     });
+    connect(multiDumpWidget_, &MultiDumpWidget::jumpToStackRequested, this, [this](Address addr) {
+        stackView_->setBaseAddress(addr);
+    });
+    connect(multiDumpWidget_, &MultiDumpWidget::inspectWithTypeViewerRequested, this, [this](Address addr) {
+        bottomTabs_->setCurrentWidget(typeViewer_);
+        typeViewer_->setInspectAddress(addr);
+        typeViewer_->refresh();
+    });
 
     bottomSplitter_->addWidget(bottomTabs_);
     bottomSplitter_->addWidget(stackView_);

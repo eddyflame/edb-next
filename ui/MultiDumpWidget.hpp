@@ -23,6 +23,8 @@ public:
 
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
+    void jumpToStackRequested(Address addr);
+    void inspectWithTypeViewerRequested(Address addr);
     void patchCreated(Address addr, const std::vector<uint8_t>& oldBytes, const std::vector<uint8_t>& newBytes, const QString& comment);
 
 private:
