@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include <memory>
+#include <cstring>
 
 namespace edb_next {
 
@@ -37,10 +38,56 @@ std::string scanCompareTypeToString(ScanCompareType type);
 ScanDataType stringToScanDataType(const std::string& str);
 ScanCompareType stringToScanCompareType(const std::string& str);
 
+struct SmallBuffer {
+    static constexpr size_t kInlineCap = 16;
+    uint8_t inlineBuf[kInlineCap]{};
+    std::vector<uint8_t> heapBuf{};
+    size_t len{0};
+
+    SmallBuffer() = default;
+
+    SmallBuffer(const uint8_t* data, size_t sz) : len(sz) {
+        if (sz <= kInlineCap) {
+            std::memcpy(inlineBuf, data, sz);
+        } else {
+            heapBuf.assign(data, data + sz);
+        }
+    }
+
+    SmallBuffer(const std::vector<uint8_t>& vec) : SmallBuffer(vec.data(), vec.size()) {}
+    SmallBuffer(std::span<const uint8_t> s) : SmallBuffer(s.data(), s.size()) {}
+
+    [[nodiscard]] const uint8_t* data() const noexcept {
+        return len <= kInlineCap ? inlineBuf : heapBuf.data();
+    }
+    [[nodiscard]] uint8_t* data() noexcept {
+        return len <= kInlineCap ? inlineBuf : heapBuf.data();
+    }
+    [[nodiscard]] size_t size() const noexcept { return len; }
+    [[nodiscard]] bool empty() const noexcept { return len == 0; }
+
+    uint8_t operator[](size_t idx) const noexcept { return data()[idx]; }
+
+    void assign(const uint8_t* data, size_t sz) {
+        len = sz;
+        if (sz <= kInlineCap) {
+            std::memcpy(inlineBuf, data, sz);
+            heapBuf.clear();
+        } else {
+            heapBuf.assign(data, data + sz);
+        }
+    }
+
+    bool operator==(const SmallBuffer& o) const noexcept {
+        if (len != o.len) return false;
+        return std::memcmp(data(), o.data(), len) == 0;
+    }
+};
+
 struct ScanResult {
     Address address{0};
-    std::vector<uint8_t> previousValue;
-    std::vector<uint8_t> currentValue;
+    SmallBuffer previousValue;
+    SmallBuffer currentValue;
 
     std::string formatCurrentValue(ScanDataType type) const;
     std::string formatPreviousValue(ScanDataType type) const;
