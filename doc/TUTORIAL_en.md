@@ -95,8 +95,8 @@ sudo apt install -y \
     cmake \
     git \
     pkg-config \
-    qtbase5-dev \
-    libqt5widgets5 \
+    qt6-base-dev \
+    qt6-tools-dev \
     libcapstone-dev \
     libdw-dev \
     libelf-dev \
@@ -106,12 +106,12 @@ sudo apt install -y \
 
 #### Fedora / RHEL:
 ```bash
-sudo dnf install -y gcc-c++ cmake git pkgconf-pkg-config qt5-qtbase-devel capstone-devel elfutils-devel python3-devel lua-devel
+sudo dnf install -y gcc-c++ cmake git pkgconf-pkg-config qt6-qtbase-devel capstone-devel elfutils-devel python3-devel lua-devel
 ```
 
 #### Arch Linux:
 ```bash
-sudo pacman -S --needed base-devel cmake git pkgconf qt5-base capstone elfutils python lua
+sudo pacman -S --needed base-devel cmake git pkgconf qt6-base capstone elfutils python lua
 ```
 
 ---
@@ -871,14 +871,14 @@ project(MyPlugin LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt5 REQUIRED COMPONENTS Core Widgets Gui)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 
 set(EDB_NEXT_ROOT "/path/to/edb-next")
 include_directories(${EDB_NEXT_ROOT} ${EDB_NEXT_ROOT}/core ${EDB_NEXT_ROOT}/ui)
 
 add_library(my_plugin SHARED MyPlugin.cpp)
 set_target_properties(my_plugin PROPERTIES PREFIX "")
-target_link_libraries(my_plugin PRIVATE Qt5::Widgets Qt5::Core)
+target_link_libraries(my_plugin PRIVATE Qt6::Widgets Qt6::Core)
 ```
 
 ### 11.4 Loading and Using the Plugin

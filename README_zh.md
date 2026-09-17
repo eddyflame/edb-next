@@ -5,7 +5,7 @@
 <h3>下一代 Linux 原生图形化二进制逆向工程与动态调试平台</h3>
 
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
-[![Qt](https://img.shields.io/badge/Qt-5.15%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
+[![Qt](https://img.shields.io/badge/Qt-6.4%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-orange.svg?style=flat-square&logo=linux)](https://www.kernel.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-Passing-success.svg?style=flat-square&logo=github-actions)](.github/workflows/ci.yml)
@@ -21,7 +21,7 @@
 
 **edb-next** 是一套专为 Linux x86_64 平台设计的现代化、高性能图形化二进制逆向分析与动态调试工具。
 
-基于 **C++20**、**Qt 5.15+** 与 **Capstone 反汇编引擎** 从零重构构建，`edb-next` 旨在终结 Linux 生态长期缺少顶级原生 GUI 调试器的痛点。它不仅深度吸收了 Windows 平台逆向标杆 **x64dbg** 备受好评的四象限工作流与极客操作手感，更立足于 Linux 内核特性，创新实现了目标空间远程系统调用注入、ELF 物理磁盘二进制落盘、异步非阻塞事件驱动循环以及 Glibc ptmalloc 堆内存全景剖析。
+基于 **C++20**、**Qt 6.4+** 与 **Capstone 反汇编引擎** 从零重构构建，`edb-next` 旨在终结 Linux 生态长期缺少顶级原生 GUI 调试器的痛点。它不仅深度吸收了 Windows 平台逆向标杆 **x64dbg** 备受好评的四象限工作流与极客操作手感，更立足于 Linux 内核特性，创新实现了目标空间远程系统调用注入、ELF 物理磁盘二进制落盘、异步非阻塞事件驱动循环以及 Glibc ptmalloc 堆内存全景剖析。
 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
@@ -96,8 +96,8 @@ sudo apt install -y \
     cmake \
     git \
     pkg-config \
-    qtbase5-dev \
-    libqt5widgets5 \
+    qt6-base-dev \
+    qt6-tools-dev \
     libcapstone-dev \
     libdw-dev \
     libelf-dev \

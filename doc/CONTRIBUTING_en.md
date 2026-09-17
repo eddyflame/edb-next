@@ -51,7 +51,7 @@ Before submitting a Pull Request, build the codebase and verify that all automat
 ```bash
 # 1. Install prerequisites (including DWARF libdw and Python 3 / Lua 5.4 scripting libraries)
 sudo apt-get install -y build-essential cmake pkg-config \
-    qtbase5-dev libqt5widgets5 libcapstone-dev \
+    qt6-base-dev qt6-tools-dev libcapstone-dev \
     libelf-dev libdw-dev python3-dev liblua5.4-dev
 
 # 2. Compile all targets

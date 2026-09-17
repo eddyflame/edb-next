@@ -5,7 +5,7 @@
 <h3>Next-Generation Linux Binary Debugger & Reverse Engineering Platform</h3>
 
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
-[![Qt](https://img.shields.io/badge/Qt-5.15%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
+[![Qt](https://img.shields.io/badge/Qt-6.4%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-orange.svg?style=flat-square&logo=linux)](https://www.kernel.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-Passing-success.svg?style=flat-square&logo=github-actions)](.github/workflows/ci.yml)
@@ -21,7 +21,7 @@
 
 **edb-next** is a modern, high-performance graphical binary debugger and dynamic reverse engineering platform specifically engineered for Linux x86_64. 
 
-Built from scratch using **C++20**, **Qt 5.15+**, and the **Capstone Disassembly Engine**, `edb-next` addresses the longstanding absence of an industrial-strength GUI debugger on Linux. It deeply aligns with the tactile, battle-tested reverse engineering workflows of Windows' legendary **x64dbg**, while innovating natively on Linux through in-target remote syscall injection, ELF physical disk patching, non-blocking asynchronous event loops, and full glibc ptmalloc heap deconstruction.
+Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly Engine**, `edb-next` addresses the longstanding absence of an industrial-strength GUI debugger on Linux. It deeply aligns with the tactile, battle-tested reverse engineering workflows of Windows' legendary **x64dbg**, while innovating natively on Linux through in-target remote syscall injection, ELF physical disk patching, non-blocking asynchronous event loops, and full glibc ptmalloc heap deconstruction.
 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
@@ -94,8 +94,8 @@ sudo apt install -y \
     cmake \
     git \
     pkg-config \
-    qtbase5-dev \
-    libqt5widgets5 \
+    qt6-base-dev \
+    qt6-tools-dev \
     libcapstone-dev \
     libdw-dev \
     libelf-dev \

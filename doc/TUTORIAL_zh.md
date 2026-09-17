@@ -97,8 +97,8 @@ sudo apt install -y \
     cmake \
     git \
     pkg-config \
-    qtbase5-dev \
-    libqt5widgets5 \
+    qt6-base-dev \
+    qt6-tools-dev \
     libcapstone-dev \
     libdw-dev \
     libelf-dev \
@@ -113,7 +113,7 @@ sudo dnf install -y \
     cmake \
     git \
     pkgconf-pkg-config \
-    qt5-qtbase-devel \
+    qt6-qtbase-devel \
     capstone-devel
 ```
 
@@ -124,7 +124,7 @@ sudo pacman -S --needed \
     cmake \
     git \
     pkgconf \
-    qt5-base \
+    qt6-base \
     capstone
 ```
 
@@ -1141,7 +1141,7 @@ project(MyPlugin VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt5 REQUIRED COMPONENTS Core Widgets Gui)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 
 # 引入 edb-next 核心头文件路径
 set(EDB_NEXT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -1163,8 +1163,8 @@ set_target_properties(my_plugin PROPERTIES
 
 target_link_libraries(my_plugin
     PRIVATE
-    Qt5::Widgets
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Core
 )
 ```
 
