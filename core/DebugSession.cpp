@@ -43,6 +43,11 @@ DebugSession::DebugSession(std::string id, std::string name, QObject* parent)
     qRegisterMetaType<edb_next::SessionState>("edb_next::SessionState");
     connect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent);
     scriptEngines_.setSession(this);
+
+    stopOnLibraryEvents_ = ConfigurationManager::instance().engine().breakOnLibraryLoad;
+    connect(&ConfigurationManager::instance(), &ConfigurationManager::configurationChanged, this, [this]() {
+        stopOnLibraryEvents_ = ConfigurationManager::instance().engine().breakOnLibraryLoad;
+    });
 }
 
 DebugSession::~DebugSession() {
@@ -59,7 +64,8 @@ bool DebugSession::launch(const std::string& path, const std::vector<std::string
     targetArgs_ = args;
 
     bool disable_aslr = ConfigurationManager::instance().engine().disableASLR;
-    auto res = engine_.launch(path, args, disable_aslr);
+    bool disable_lazy_binding = ConfigurationManager::instance().engine().disableLazyBinding;
+    auto res = engine_.launch(path, args, disable_aslr, disable_lazy_binding);
     if (!res) {
         std::cerr << "Session launch error: " << res.error << std::endl;
         return false;
@@ -93,6 +99,19 @@ bool DebugSession::launch(const std::string& path, const std::vector<std::string
 
     connect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent, Qt::UniqueConnection);
     eventLoop_.startLoop();
+
+    auto initBp = ConfigurationManager::instance().engine().initialBreakpoint;
+    if (initBp == InitialBreakpoint::MainSymbol) {
+        auto mainAddr = resolveSymbol("main");
+        if (mainAddr) {
+            addBreakpoint(*mainAddr, "main");
+            resume(false);
+            return true;
+        }
+    } else if (initBp == InitialBreakpoint::None) {
+        resume(false);
+        return true;
+    }
 
     DebugEvent initial_ev{
         .pid = engine_.pid(),
@@ -139,6 +158,7 @@ bool DebugSession::attach(Pid pid) {
 
     refreshRegisters();
     setState(SessionState::Paused);
+    stopOnLibraryEvents_ = ConfigurationManager::instance().engine().breakOnLibraryLoad;
 
     connect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent, Qt::UniqueConnection);
     eventLoop_.startLoop();

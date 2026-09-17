@@ -48,6 +48,18 @@ MainWindow::MainWindow(QWidget* parent)
         }
     }
 
+    // Restore window geometry and state
+    if (ConfigurationManager::instance().general().restoreWindowGeometry) {
+        auto geom = ConfigurationManager::instance().windowGeometry();
+        if (!geom.isEmpty()) {
+            restoreGeometry(geom);
+        }
+        auto st = ConfigurationManager::instance().windowState();
+        if (!st.isEmpty()) {
+            restoreState(st);
+        }
+    }
+
     // Create default initial session
     sessionMgr_.createSession("Main Target");
 }
@@ -95,6 +107,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         } else {
             sess->terminate();
         }
+    }
+
+    if (ConfigurationManager::instance().general().restoreWindowGeometry) {
+        ConfigurationManager::instance().setWindowGeometry(saveGeometry());
+        ConfigurationManager::instance().setWindowState(saveState());
+        ConfigurationManager::instance().save();
     }
 
     QMainWindow::closeEvent(event);
@@ -487,6 +505,7 @@ void MainWindow::setupMenusAndToolbars() {
 
     // ToolBar
     auto* toolbar = addToolBar("Main Debug Toolbar");
+    toolbar->setObjectName("mainDebugToolBar");
     toolbar->setMovable(false);
     toolbar->addAction(actOpen_);
     toolbar->addAction(actNewSession_);

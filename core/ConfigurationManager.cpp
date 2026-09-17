@@ -78,6 +78,8 @@ void ConfigurationManager::load() {
     general_.closeBehavior = static_cast<CloseBehavior>(s.value("closeBehavior", static_cast<int>(general_.closeBehavior)).toInt());
     general_.restoreWindowGeometry = s.value("restoreWindowGeometry", general_.restoreWindowGeometry).toBool();
     general_.sessionDir = s.value("sessionDir", general_.sessionDir).toString();
+    windowGeometry_ = s.value("windowGeometry").toByteArray();
+    windowState_ = s.value("windowState").toByteArray();
     s.endGroup();
 
     s.beginGroup("Appearance");
@@ -140,6 +142,8 @@ void ConfigurationManager::save() {
     s.setValue("closeBehavior", static_cast<int>(general_.closeBehavior));
     s.setValue("restoreWindowGeometry", general_.restoreWindowGeometry);
     s.setValue("sessionDir", general_.sessionDir);
+    if (!windowGeometry_.isEmpty()) s.setValue("windowGeometry", windowGeometry_);
+    if (!windowState_.isEmpty()) s.setValue("windowState", windowState_);
     s.endGroup();
 
     s.beginGroup("Appearance");
