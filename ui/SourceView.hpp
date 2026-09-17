@@ -41,6 +41,7 @@ private Q_SLOTS:
     void onCellDoubleClicked(int row, int col);
     void onCustomContextMenu(const QPoint& pos);
     void onSourceLocationChanged(const edb_next::SourceLocation& loc);
+    void onRegistersUpdated();
     void onGotoLineTriggered();
 
 private:

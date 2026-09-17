@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QFileDialog>
 #include <QDialogButtonBox>
+#include <QRegularExpression>
 
 namespace edb_next {
 
@@ -93,7 +94,7 @@ std::vector<std::string> LaunchArgumentsDialog::arguments() const {
     QString raw = txtArgs_->toPlainText().trimmed();
     if (raw.isEmpty()) return result;
 
-    QStringList lines = raw.split(QRegExp("[\r\n]+"), Qt::SkipEmptyParts);
+    QStringList lines = raw.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
     for (const auto& line : lines) {
         QString trimmed = line.trimmed();
         if (!trimmed.isEmpty()) {

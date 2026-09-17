@@ -10,6 +10,8 @@
 #include <sstream>
 #include <algorithm>
 #include <climits>
+#include <thread>
+#include <chrono>
 #include <unistd.h>
 
 namespace edb_next {
@@ -1281,7 +1283,12 @@ bool DebugSession::stepSourceOver(int maxInsnSteps) {
     int origLine = curLoc->line;
     for (int i = 0; i < maxInsnSteps; ++i) {
         stepOver();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        int waitMs = 0;
+        while (state_ != SessionState::Paused && waitMs < 2000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            waitMs += 2;
+        }
         if (state_ != SessionState::Paused) break;
         auto nextLoc = currentSourceLocation();
         if (!nextLoc) break;
@@ -1303,7 +1310,12 @@ bool DebugSession::stepSourceInto(int maxInsnSteps) {
     int origLine = curLoc->line;
     for (int i = 0; i < maxInsnSteps; ++i) {
         stepInto();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        int waitMs = 0;
+        while (state_ != SessionState::Paused && waitMs < 2000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            waitMs += 2;
+        }
         if (state_ != SessionState::Paused) break;
         auto nextLoc = currentSourceLocation();
         if (!nextLoc) break;

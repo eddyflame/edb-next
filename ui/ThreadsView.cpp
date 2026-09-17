@@ -56,9 +56,7 @@ void ThreadsView::setupUi() {
 void ThreadsView::setSession(std::shared_ptr<DebugSession> session) {
     session_ = session;
     if (session) {
-        connect(session.get(), &DebugSession::threadFreezeStateChanged, this, [this](Tid, bool) {
-            refresh();
-        }, Qt::UniqueConnection);
+        connect(session.get(), &DebugSession::threadFreezeStateChanged, this, &ThreadsView::refresh, Qt::UniqueConnection);
     }
     refresh();
 }

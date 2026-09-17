@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -pedantic -Wno-unused-parameter -g)
 
 # Find Dependencies
-find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CAPSTONE REQUIRED capstone)
 
@@ -86,8 +86,8 @@ set(CORE_SOURCES
 add_library(edb_core STATIC ${CORE_SOURCES})
 target_link_libraries(edb_core
     PUBLIC
-    Qt5::Core
-    Qt5::Widgets
+    Qt6::Core
+    Qt6::Widgets
     ${CAPSTONE_LIBRARIES}
     ${LIBDW_LIBRARIES}
     ${LIBELF_LIBRARIES}
@@ -138,9 +138,9 @@ add_executable(edb_next ${UI_SOURCES} main.cpp)
 target_link_libraries(edb_next
     PRIVATE
     edb_core
-    Qt5::Widgets
-    Qt5::Gui
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Gui
+    Qt6::Core
     ${CAPSTONE_LIBRARIES}
     pthread
 )
@@ -154,8 +154,8 @@ set_target_properties(sample_plugin PROPERTIES
 target_link_libraries(sample_plugin
     PRIVATE
     edb_core
-    Qt5::Widgets
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Core
 )
 add_dependencies(edb_next sample_plugin)
 
@@ -172,7 +172,7 @@ add_executable(test_core tests/test_core.cpp)
 target_link_libraries(test_core
     PRIVATE
     edb_core
-    Qt5::Core
+    Qt6::Core
     ${CAPSTONE_LIBRARIES}
     pthread
 )
@@ -183,9 +183,9 @@ add_executable(test_advanced tests/test_advanced.cpp ${UI_SOURCES})
 target_link_libraries(test_advanced
     PRIVATE
     edb_core
-    Qt5::Widgets
-    Qt5::Gui
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Gui
+    Qt6::Core
     ${CAPSTONE_LIBRARIES}
     pthread
 )
@@ -196,9 +196,9 @@ add_executable(test_exit tests/test_exit.cpp ${UI_SOURCES})
 target_link_libraries(test_exit
     PRIVATE
     edb_core
-    Qt5::Widgets
-    Qt5::Gui
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Gui
+    Qt6::Core
     ${CAPSTONE_LIBRARIES}
     pthread
 )
@@ -208,9 +208,9 @@ add_executable(test_dwarf tests/test_dwarf.cpp ${UI_SOURCES})
 target_link_libraries(test_dwarf
     PRIVATE
     edb_core
-    Qt5::Widgets
-    Qt5::Gui
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Gui
+    Qt6::Core
     ${CAPSTONE_LIBRARIES}
     pthread
 )
@@ -221,9 +221,9 @@ add_executable(test_scripting tests/test_scripting.cpp ${UI_SOURCES})
 target_link_libraries(test_scripting
     PRIVATE
     edb_core
-    Qt5::Widgets
-    Qt5::Gui
-    Qt5::Core
+    Qt6::Widgets
+    Qt6::Gui
+    Qt6::Core
     ${CAPSTONE_LIBRARIES}
     pthread
 )
