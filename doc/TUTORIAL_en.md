@@ -38,6 +38,7 @@
    - 4.11 Follow-Fork Mode & Multi-Process Inferiors
    - 4.12 Independent Thread Freeze & Thaw (Freeze / Thaw & Isolated Stepping)
    - 4.13 Differential Memory Scanner (CheatEngine-Style Convergence)
+   - 4.14 Compound Type Reconstruction & Struct Layout (Type Viewer)
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -465,6 +466,62 @@ scanreset                     # Reset scanner and clear candidate list
 
 ---
 
+### 4.14 Compound Type Reconstruction & Struct Layout (Type Viewer)
+
+In reverse engineering, protocol parsing, and firmware analysis, data in memory is structured as complex C composite types (`struct`) rather than flat byte sequences. Raw hexadecimal dumps make tracking member boundaries and padding alignment tedious.
+
+`edb-next` introduces a CheatEngine-style struct layout inspector and compound type reconstruction workbench (**Tab 22: "Type Viewer"**):
+
+#### 1. Type Viewer Interface (Tab 22)
+Switch to the bottom drawer **Type Viewer** (Tab 22):
+- **Struct Combo**: Select from pre-loaded system definitions (`timespec`, `timeval`, `sockaddr_in`, `list_head`, `io_vec`) or custom structs.
+- **`➕ Define Struct...` Button**: Opens a dialog to paste standard C struct definitions and parse them immediately.
+- **Address Edit**: Target base address expression supporting registers and math (e.g. `rsp`, `rbp - 0x40`, `0x7fffffffd7d0`).
+- **`🔬 Inspect` Button**: Evaluates live target memory using the selected struct definition and populates all fields.
+- **`🔄 Refresh` Button**: Re-reads and updates fields as the target steps or executes.
+- **Size / Alignment Label**: Displays total byte size and maximum member alignment (e.g. `Size: 56 bytes (align 8)`).
+
+#### 2. Field Table & Pointer Dereference Navigation
+- **`Offset`**: Hexadecimal offset relative to struct base (`+0x000`, `+0x008`, `+0x010`), clearly displaying System V AMD64 ABI padding.
+- **`Field Name` / `Type` / `Size`**: Variable identifier, data type (including arrays like `char[16]`), and physical size.
+- **`Raw Hex`**: Hexadecimal memory bytes in little-endian format.
+- **`Value / Dereference`**:
+  - Integers formatted in dual decimal and hexadecimal.
+  - Characters displayed with ASCII glyphs (`42 ('*')`).
+  - Character arrays formatted as quoted strings (`"PlayerOne"`).
+  - **Pointer Dereferencing**: Pointer fields are highlighted in cyan with an underline (e.g. `0x00007fffffffe100`). **Double-clicking** a pointer cell instantly navigates to that address:
+    - Code segment targets jump in the Disassembly view.
+    - Data/stack/heap targets jump in the MultiDump Hex Dump.
+- **Right-Click Context Menu**:
+  - **`Edit Field Value...`**: Pop up an editor to modify the field's memory value directly in the live process.
+  - `Follow in Hex Dump` / `Follow in Disassembly`.
+  - `Copy Field Value`: Copies formatted string to clipboard.
+
+#### 3. Defining Custom C Structs
+Click `➕ Define Struct...` or run `defstruct` in the CommandBar:
+```c
+struct PlayerState {
+    char id;
+    short level;
+    int health;
+    long score;
+    void* pTarget;
+    float moveSpeed;
+    double mana;
+    char heroName[16];
+};
+```
+The internal parser automatically calculates natural alignment padding (e.g. `short` at offset 2, `int` at offset 4, `long`/pointer at offset 8), ensuring exact correspondence with GCC/Clang compiled binaries.
+
+#### 4. CommandBar CLI Commands
+```text
+structs                       # List all registered struct types, sizes, and field counts
+struct <name> <addr_or_expr>  # Parse and print struct fields at given memory address
+defstruct <c_code...>         # Dynamically define and register a new C struct
+```
+
+---
+
 ## 5. Advanced Reverse Engineering Toolset
 
 - **Heap Analyzer (Tab 9)**: Traverses glibc `malloc_chunk` structures, parsing chunk size, flags (`A|M|P`), and allocated/free state.
@@ -539,6 +596,9 @@ flowchart LR
 | `nextscan <cmp> [val]` | Execute next differential scan pass. Ex: `nextscan >`, `nextscan <`, `nextscan ==`, `nextscan 105` |
 | `scanresults [limit]` | Print top candidate addresses from current scan |
 | `scanreset` | Reset memory scanner and clear candidate list |
+| `structs` | List all registered struct templates, sizes, and field counts |
+| `struct <name> <addr>` | Parse and print formatted struct fields at target memory address |
+| `defstruct <c_code...>` | Dynamically define and register a new C struct declaration |
 | `inferiors` / `processes` | List all active debug sessions and PIDs (`inferiors`) |
 | `inferior <id\|pid>` | Switch active debugging session and workspace tab (`inferior 2`, `inferior 12347`) |
 | `process <id\|pid>` | Switch active session (alias for `inferior`) |
