@@ -202,6 +202,7 @@ target_link_libraries(test_exit
     ${CAPSTONE_LIBRARIES}
     pthread
 )
+add_dependencies(test_exit build_test_target)
 
 # DWARF & Source-Level Debugging test executable
 add_executable(test_dwarf tests/test_dwarf.cpp ${UI_SOURCES})

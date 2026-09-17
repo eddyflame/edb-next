@@ -22,7 +22,7 @@ jobs:
       - name: Verify Formatting (clang-format)
         run: |
           echo "Checking C++ formatting against .clang-format..."
-          find core ui tests -name "*.cpp" -o -name "*.hpp" -o -name "*.h" | xargs clang-format --dry-run --Werror || echo "::warning::Formatting differences detected against .clang-format. Please run 'clang-format -i' before pushing."
+          find core ui tests \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | xargs clang-format --dry-run --Werror || echo "::warning::Formatting differences detected against .clang-format. Please run 'clang-format -i' before pushing."
 
   build-and-test:
     name: Build & Test on ${{ matrix.os }}
@@ -38,6 +38,19 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Setup Modern Compiler (GCC 13 on Ubuntu 22.04)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-13 g++-13
+          echo "CC=gcc-13" >> $GITHUB_ENV
+          echo "CXX=g++-13" >> $GITHUB_ENV
+
+      - name: Configure Linux Kernel ptrace permissions
+        run: |
+          sudo sysctl -w kernel.yama.ptrace_scope=0 || true
 
       - name: Install System Dependencies
         run: |

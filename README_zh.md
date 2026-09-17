@@ -26,14 +26,14 @@
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
 │     象限 1: 反汇编视图 (Disassembly)    │       象限 2: 寄存器视图 (Registers)    │
-│  - Capstone 语法高亮与当前 RIP 指示     │  - 16 大通用寄存器十六进制呈现与变动标红 │
-│  - F2 断点 / Enter 跟入 / Esc 历史瞬退  │  - 智能解引用推导 (符号/栈指针/字符串)   │
-│  - Space 就地汇编 / X 交叉引用弹窗      │  - EFLAGS 翡翠绿一键翻转徽章条 / SSE向量│
+│  - One Dark 语法高亮与当前 RIP 指示     │  - 16 大通用寄存器十六进制呈现与变动标红 │
+│  - 动态分支预测与操作数解引用链式预览条 │  - GPR 极速 +1/-1 微调与 Follow in Stack│
+│  - F2 断点 / Enter 跟入 / Esc 历史瞬退  │  - EFLAGS 翡翠绿一键翻转徽章条 / SSE向量│
 ├───────────────────────────────────────┼───────────────────────────────────────┤
 │     象限 3: 多路转储 (Multi-Dump)      │       象限 4: 专有 64 位栈 (StackView) │
 │  - Dump 1 ~ Dump 4 独立多标签内存转储  │  - 纯 8 字节 QWORD 对齐排布            │
-│  - Ctrl+E 十六进制就地编辑与 NOP 填充  │  - => RSP 栈顶高亮与相对偏移自动推导    │
-│  - 18 大高级分析抽屉 (堆/ROP/CFG/外呼) │  - 双击智能路由 (跳反汇编 / 跳 Dump)    │
+│  - Alt+Left/Right 历史前后穿梭导航     │  - [Return Address] 亮琥珀金返回点识别 │
+│  - Ctrl+E 十六进制就地编辑 / TypeViewer│  - => RSP 栈顶高亮与双击智能路由        │
 └───────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
@@ -57,6 +57,7 @@
 - ❄️ **多线程独立冻结与解冻及隔离单步步进 (Thread Freeze / Thaw & Isolated Stepping)**：支持单个或批量轻量级线程（TID）独立冻结与解冻，在 `ThreadsView`（Tab 10）全景呈现 8 列信息与冰蓝 `❄ FROZEN` 状态高亮；提供 `❄ Freeze Others` 与 `🔥 Thaw All` 快捷控制；支持隔离单步（Isolated Stepping），彻底消除高并发 Worker 线程干扰；CLI 支持 `freeze <tid|all>` 与 `thaw <tid|all>`。
 - 🔍 **CheatEngine 级动态内存特征差分扫描器 (Differential Memory Scanner)**：专为动态密钥定位与外挂变量收敛打造，在底部抽屉提供专属 **Memory Scanner** 面板（Tab 21）；原生支持 8 种数据类型（Int8~64、Float、Double、String、Hex 通配符）；支持多轮差分收敛（增大、减小、变动、未变、增减指定 Delta）；聚焦可读写段流式扫描，单轮耗时仅数十毫秒；候选列表支持增绿减红变动指示、双击联动 Hex Dump 以及原位直接修改目标内存；CLI 全面支持 `scan`, `nextscan`, `scanresults`, `scanreset`。
 - 🧬 **复合数据类型重构与结构体布局可视化 (Type Viewer & Struct Layout)**：专为复杂对象反向解析与网络协议还原设计，在底部抽屉提供专属 **Type Viewer** 工作台（Tab 22）；原生支持 C 语言标准语法解析与 System V AMD64 ABI 自然对齐/填充计算；覆盖 14 种基础数据类型与定长数组；预置 `timespec`、`timeval`、`sockaddr_in`、`list_head`、`io_vec` 等 Linux 核心结构体；支持字段相对偏移与原始 Hex 呈现，青色高亮指针字段并支持双击直接解引用追踪（Jump to Hex Dump / Disassembly），支持右键原位修改内存；CLI 支持 `structs`、`struct <name> <addr>`、`defstruct <c_code...>`。
+- 🎨 **x64dbg 风格现代化逆向工效与语法着色系统**：定制指令重绘委托 `InstructionHighlightDelegate`，提供 CALL/JMP/Jcc/RET/SYSCALL/PUSH/POP/CMP/TEST/NOP/寄存器/寻址括号/立即数细粒度语义高亮；富文本动态分支预测（`Branch Taken: YES / NO`）与内存操作数链式求值预览（`[rbp - 0x14] => 0x... => val`）；专有栈视图函数返回地址智能识别与亮琥珀金标签（`[Return Address] <symbol>`）；寄存器极速 `+1`/`-1` 微调、`Follow in Stack` 与多格式复制子菜单；Hex Dump 历史导航栈（`Alt+Left` / `Backspace` / `Alt+Right`）、多维 QWORD 穿梭与一键直达结构体解析（`View as Struct...`）；`Ctrl+*` Set Origin (Set RIP)。
 - ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
@@ -69,6 +70,9 @@
 | **语言规范** | C++11 | C++14/17 | **现代 C++20 标准** |
 | **事件循环并发** | 0ms QTimer 轮询 (易死锁假死) | 复杂同步事件 | **非阻塞 EventLoopThread (0% 界面冻结)** |
 | **工作台布局** | 单一底部抽屉 (反复切Tab) | 经典四象限布局 | **4-Quadrant 黄金工作流** |
+| **反汇编与工效着色** | 纯等宽黑白文本 | 丰富色彩与调用/返回高亮 | **x64dbg 风格语法委托 + 动态分支预测/解引用预览 + Ctrl+* Set Origin** |
+| **转储与调用栈工效** | 基础线性转储 | 历史栈与返回地址识别 | **转储历史前进/后退 (Alt+Left/Right) + [Return Address] 识别 + 结构体直达** |
+| **寄存器快捷微调** | 弹窗手工输十六进制 | 快捷增减 | **GPR 快捷 +1/-1 + Follow in Stack + 多格式复制子菜单** |
 | **内存转储能力** | 单一 Hex Dump | 标配 Dump 1~5 | **4路独立 MultiDumpWidget (Dump 1~4)** |
 | **只读内存修改** | 报错拒绝写入 | VirtualProtect 模拟 | **原生远程系统调用注入 (`SYS_mprotect`)** |
 | **脱壳补丁落盘** | 无此功能 (仅内存补丁) | 导出 Patched EXE | **创新 `patchFileToDisk` (直接导出 ELF)** |

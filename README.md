@@ -26,14 +26,14 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
 │     Quadrant 1: Disassembly View      │       Quadrant 2: Register View       │
-│  - Capstone syntax highlighting & RIP │  - 16 GPRs with diff highlight in red │
-│  - F2 Breakpoint / Enter Branch Follow│  - Smart dereferencing & symbol lookup│
-│  - Esc History Return / Space Assemble│  - Clickable EFLAGS badges / SSE tabs │
+│  - One Dark syntax highlighting & RIP │  - 16 GPRs with diff highlight in red │
+│  - Dynamic branch & deref preview bar │  - Quick +1/-1 & Follow in Stack      │
+│  - F2 Breakpoint / Enter Follow / Esc │  - Clickable EFLAGS badges / SSE tabs │
 ├───────────────────────────────────────┼───────────────────────────────────────┤
 │     Quadrant 3: Multi-Tab Dump        │       Quadrant 4: Dedicated Stack     │
 │  - Dump 1 ~ Dump 4 independent tabs   │  - 8-byte QWORD aligned rows          │
-│  - Ctrl+E in-place hex patching       │  - => RSP indicator & relative offsets│
-│  - 18 analysis drawer tools           │  - Double-click smart router          │
+│  - Alt+Left/Right history navigation  │  - [Return Address] amber detection   │
+│  - Ctrl+E in-place patch / TypeViewer │  - => RSP indicator & smart router    │
 └───────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
@@ -55,6 +55,7 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 - ❄️ **Independent Thread Freeze & Thaw with Isolated Stepping**: Fine-grained per-thread freeze and thaw control via `SYS_tgkill(SIGSTOP)` and event-loop scheduler masking; 8-column `ThreadsView` with ice-blue `❄ FROZEN` badges; one-click `❄ Freeze Others` for isolated single-stepping without background worker thread interference; CLI support via `freeze <tid|all>` and `thaw <tid|all>`.
 - 🔍 **CheatEngine-Style Differential Memory Scanner**: High-throughput multi-pass differential memory scanner located in bottom drawer (Tab 21); natively parses 8 data types (Int8~64, Float, Double, String, Hex bytes with wildcards); multi-pass convergence (increased, decreased, changed, unchanged, increased/decreased by delta); default rw-p streaming scan finishes in tens of milliseconds; live candidate table with green/red delta cues, hex dump sync, and in-place memory editing; CLI control via `scan`, `nextscan`, `scanresults`, and `scanreset`.
 - 🧬 **Compound Type Reconstruction & Struct Layout Visualizer**: Dedicated struct analysis workbench in bottom drawer (Tab 22); natively parses standard C struct declarations with natural AMD64 ABI alignment/padding calculations; supports 14 data types and fixed-size arrays; pre-loaded with standard Linux system structs (`timespec`, `timeval`, `sockaddr_in`, `list_head`, `io_vec`); displays relative offsets and raw hex bytes, cyan-underlined pointer fields with double-click dereference navigation to Disassembly or Hex Dump, and in-place memory mutation; CLI integration via `structs`, `struct <name> <addr>`, and `defstruct <c_code...>`.
+- 🎨 **x64dbg-Style Reverse Engineering Ergonomics & Syntax Highlighting**: Fine-grained semantic syntax highlighting delegate (`InstructionHighlightDelegate`) for CALL, JMP, Jcc, RET, SYSCALL/UD2, PUSH/POP, CMP/TEST, NOP, Regs, Brackets, and Immediates; rich HTML dynamic branch prediction (`Branch Taken: YES / NO`) and chained memory operand dereferencing (`[rbp - 0x14] => 0x... => val`); dedicated Stack View return address detection with bright amber tags (`[Return Address] <symbol>`); quick register increment/decrement (`+1` / `-1`), `Follow in Stack`, and multi-format copy submenu; Hex Dump navigation history stack (`Alt+Left` / `Backspace` / `Alt+Right`), cross-view QWORD follows, and direct struct layout visualizer (`View as Struct...`) integration; `Ctrl+*` Set Origin (Set RIP).
 - ⌨️ **x64dbg-Style Bottom CommandBar**: Interactive bottom CLI supporting `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct`, and plugin commands.
 - 🧩 **Modern C++20 Decoupled Plugin Gateway**: Pure virtual `IPlugin` and `IPluginContext` contract supporting dynamic `.so` hot-loading, menu injection, CLI registration, and event hooks.
 
@@ -67,6 +68,9 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 | **Language Standard** | C++11 | C++14/17 | **Modern C++20 Standard** |
 | **Event Concurrency** | 0ms QTimer (prone to hangs) | Complex sync | **Decoupled `EventLoopThread` (0% UI Freeze)** |
 | **Workspace Layout** | Single bottom drawer | 4 Quadrants | **4-Quadrant Golden Workspace** |
+| **Disassembly & Ergonomics** | Plain monospaced text | Rich color schemes & call/ret highlights | **x64dbg-Style Syntax Delegate + Dynamic Branch & Operand Deref Preview + Ctrl+* Set Origin** |
+| **Hex Dump & Stack Ergonomics** | Basic linear dump | Dump history & stack return address tags | **Dump Back/Forward History (Alt+Left/Right) + [Return Address] Detection + Struct Link** |
+| **Register Quick Tweaking** | Type hex manually | Quick increment/decrement | **GPR Quick +1/-1 + Follow in Stack + Multi-Format Copy Submenu** |
 | **Memory Dumps** | Single Dump view | Dump 1 ~ Dump 5 | **4-Way MultiDumpWidget (Dump 1~4)** |
 | **Read-Only Patching** | Rejected / Errors | VirtualProtect | **Remote Syscall Injection (`mprotect`)** |
 | **Physical Disk Patch** | None (Memory-only) | Patched EXE | **Innovative `patchFileToDisk` (ELF Export)** |
