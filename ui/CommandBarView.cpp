@@ -197,7 +197,7 @@ void CommandBarView::setupDefaultCommands() {
         }
         if (session_) {
             bool ok = session_->addBreakpoint(addr);
-            Q_EMIT outputLogged(QString("Breakpoint set at %1: %2").arg(QString::fromStdString(addr.toHex()), ok ? "Success" : "Failed"), !ok);
+            Q_EMIT outputLogged(QString("Breakpoint set at %1: %2").arg(addr.toQString(), ok ? "Success" : "Failed"), !ok);
         }
     }, "bp <addr/symbol> - Set software breakpoint (int3)");
 
@@ -231,7 +231,7 @@ void CommandBarView::setupDefaultCommands() {
         }
         if (session_) {
             bool ok = session_->addHardwareBreakpoint(addr, type);
-            Q_EMIT outputLogged(QString("Hardware breakpoint set at %1: %2").arg(QString::fromStdString(addr.toHex()), ok ? "Success" : "Failed"), !ok);
+            Q_EMIT outputLogged(QString("Hardware breakpoint set at %1: %2").arg(addr.toQString(), ok ? "Success" : "Failed"), !ok);
         }
     }, "bph <addr/symbol> [x|w|rw] - Set hardware breakpoint/watchpoint (DR0~DR3)");
 
@@ -243,7 +243,7 @@ void CommandBarView::setupDefaultCommands() {
         Address addr = parseAddress(args[0]);
         if (session_) {
             bool ok = session_->removeBreakpoint(addr);
-            Q_EMIT outputLogged(QString("Breakpoint cleared at %1: %2").arg(QString::fromStdString(addr.toHex()), ok ? "Success" : "Failed"), !ok);
+            Q_EMIT outputLogged(QString("Breakpoint cleared at %1: %2").arg(addr.toQString(), ok ? "Success" : "Failed"), !ok);
         }
     }, "bc <addr/symbol> - Clear/remove breakpoint");
 
@@ -251,14 +251,14 @@ void CommandBarView::setupDefaultCommands() {
         if (args.empty()) { Q_EMIT outputLogged("Usage: be <addr>", true); return; }
         Address addr = parseAddress(args[0]);
         if (session_) session_->enableBreakpoint(addr);
-        Q_EMIT outputLogged(QString("Enabled breakpoint at %1").arg(QString::fromStdString(addr.toHex())), false);
+        Q_EMIT outputLogged(QString("Enabled breakpoint at %1").arg(addr.toQString()), false);
     }, "be <addr> - Enable breakpoint");
 
     registerCommand("bd", [this](const std::vector<std::string>& args) {
         if (args.empty()) { Q_EMIT outputLogged("Usage: bd <addr>", true); return; }
         Address addr = parseAddress(args[0]);
         if (session_) session_->disableBreakpoint(addr);
-        Q_EMIT outputLogged(QString("Disabled breakpoint at %1").arg(QString::fromStdString(addr.toHex())), false);
+        Q_EMIT outputLogged(QString("Disabled breakpoint at %1").arg(addr.toQString()), false);
     }, "bd <addr> - Disable breakpoint");
 
     // 2. Navigation: d (dump), u (disassembly)
@@ -267,7 +267,7 @@ void CommandBarView::setupDefaultCommands() {
         Address addr = parseAddress(args[0]);
         if (!addr.isNull()) {
             Q_EMIT jumpToMemoryRequested(addr);
-            Q_EMIT outputLogged(QString("Dump navigated to: %1").arg(QString::fromStdString(addr.toHex())), false);
+            Q_EMIT outputLogged(QString("Dump navigated to: %1").arg(addr.toQString()), false);
         }
     }, "d <addr/expr> - Navigate memory dump to address");
 
@@ -276,7 +276,7 @@ void CommandBarView::setupDefaultCommands() {
         Address addr = parseAddress(args[0]);
         if (!addr.isNull()) {
             Q_EMIT jumpToDisassemblyRequested(addr);
-            Q_EMIT outputLogged(QString("Disassembly navigated to: %1").arg(QString::fromStdString(addr.toHex())), false);
+            Q_EMIT outputLogged(QString("Disassembly navigated to: %1").arg(addr.toQString()), false);
         }
     }, "u <addr/symbol> - Navigate disassembly view to address");
 
@@ -321,23 +321,23 @@ void CommandBarView::setupDefaultCommands() {
                                   "R8:  %9  R9:  %10 R10: %11 R11: %12\n"
                                   "R12: %13 R13: %14 R14: %15 R15: %16\n"
                                   "RIP: %17")
-                .arg(QString::fromStdString(Address(regs.rax()).toHex()))
-                .arg(QString::fromStdString(Address(regs.rbx()).toHex()))
-                .arg(QString::fromStdString(Address(regs.rcx()).toHex()))
-                .arg(QString::fromStdString(Address(regs.rdx()).toHex()))
-                .arg(QString::fromStdString(Address(regs.rsi()).toHex()))
-                .arg(QString::fromStdString(Address(regs.rdi()).toHex()))
-                .arg(QString::fromStdString(regs.rbp().toHex()))
-                .arg(QString::fromStdString(regs.rsp().toHex()))
-                .arg(QString::fromStdString(Address(regs.r8()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r9()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r10()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r11()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r12()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r13()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r14()).toHex()))
-                .arg(QString::fromStdString(Address(regs.r15()).toHex()))
-                .arg(QString::fromStdString(regs.rip().toHex()));
+                .arg(Address(regs.rax()).toQString())
+                .arg(Address(regs.rbx()).toQString())
+                .arg(Address(regs.rcx()).toQString())
+                .arg(Address(regs.rdx()).toQString())
+                .arg(Address(regs.rsi()).toQString())
+                .arg(Address(regs.rdi()).toQString())
+                .arg(regs.rbp().toQString())
+                .arg(regs.rsp().toQString())
+                .arg(Address(regs.r8()).toQString())
+                .arg(Address(regs.r9()).toQString())
+                .arg(Address(regs.r10()).toQString())
+                .arg(Address(regs.r11()).toQString())
+                .arg(Address(regs.r12()).toQString())
+                .arg(Address(regs.r13()).toQString())
+                .arg(Address(regs.r14()).toQString())
+                .arg(Address(regs.r15()).toQString())
+                .arg(regs.rip().toQString());
             Q_EMIT outputLogged(out, false);
             return;
         }
@@ -361,7 +361,7 @@ void CommandBarView::setupDefaultCommands() {
 
             if (matched) {
                 session_->setRegisters(newRegs);
-                Q_EMIT outputLogged(QString("%1 set to %2").arg(QString::fromStdString(regName), QString::fromStdString(val.toHex())), false);
+                Q_EMIT outputLogged(QString("%1 set to %2").arg(QString::fromStdString(regName), val.toQString()), false);
             } else {
                 Q_EMIT outputLogged("Unsupported register: " + QString::fromStdString(regName), true);
             }
@@ -369,7 +369,7 @@ void CommandBarView::setupDefaultCommands() {
             // Query single register
             auto val = ExpressionEvaluator::evaluate(regName, regs, nullptr);
             if (val.has_value()) {
-                Q_EMIT outputLogged(QString("%1 = %2 (Dec: %3)").arg(QString::fromStdString(regName), QString::fromStdString(Address(*val).toHex()), QString::number(*val)), false);
+                Q_EMIT outputLogged(QString("%1 = %2 (Dec: %3)").arg(QString::fromStdString(regName), Address(*val).toQString(), QString::number(*val)), false);
             } else {
                 Q_EMIT outputLogged("Unknown register: " + QString::fromStdString(regName), true);
             }
@@ -384,7 +384,7 @@ void CommandBarView::setupDefaultCommands() {
         if (!session_) return;
         auto res = ExpressionEvaluator::evaluate(expr, session_->registers(), nullptr);
         if (res.has_value()) {
-            Q_EMIT outputLogged(QString("Result: %1 (Dec: %2)").arg(QString::fromStdString(Address(*res).toHex()), QString::number(*res)), false);
+            Q_EMIT outputLogged(QString("Result: %1 (Dec: %2)").arg(Address(*res).toQString(), QString::number(*res)), false);
         } else {
             Q_EMIT outputLogged("Evaluation failed for: " + QString::fromStdString(expr), true);
         }
@@ -396,7 +396,7 @@ void CommandBarView::setupDefaultCommands() {
         Address addr = parseAddress(args[0]);
         if (!addr.isNull() && session_) {
             session_->setInstructionPointer(addr);
-            Q_EMIT outputLogged("RIP set to: " + QString::fromStdString(addr.toHex()), false);
+            Q_EMIT outputLogged("RIP set to: " + addr.toQString(), false);
         }
     }, "origin <addr/symbol> - Set RIP to address without executing");
 
@@ -417,7 +417,7 @@ void CommandBarView::setupDefaultCommands() {
         if (session_) {
             bool ok = session_->changeMemoryProtection(addr, sz, prot);
             Q_EMIT outputLogged(QString("mprotect %1 (size %2, prot %3): %4")
-                                    .arg(QString::fromStdString(addr.toHex()))
+                                    .arg(addr.toQString())
                                     .arg(sz)
                                     .arg(prot)
                                     .arg(ok ? "Success" : "Failed"), !ok);
@@ -439,7 +439,7 @@ void CommandBarView::setupDefaultCommands() {
         if (session_) {
             auto addr = session_->allocateMemory(sz, prot);
             if (addr.has_value()) {
-                Q_EMIT outputLogged(QString("Allocated %1 bytes at %2").arg(sz).arg(QString::fromStdString(addr->toHex())), false);
+                Q_EMIT outputLogged(QString("Allocated %1 bytes at %2").arg(sz).arg(addr->toQString()), false);
             } else {
                 Q_EMIT outputLogged("alloc failed", true);
             }
@@ -452,7 +452,7 @@ void CommandBarView::setupDefaultCommands() {
         size_t sz = std::strtoul(args[1].c_str(), nullptr, 0);
         if (session_) {
             bool ok = session_->freeMemory(addr, sz);
-            Q_EMIT outputLogged(QString("free %1 (size %2): %3").arg(QString::fromStdString(addr.toHex())).arg(sz).arg(ok ? "Success" : "Failed"), !ok);
+            Q_EMIT outputLogged(QString("free %1 (size %2): %3").arg(addr.toQString()).arg(sz).arg(ok ? "Success" : "Failed"), !ok);
         }
     }, "free <addr> <size> - Unmap memory in target process via munmap");
 
@@ -478,7 +478,7 @@ void CommandBarView::setupDefaultCommands() {
         if (session_) {
             bool ok = session_->addPageGuard(addr, size, access);
             Q_EMIT outputLogged(QString("Page-Guard set at %1 (size %2, type %3): %4")
-                                    .arg(QString::fromStdString(addr.toHex()))
+                                    .arg(addr.toQString())
                                     .arg(size)
                                     .arg(QString::fromStdString(pageGuardAccessToString(access)))
                                     .arg(ok ? "Success" : "Failed"), !ok);
@@ -500,7 +500,7 @@ void CommandBarView::setupDefaultCommands() {
         if (session_) {
             bool ok = session_->removePageGuard(addr);
             Q_EMIT outputLogged(QString("Page-Guard removed at %1: %2")
-                                    .arg(QString::fromStdString(addr.toHex()))
+                                    .arg(addr.toQString())
                                     .arg(ok ? "Success" : "Failed"), !ok);
         }
     }, "unpageguard <addr/symbol> - Remove Page-Guard breakpoint");
@@ -521,9 +521,9 @@ void CommandBarView::setupDefaultCommands() {
         Q_EMIT outputLogged(QString("Active Page-Guards (%1):").arg(guards.size()), false);
         for (const auto& g : guards) {
             QString line = QString("  [Address: %1 - %2] Page: %3 (Size: %4) Type: %5 Hits: %6 Status: %7")
-                               .arg(QString::fromStdString(g.address.toHex()))
-                               .arg(QString::fromStdString((g.address + g.size).toHex()))
-                               .arg(QString::fromStdString(g.pageBase.toHex()))
+                               .arg(g.address.toQString())
+                               .arg((g.address + g.size).toQString())
+                               .arg(g.pageBase.toQString())
                                .arg(g.pageSize)
                                .arg(QString::fromStdString(pageGuardAccessToString(g.access)))
                                .arg(g.hitCount)
@@ -562,7 +562,7 @@ void CommandBarView::setupDefaultCommands() {
         }
         if (session_ && !bytes.empty()) {
             bool ok = session_->writeMemory(addr, bytes.data(), bytes.size());
-            Q_EMIT outputLogged(QString("Patched %1 bytes at %2: %3").arg(bytes.size()).arg(QString::fromStdString(addr.toHex())).arg(ok ? "Success" : "Failed"), !ok);
+            Q_EMIT outputLogged(QString("Patched %1 bytes at %2: %3").arg(bytes.size()).arg(addr.toQString()).arg(ok ? "Success" : "Failed"), !ok);
         }
     }, "patch <addr> <hexbytes> - Write raw hex bytes directly into memory");
 
@@ -607,8 +607,8 @@ void CommandBarView::setupDefaultCommands() {
         out += "  --------------------------------------------------------------------------------------\n";
         for (const auto& lib : libs) {
             out += QString("  %1  %2  %3  %4\n")
-                       .arg(QString::fromStdString(lib.baseAddress.toHex()), -18)
-                       .arg(QString::fromStdString(lib.dynamicAddress.toHex()), -18)
+                       .arg(lib.baseAddress.toQString(), -18)
+                       .arg(lib.dynamicAddress.toQString(), -18)
                        .arg(QString::fromStdString(lib.name), -24)
                        .arg(QString::fromStdString(lib.path));
         }
@@ -736,7 +736,7 @@ void CommandBarView::setupDefaultCommands() {
                 .arg(QString::fromStdString(t.name), -16)
                 .arg(QString::fromStdString(t.state))
                 .arg(t.isFrozen ? ", ❄ FROZEN" : "")
-                .arg(QString::fromStdString(t.rip.toHex()))
+                .arg(t.rip.toQString())
                 .arg(QString::fromStdString(t.symbol));
         }
         Q_EMIT outputLogged(out, false);
@@ -922,7 +922,7 @@ void CommandBarView::setupDefaultCommands() {
         for (size_t i = 0; i < limit; ++i) {
             out += QString("  [%1] %2 | Type: %3 | Prev: %4 | Cur: %5 | Delta: %6\n")
                        .arg(i + 1, 2)
-                       .arg(QString::fromStdString(res[i].address.toHex()))
+                       .arg(res[i].address.toQString())
                        .arg(QString::fromStdString(scanDataTypeToString(type)))
                        .arg(QString::fromStdString(res[i].formatPreviousValue(type)))
                        .arg(QString::fromStdString(res[i].formatCurrentValue(type)))
@@ -985,13 +985,13 @@ void CommandBarView::setupDefaultCommands() {
         Address baseAddr(*res);
         auto evalOpt = session_->typeManager().evaluate(sname, baseAddr, session_->engine());
         if (!evalOpt.has_value()) {
-            Q_EMIT outputLogged(QString("Failed to evaluate struct '%1' at %2 (struct not found or read memory failed)").arg(QString::fromStdString(sname), QString::fromStdString(baseAddr.toHex())), true);
+            Q_EMIT outputLogged(QString("Failed to evaluate struct '%1' at %2 (struct not found or read memory failed)").arg(QString::fromStdString(sname), baseAddr.toQString()), true);
             return;
         }
         const auto& eval = *evalOpt;
         QString out = QString("struct %1 @ %2 (size %3):\n")
                           .arg(QString::fromStdString(eval.structName))
-                          .arg(QString::fromStdString(eval.baseAddress.toHex()))
+                          .arg(eval.baseAddress.toQString())
                           .arg(eval.totalSize);
         for (const auto& f : eval.fields) {
             QString hexStr;

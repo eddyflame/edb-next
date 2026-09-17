@@ -1,5 +1,6 @@
 #include "ScriptConsoleView.hpp"
 #include "DebugSession.hpp"
+#include "core/ConfigurationManager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
@@ -189,7 +190,8 @@ void ScriptConsoleView::executeScript(const QString& lang, const QString& code) 
 
 void ScriptConsoleView::loadAndRunFile() {
     QString filter = "Script Files (*.py *.lua);;Python Scripts (*.py);;Lua Scripts (*.lua);;All Files (*)";
-    QString path = QFileDialog::getOpenFileName(this, "Select Script to Run", "", filter);
+    QString initialDir = ConfigurationManager::instance().directories().scriptDir;
+    QString path = QFileDialog::getOpenFileName(this, "Select Script to Run", initialDir, filter);
     if (path.isEmpty()) return;
 
     appendLog(QString("[Loading Script File: %1]").arg(path), "#ffd740", true);

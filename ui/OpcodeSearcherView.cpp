@@ -127,7 +127,7 @@ void OpcodeSearcherView::onFilterChanged(const QString& text) {
         if (filter.isEmpty()) {
             displayedResults_.push_back(r);
         } else {
-            QString addr = QString::fromStdString(r.address.toHex());
+            QString addr = r.address.toQString();
             QString insn = QString::fromStdString(r.mnemonic + " " + r.operands);
             QString mod = QString::fromStdString(r.moduleName);
             if (addr.contains(filter, Qt::CaseInsensitive) ||
@@ -148,7 +148,7 @@ void OpcodeSearcherView::renderTable() {
         const auto& item = displayedResults_[r];
 
         // 0: Address
-        auto* itemAddr = new QTableWidgetItem(QString::fromStdString(item.address.toHex()));
+        auto* itemAddr = new QTableWidgetItem(item.address.toQString());
         itemAddr->setForeground(QColor(100, 180, 240));
 
         // 1: Instruction
@@ -203,7 +203,7 @@ void OpcodeSearcherView::handleCustomContextMenu(const QPoint& pos) {
 
     menu.addSeparator();
     menu.addAction("Copy Address", [res]() {
-        QApplication::clipboard()->setText(QString::fromStdString(res.address.toHex()));
+        QApplication::clipboard()->setText(res.address.toQString());
     });
     menu.addAction("Copy Instruction", [res]() {
         QApplication::clipboard()->setText(QString::fromStdString(res.mnemonic + " " + res.operands).trimmed());

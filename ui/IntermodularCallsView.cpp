@@ -119,7 +119,7 @@ void IntermodularCallsView::renderTable() {
     for (int r = 0; r < static_cast<int>(displayedCalls_.size()); ++r) {
         const auto& call = displayedCalls_[r];
 
-        auto* item_addr = new QTableWidgetItem(QString::fromStdString(call.callAddress.toHex()));
+        auto* item_addr = new QTableWidgetItem(call.callAddress.toQString());
         item_addr->setForeground(QColor(100, 180, 240));
 
         auto* item_caller = new QTableWidgetItem(QString::fromStdString(call.callerFunction));

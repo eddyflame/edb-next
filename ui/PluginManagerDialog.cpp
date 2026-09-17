@@ -1,4 +1,5 @@
 #include "PluginManagerDialog.hpp"
+#include "core/ConfigurationManager.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -123,7 +124,8 @@ void PluginManagerDialog::onSelectionChanged() {
 }
 
 void PluginManagerDialog::onLoadPluginFileClicked() {
-    QString file = QFileDialog::getOpenFileName(this, "Select Plugin Binary", QString(), "Shared Library (*.so);;All Files (*)");
+    QString initialDir = ConfigurationManager::instance().directories().pluginDir;
+    QString file = QFileDialog::getOpenFileName(this, "Select Plugin Binary", initialDir, "Shared Library (*.so);;All Files (*)");
     if (!file.isEmpty()) {
         bool ok = pluginMgr_.loadPlugin(file);
         if (!ok) {

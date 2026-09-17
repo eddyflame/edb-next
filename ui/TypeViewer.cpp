@@ -99,6 +99,7 @@ void TypeViewer::setupUi() {
     fieldTable_->setAlternatingRowColors(true);
     fieldTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     fieldTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+    fieldTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     fieldTable_->setContextMenuPolicy(Qt::CustomContextMenu);
     fieldTable_->setStyleSheet(
         "QTableWidget { background-color: #1e1e1e; alternate-background-color: #252526; color: #d4d4d4; gridline-color: #333333; selection-background-color: #264f78; }"

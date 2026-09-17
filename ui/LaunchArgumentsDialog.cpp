@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include <QDialogButtonBox>
 #include <QRegularExpression>
+#include <QProcess>
 
 namespace edb_next {
 
@@ -97,8 +98,14 @@ std::vector<std::string> LaunchArgumentsDialog::arguments() const {
     QStringList lines = raw.split(QRegularExpression("[\r\n]+"), Qt::SkipEmptyParts);
     for (const auto& line : lines) {
         QString trimmed = line.trimmed();
-        if (!trimmed.isEmpty()) {
+        if (trimmed.isEmpty()) continue;
+        auto tokens = QProcess::splitCommand(trimmed);
+        if (tokens.isEmpty()) {
             result.push_back(trimmed.toStdString());
+        } else {
+            for (const auto& tok : tokens) {
+                result.push_back(tok.toStdString());
+            }
         }
     }
     return result;

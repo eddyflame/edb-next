@@ -68,6 +68,7 @@ void BreakpointManagerView::setupUi() {
 
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->verticalHeader()->setVisible(false);
     table_->setShowGrid(false);
 
@@ -114,7 +115,7 @@ void BreakpointManagerView::refresh() {
         }
 
         // 1: Address
-        auto* item_addr = new QTableWidgetItem(QString::fromStdString(bp.address.toHex()));
+        auto* item_addr = new QTableWidgetItem(bp.address.toQString());
         item_addr->setForeground(QColor(100, 180, 240));
 
         // 2: Symbol
