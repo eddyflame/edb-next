@@ -28,18 +28,21 @@
    - 3.10 4 象限工作台与现代化 UI/UX 系统
    - 3.11 DWARF 源码级调试与双向行号映射系统
    - 3.12 嵌入式 Python 3 & Lua 5.4 双自动化脚本引擎系统
+   - 3.13 C++ 符号反混淆 (Demangling) 系统
+   - 3.14 内存转储区细粒度硬件读写监视点交互与断点单元格高亮
+   - 3.15 断点绑定 Python/Lua 脚本自动化动作与微秒级无感打桩系统
+   - 3.16 内存页保护断点与隐蔽断点系统 (Page-Guard Breakpoint & Anti-Anti-Debugging)
+   - 3.17 动态库加载全自动拦截与热重载系统 (_r_debug Rendezvous & Pending Breakpoints)
+   - 3.18 多进程 Follow-Fork 与子进程跟踪系统 (Follow-Fork Mode & Multi-Process Inferior Debugging)
+   - 3.19 多线程独立冻结与解冻控制及隔离单步步进 (Thread Freeze / Thaw & Isolated Stepping)
+   - 3.20 动态内存特征差分扫描器与多轮数值收敛 (Differential Memory Scanner - CheatEngine style)
+   - 3.21 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout Visualizer)
 4. [未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)](#4-未实现功能与待完善规划-unimplemented-features--technical-roadmap)
    - 4.1 多 CPU 架构与交叉调试扩展
-   - 4.2 高级反反调试与隐蔽断点机制
-   - 4.3 C++ 符号反混淆与类型重建
-   - 4.4 多进程 Follow-Fork 与 IPC 跟踪
-   - 4.5 细粒度硬件读写监视点与页异常断点 UI
-   - 4.6 GDB 远程调试协议 (RSP) 客户端支持
-   - 4.7 动态库加载全自动拦截与热重载 (_r_debug Rendezvous)
-   - 4.8 断点绑定 Python/Lua 脚本自动化动作
-   - 4.9 多线程独立冻结与解冻控制 (Thread Freeze/Thaw)
-   - 4.10 动态内存特征差分扫描器 (Memory Scanner)
-   - 4.11 路线图特性的重要等级与实施优先级评估矩阵
+   - 4.2 高级反反调试深度扩展
+   - 4.3 硬件监视点 DR6 状态精准溯源与页保护自动降级
+   - 4.4 GDB 远程调试协议 (RSP) 客户端支持
+   - 4.5 路线图特性的重要等级与实施优先级评估矩阵
 5. [代码结构与模块拓扑关系 (Codebase Structure & Module Architecture)](#5-代码结构与模块拓扑关系-codebase-structure--module-architecture)
    - 5.1 完整源码目录树与职责清单
    - 5.2 软件分层架构图
@@ -557,7 +560,7 @@
 
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
-作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。本章梳理出当前版本尚未实现或待进阶完善的功能，作为后续版本的官方演进路线图 (Roadmap)。
+作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。所有已完成的核心功能（如 3.13 C++ 反混淆、3.14 硬件监视点、3.15 脚本打桩、3.16 页保护断点、3.17 动态库热重载、3.18 多进程跟踪、3.19 线程冻结、3.20 差分内存扫描、3.21 复合结构体解析）已全部移入第 3 章已实现功能清单中。本章仅保留当前版本尚未实现的进阶特性，作为后续版本的官方演进路线图 (Roadmap)。
 
 ### 4.1 多 CPU 架构与交叉调试扩展 (Multi-Architecture Support)
 - **当前状态**：当前引擎深度绑定 Linux x86_64 架构（依赖 `user_regs_struct`、`user_fpregs_struct` 以及 x86_64 DR0~DR7 调试寄存器）。
@@ -566,73 +569,36 @@
   2. **ARM64 / AArch64 原生支持**：抽象 `IRegisterContext` 与 `IDebugEngine` 工厂，针对 ARM64 平台实现基于 `NT_PRSTATUS` / `PTRACE_GETREGSET` 的 X0~X30 寄存器组及硬件断点（`PTRACE_SETHBPREGS`）支持；
   3. **RISC-V (RV64GC) 探索**：为国内新兴开源硬件生态预留接口契约。
 
-### 4.2 高级反反调试扩展 (Anti-Anti-Debugging Extensions)
+### 4.2 高级反反调试深度扩展 (Anti-Anti-Debugging Deep Extensions)
 - **当前状态**：隐匿执行断点与内存页保护断点 (Page-Guard Breakpoint) 已在 3.16 节全景落地，实现了零 0xCC 注入的代码段自校验绕过与无限槽位软监视点。目前针对进程树层级与时间戳的伪装仍有进阶扩展空间。
 - **待完善方案**：
   1. **`TracerPid` 伪装**：基于注入技术 Hook 或通过内核模块虚拟化目标读取 `/proc/self/status` 的行为，抹平 TracerPid 痕迹；
   2. **RDTSC 指令陷阱抹平**：利用 CR4 寄存器标志或硬件单步对 `rdtsc` / `rdtscp` 指令进行时间戳平滑，抹平单步执行的时间延迟。
 
-### 4.3 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout)
-- **当前状态**：**已在 3.21 节全景实现 (v1.0)**。基于 `TypeManager` 与自然对齐算法，完整支持 C 结构体声明解析、14 种字段类型映射、实时内存取样、Tab 22 结构体可视化面板、指针双击解引用跳转、原位修改，以及 `structs` / `struct` / `defstruct` CLI 完整指令。
-- **后续进阶方向**：
-  1. **DWARF 类型信息自动反写 (Auto-Import from DWARF)**：直接从二进制调试符号中的 `.debug_info` 提取编译期结构体定义并自动注入 `TypeManager`；
-  2. **嵌套复合类型与联合体 (Nested Structs & Unions)**：支持结构体嵌套与联合体内存重叠布局可视化。
-
-### 4.4 多进程 Follow-Fork 与子进程跟踪
-- **当前状态**：**已在 3.18 节全景实现 (v1.0)**。基于内核 `PTRACE_O_TRACEFORK`/`TRACEVFORK` 与 Tracer 亲和性设计，完整支持 `Parent` / `Child` / `Both` 三态跟踪、`catch fork` 捕获、`SessionManager` 独立子会话树与 `inferiors` / `inferior` 命令行多进程穿梭。
-- **后续进阶方向**：
-  1. **子进程脱离行为策略扩展 (Detach on Exit)**：精细化控制非核心分支进程的退出处置；
-  2. **跨进程 IPC 通信跟踪**：监控多进程之间的 Unix Socket、管道 (Pipe) 与共享内存通信数据流。
-
-### 4.5 硬件监视点 DR6 状态精准溯源与页异常断点 (DR6 Attribution & Page-Guard Watchpoints)
+### 4.3 硬件监视点 DR6 状态精准溯源与页保护自动降级 (DR6 Attribution & Watchpoint Fallback)
 - **当前状态**：转储区细粒度 1/2/4/8 字节硬件读写监视点与断点单元格高亮已在 3.14 节完整实现；目前命中后主界面主要通过信号类型报告。
 - **待完善方案**：
   1. **硬件监视点触发精准溯源**：深入解析调试状态寄存器 DR6（`B0`~`B3` 标志位），明确在界面状态栏精准报告“硬件写监视点命中：地址 0x... 触发写入”；
   2. **硬件断点与隐匿内存保护异常断点融合**：当硬件断点数量达到 4 个物理上限时，自动透明退化至 `mprotect` 内存页保护异常断点。
 
-### 4.6 GDB 远程调试协议 (RSP) 客户端支持
+### 4.4 GDB 远程调试协议 (RSP) 客户端支持 (GDB Remote Serial Protocol Client)
 - **当前状态**：当前直接运行于 Linux 本地，基于操作系统原生系统调用。
 - **待完善方案**：
   1. **GDB RSP 协议后端**：实现一套 `RspDebugEngine`，通过 TCP 套接字与远端 `gdbserver`、QEMU 模拟器或嵌入式板卡通信；
   2. **跨平台远程逆向**：使 edb-next 成为通用的 GUI 前端，既可调试本地 Linux 二进制，亦可远程附加 Android、路由器固件或车载系统。
 
-### 4.7 动态库加载全自动拦截与热重载 (_r_debug Rendezvous 机制 / catch dlopen)
-- **当前状态**：**已在 3.17 节全景实现 (v1.0)**。深度接入 Linux glibc `_r_debug` Rendezvous 协议与 `_dl_debug_state` 内部陷阱断点，实现动态库差分扫描、符号表与 DWARF 热合流、Pending 待决断点自动绑定，以及 `BinaryInfoView` 专属可视化。
-- **后续进阶方向**：
-  1. **多命名空间与 Android 仿生链接器 (Bionic linker) 扩展**：适配 Android `dlopen` 命名空间隔离机制；
-  2. **卸载清理与局部符号回滚 (`dlclose`)**：在 `RT_DELETE` 触发时按需注销并回滚对应 `.so` 的局部符号。
-
-### 4.9 多线程独立冻结与解冻控制 (Thread Freeze / Thaw)
-- **当前状态**：**已在 3.19 节全景实现 (v1.0)**。基于 `SYS_tgkill` + `SIGSTOP` 与事件循环调度掩码，完整支持单个/批量线程独立冻结与解冻、冰蓝 `❄ FROZEN` 状态指示、多并发下隔离单步执行 (Isolated Stepping)，以及 `freeze` / `thaw` / `threads` CLI 快捷调度。
-- **后续进阶方向**：
-  1. **条件性自动冻结触发规则**：支持在特定断点命中时自动联动冻结指定工作线程池；
-  2. **跨线程调用栈依赖死锁分析**：基于互斥锁与 futex 系统调用自动识别死锁等待链并高亮关联线程。
-
-### 4.10 动态内存特征差分扫描器 (Memory Scanner / 数据变动检索)
-- **当前状态**：**已在 3.20 节全景实现 (v1.0)**。支持 8 种核心数据类型、首次全量/精确基准扫描、多轮差分收敛（增大/减小/变动/未变/增减Delta）、可读写段流式加速扫描、Tab 21 可视化面板原位修改，以及 `scan` / `nextscan` / `scanresults` / `scanreset` CLI 完整指令。
-- **后续进阶方向**：
-  1. **内存数值定时自动锁定 (Freeze Value Daemon)**：在后台定时循环重写被锁定的内存地址，实现游戏锁血锁蓝能力；
-  2. **基于指针扫描的多级偏移反推 (Pointer Scanner)**：遍历堆栈与模块数据段，自动搜索指向关键地址的多级基址指针链（Base + Offset1 + Offset2）。
-
 ---
 
-### 4.11 路线图特性的重要等级与实施优先级评估矩阵 (Priority & Importance Matrix)
+### 4.5 路线图特性的重要等级与实施优先级评估矩阵 (Priority & Importance Matrix)
 
-为了指引项目的科学演进并合理分配工程资源，我们对未实现功能进行了多维度的量化评估：
+为了指引后续版本演进并合理分配工程资源，我们对未实现功能进行了多维度的量化评估：
 
 | 路线图功能 | 重要等级 (Impact) | 实现复杂度 (Complexity) | 实施优先级 | 适用场景与推荐落地节点 |
 | :--- | :---: | :---: | :---: | :--- |
-| **C++ 符号反混淆 (Demangling)** | ★★★★★ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.13 节全景实现**。基于 `abi::__cxa_demangle`，符号、调用栈、反汇编指示全面可读化。 |
-| **细粒度硬件读写监视点 UI** | ★★★★☆ | 极低 (Low) | **已完成 (v1.0)** | **已在 3.14 节全景实现**。HexDump 单元格右键菜单 1/2/4/8 字节硬件读写监视点与高亮标记。 |
-| **断点绑定 Python/Lua 脚本打桩** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.15 节全景实现**。支持 Python 3/Lua 5.4 脚本打桩与 `return false` 无感动态 Hook。 |
-| **内存页保护断点 (Page-Guard)** | ★★★★★ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.16 节全景实现**。打破 DR0~DR3 数量限制，实现零 0xCC 代码段自校验绕过与微秒级单步放行。 |
-| **4.7 动态库加载自动拦截 (`_r_debug`)** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.17 节全景实现**。解决动态 `dlopen()` 模块符号丢失问题，实现内部陷阱拦截、符号/DWARF 热重载与 Pending 待决断点。 |
-| **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.18 节全景实现**。支持 Parent/Child/Both 三态跟踪、PTRACE_EVENT_FORK 拦截、子会话树派生与 inferiors 多会话穿梭。 |
-| **4.9 多线程独立冻结与解冻 (Freeze/Thaw)** | ★★★☆☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.19 节全景实现**。支持单个/全部线程冻结与解冻、冰蓝冻结状态指示、多并发下隔离单步步进与 CLI 快捷调度。 |
-| **4.10 动态内存特征差分扫描器** | ★★★☆☆ | 较高 (High) | **已完成 (v1.0)** | **已在 3.20 节全景实现**。支持 8 种数据类型、多轮差分收敛、内存段流式扫描、Tab 21 可视化面板与 CLI 指令。 |
-| **4.3 复合数据类型与结构体解析 (Type Viewer)** | ★★★☆☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.21 节全景实现**。支持 C 语言结构体解析、自然对齐计算、Tab 22 布局可视化、指针解引用跳转与 CLI 解析指令。 |
-| **4.1 多 CPU 架构扩展 (ARM64 / x86-32)** | ★★★★☆ | 极高 (Very High) | **P3 (长期演进)** | 涉及底层寄存器结构与 ptrace 平台抽象重构，建议在 x86_64 体系完全稳定后展开。 |
-| **4.6 GDB 远程调试协议 (RSP) 客户端** | ★★★☆☆ | 较高 (High) | **P3 (长期演进)** | 面向嵌入式固件与 Android 远程逆向的前端协议重构，属于跨生态扩展。 |
+| **4.2 高级反反调试深度扩展 (TracerPid / RDTSC 抹平)** | ★★★★☆ | 中等 (Medium) | **P3 (进阶增强)** | 针对进程树与时间戳自检测的加固样本深度对抗，抹平 TracerPid 与 RDTSC 单步时差。 |
+| **4.3 硬件监视点 DR6 状态精准溯源与页保护自动降级** | ★★★☆☆ | 低 (Low) | **P3 (进阶增强)** | 精准解析 DR6 B0~B3 并报告具体写入地址，DR0~DR3 物理槽满额自动无缝降级至页保护断点。 |
+| **4.4 GDB 远程调试协议 (RSP) 客户端** | ★★★☆☆ | 较高 (High) | **P3 (长期演进)** | 实现 `RspDebugEngine` 协议后端，面向嵌入式固件、QEMU 模拟器与 Android 远程逆向。 |
+| **4.1 多 CPU 架构扩展 (ARM64 / x86-32)** | ★★★★☆ | 极高 (Very High) | **P3 (长期演进)** | 涉及底层寄存器上下文、系统调用与 ptrace 平台抽象重构，面向跨指令集生态。 |
 
 ---
 
