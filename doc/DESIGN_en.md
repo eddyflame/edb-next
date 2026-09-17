@@ -15,7 +15,7 @@
    - 1.2 Competitive Analysis (edb-next vs. Original edb vs. x64dbg)
    - 1.3 Core Engineering Principles
 2. [Key Characteristics & Architectural Highlights](#2-key-characteristics--architectural-highlights)
-3. [Implemented Features Breakdown (10 Core Subsystems)](#3-implemented-features-breakdown-10-core-subsystems)
+3. [Implemented Features Breakdown (21 Core Subsystems)](#3-implemented-features-breakdown-21-core-subsystems)
    - 3.1 Core Kernel & Execution Control Engine
    - 3.2 Disassembly & Control Flow Analysis
    - 3.3 CPU Registers & Machine State Management
@@ -28,18 +28,21 @@
    - 3.10 4-Quadrant Golden Workspace & UI/UX Design
    - 3.11 DWARF Source-Level Debugging & Line Mapping Subsystem
    - 3.12 Embedded Python 3 & Lua 5.4 Dual Scripting Automation Engine
+   - 3.13 C++ Symbol Demangling Subsystem
+   - 3.14 Memory Dump Fine-Grained Hardware Watchpoint Context Menu
+   - 3.15 Script-Driven Breakpoint Actions & Silent Hooking Subsystem
+   - 3.16 Memory Page-Guard Breakpoints & Stealth Anti-Anti-Debugging
+   - 3.17 Shared Library Loading Interception & Hot-Reloading (_r_debug Rendezvous)
+   - 3.18 Multi-Process Follow-Fork & Inferiors Tracing
+   - 3.19 Independent Thread Freeze & Thaw with Isolated Stepping
+   - 3.20 Differential Memory Pattern & Value Scanner (CheatEngine style)
+   - 3.21 Compound Type Reconstruction & Struct Layout Visualizer
 4. [Unimplemented Features & Technical Roadmap](#4-unimplemented-features--technical-roadmap)
    - 4.1 Multi-Architecture & Cross-Debugging Support (ARM64 / x86-32)
-   - 4.2 Advanced Anti-Anti-Debugging & Stealth Breakpoints
-   - 4.3 C++ Symbol Demangling & Type Layout Reconstruction
-   - 4.4 Multi-Process Follow-Fork & IPC Tracing
-   - 4.5 Fine-Grained Hardware Watchpoint UI & Page-Guard Traps
-   - 4.6 GDB Remote Serial Protocol (RSP) Client Support
-   - 4.7 Automated Shared Library Loading Interception (_r_debug Rendezvous)
-   - 4.8 Script-Driven Breakpoint Actions & High-Frequency Hooking
-   - 4.9 Independent Thread Freeze & Thaw Execution Control
-   - 4.10 Differential Memory Pattern & Value Scanner
-   - 4.11 Priority & Importance Evaluation Matrix
+   - 4.2 Anti-Anti-Debugging Deep Extensions
+   - 4.3 Hardware Watchpoint DR6 Status Attribution & Automatic Page-Guard Fallback
+   - 4.4 GDB Remote Serial Protocol (RSP) Client Support
+   - 4.5 Priority & Importance Evaluation Matrix
 5. [Codebase Structure & Module Architecture](#5-codebase-structure--module-architecture)
    - 5.1 Complete Source Tree & Responsibilities
    - 5.2 Layered System Topology
@@ -319,44 +322,29 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 
 ## 4. Unimplemented Features & Technical Roadmap
 
-1. **Multi-Architecture Support**:
+All completed core features (such as §3.13 C++ Demangling, §3.14 Hardware Watchpoints, §3.15 Script Hooking, §3.16 Page-Guard Breakpoints, §3.17 Shared Library Rendezvous, §3.18 Multi-Process Tracing, §3.19 Thread Freeze/Thaw, §3.20 Differential Memory Scanner, and §3.21 Struct Layout Visualizer) have been permanently recorded in Chapter 3. This chapter strictly documents the remaining unimplemented features and architectural extensions:
+
+1. **Multi-Architecture Support (ARM64 / x86-32 / RISC-V)**:
    - Abstract `IRegisterContext` and engine factories to support 32-bit x86 (`compat_ptrace`) and AArch64 / ARM64 (`NT_PRSTATUS` / `PTRACE_GETREGSET`).
-2. **Anti-Anti-Debugging Extensions**:
+2. **Anti-Anti-Debugging Deep Extensions**:
    - Cloak `TracerPid` in `/proc/<pid>/status` and smooth `rdtsc` execution differences (Page-Guard breakpoints now fully implemented in §3.16).
-3. **Compound Data Type Reconstruction & Struct Layout Visualization**:
-   - **Completed in §3.21 (v1.0)**. C struct parsing with natural AMD64 ABI alignment, live memory sampling, 14 field types, Tab 22 layout inspector, double-click pointer dereference navigation, in-place memory mutation, and `structs` / `struct` / `defstruct` CLI commands.
-4. **Multi-Process Follow-Fork**:
-   - **Completed in §3.18 (v1.0)**. Full kernel `PTRACE_O_TRACEFORK`/`TRACEVFORK` support, tracer thread affinity architecture, tri-state follow-fork (`Parent`/`Child`/`Both`), `catch fork` triggers, and multi-inferior session tabs (`inferiors` / `inferior <id|pid>`).
-5. **Hardware Watchpoint DR6 Status Attribution & Page-Guard Watchpoints**:
+3. **Hardware Watchpoint DR6 Status Attribution & Automatic Page-Guard Fallback**:
    - Parse debug status register DR6 (`B0`~`B3`) to display precise status bar alerts ("Hardware watchpoint triggered: Address 0x... written"); gracefully fallback to page-guard exceptions when hardware debug registers are exhausted.
-6. **GDB Remote Serial Protocol (RSP) Support**:
+4. **GDB Remote Serial Protocol (RSP) Support**:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
-7. **Automated Shared Library Loading Interception (`_r_debug` Rendezvous)**:
-   - **Completed in §3.17 (v1.0)**. Full glibc `_r_debug` rendezvous protocol support, differential `link_map` scanning, automatic symbol table and DWARF merging, and pending breakpoint auto-binding.
-9. **Independent Thread Freeze & Thaw Execution Control**:
-   - **Completed in §3.19 (v1.0)**. Full kernel `SYS_tgkill` + `SIGSTOP` signal blocking and event-loop masking, isolated stepping, ice-blue `❄ FROZEN` badges, toolbar actions, and `freeze` / `thaw` / `threads` CLI commands.
-10. **Differential Memory Pattern & Value Scanner**:
-    - **Completed in §3.20 (v1.0)**. Full 8-type support, first scan baseline capture, multi-pass differential convergence (> / < / != / == / +/- delta), streamed rw-p chunk scanning, Tab 21 interactive UI with in-place memory editing, and `scan` / `nextscan` / `scanresults` / `scanreset` CLI commands.
 
 ---
 
-### 4.11 Priority & Importance Evaluation Matrix
+### 4.5 Priority & Importance Evaluation Matrix
 
-To guide engineering milestones effectively, each unimplemented roadmap capability is quantitatively prioritized:
+To guide future version milestones effectively, each unimplemented roadmap capability is quantitatively prioritized:
 
 | Roadmap Capability | Impact | Complexity | Priority | Recommended Target Milestone |
 | :--- | :---: | :---: | :---: | :--- |
-| **C++ Symbol Demangling** | ★★★★★ | Low | **Completed (v1.0)** | **Fully implemented in §3.13**. `<cxxabi.h>` demangling active across symbols, stack, registers, and disassembler. |
-| **Fine-Grained Hardware Watchpoint UI** | ★★★★☆ | Low | **Completed (v1.0)** | **Fully implemented in §3.14**. 1/2/4/8-byte read/write watchpoint assignment and cell highlights in Hex Dumps. |
-| **Script-Driven Breakpoint Actions** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.15**. Python 3 & Lua 5.4 dynamic hooks with `return false` silent bypass. |
-| **Memory Page-Guard Breakpoints** | ★★★★★ | Medium | **Completed (v1.0)** | **Fully implemented in §3.16**. Breaks 4-register limit, zero-0xCC stealth execution, and sub-microsecond step over. |
-| **4.7 Automated Shared Library Rendezvous (`_r_debug`)** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.17**. Solves runtime `dlopen()` symbol omission; internal trap, symbol/DWARF hot reload & pending breakpoints. |
-| **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.18**. Tri-state follow-fork, ptrace fork event trapping, child session tree & inferior CLI switching. |
-| **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.19**. Single/batch thread freeze & thaw, ice-blue status badges, isolated stepping, and CLI commands. |
-| **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **Completed (v1.0)** | **Fully implemented in §3.20**. Multi-pass convergence, 8 data types, streamed chunk scan, Tab 21 panel & CLI. |
-| **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.21**. C struct parsing, AMD64 natural alignment, Tab 22 visualizer, pointer dereference jump & CLI commands. |
-| **4.1 Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
-| **4.6 GDB Remote Serial Protocol (RSP) Client** | ★★★☆☆ | High | **P3 (Long-Term)** | Extends edb-next UI as a universal frontend for QEMU, Android, and embedded targets. |
+| **Anti-Anti-Debugging Deep Extensions (TracerPid / RDTSC)** | ★★★★☆ | Medium | **P3 (Enhancement)** | Deep evasion against anti-debugging techniques, masking TracerPid in status and smoothing RDTSC ticks. |
+| **Hardware Watchpoint DR6 Attribution & Watchpoint Fallback** | ★★★☆☆ | Low | **P3 (Enhancement)** | Precise DR6 register attribution and automatic transparent fallback to page-guard exceptions. |
+| **GDB Remote Serial Protocol (RSP) Client** | ★★★☆☆ | High | **P3 (Long-Term)** | `RspDebugEngine` backend extending edb-next UI as a universal frontend for QEMU, Android, and embedded targets. |
+| **Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
 
 ---
 
