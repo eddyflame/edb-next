@@ -231,49 +231,49 @@ void ProcessPropertiesView::updateFdTab(Pid pid) {
     fdTable_->setRowCount(0);
 
     std::string fdDirPath = "/proc/" + std::to_string(pid) + "/fd";
-    if (!fs::exists(fdDirPath)) return;
+    std::error_code ec;
+    if (!fs::exists(fdDirPath, ec)) return;
 
     QString filter = fdFilterEdit_->text().trimmed();
 
-    try {
-        for (const auto& entry : fs::directory_iterator(fdDirPath)) {
-            QString fdStr = QString::fromStdString(entry.path().filename().string());
+    fs::directory_iterator it(fdDirPath, ec);
+    if (ec) return;
 
-            std::error_code ec;
-            auto targetPath = fs::read_symlink(entry.path(), ec);
-            QString targetStr = ec ? "[unreadable]" : QString::fromStdString(targetPath.string());
+    for (const auto& entry : it) {
+        QString fdStr = QString::fromStdString(entry.path().filename().string());
 
-            QString typeStr = "File";
-            if (targetStr.startsWith("socket:")) typeStr = "Socket";
-            else if (targetStr.startsWith("pipe:")) typeStr = "Pipe";
-            else if (targetStr.startsWith("anon_inode:")) typeStr = "Anon Inode";
-            else if (targetStr.startsWith("/dev/pts/")) typeStr = "Terminal / PTY";
+        std::error_code sym_ec;
+        auto targetPath = fs::read_symlink(entry.path(), sym_ec);
+        QString targetStr = sym_ec ? "[unreadable]" : QString::fromStdString(targetPath.string());
 
-            if (!filter.isEmpty() && !fdStr.contains(filter, Qt::CaseInsensitive) && !targetStr.contains(filter, Qt::CaseInsensitive)) {
-                continue;
-            }
+        QString typeStr = "File";
+        if (targetStr.startsWith("socket:")) typeStr = "Socket";
+        else if (targetStr.startsWith("pipe:")) typeStr = "Pipe";
+        else if (targetStr.startsWith("anon_inode:")) typeStr = "Anon Inode";
+        else if (targetStr.startsWith("/dev/pts/")) typeStr = "Terminal / PTY";
 
-            int row = fdTable_->rowCount();
-            fdTable_->insertRow(row);
-
-            auto* itemFd = new QTableWidgetItem(fdStr);
-            auto* itemType = new QTableWidgetItem(typeStr);
-            auto* itemTarget = new QTableWidgetItem(targetStr);
-
-            itemFd->setFont(fdTable_->font());
-            itemType->setFont(fdTable_->font());
-            itemTarget->setFont(fdTable_->font());
-
-            if (typeStr == "Socket") itemType->setForeground(QColor(230, 180, 80));
-            else if (typeStr == "Pipe") itemType->setForeground(QColor(180, 140, 255));
-            else if (typeStr == "Terminal / PTY") itemType->setForeground(QColor(100, 220, 150));
-
-            fdTable_->setItem(row, 0, itemFd);
-            fdTable_->setItem(row, 1, itemType);
-            fdTable_->setItem(row, 2, itemTarget);
+        if (!filter.isEmpty() && !fdStr.contains(filter, Qt::CaseInsensitive) && !targetStr.contains(filter, Qt::CaseInsensitive)) {
+            continue;
         }
-    } catch (...) {
-        // Proc entry may change or disappear
+
+        int row = fdTable_->rowCount();
+        fdTable_->insertRow(row);
+
+        auto* itemFd = new QTableWidgetItem(fdStr);
+        auto* itemType = new QTableWidgetItem(typeStr);
+        auto* itemTarget = new QTableWidgetItem(targetStr);
+
+        itemFd->setFont(fdTable_->font());
+        itemType->setFont(fdTable_->font());
+        itemTarget->setFont(fdTable_->font());
+
+        if (typeStr == "Socket") itemType->setForeground(QColor(230, 180, 80));
+        else if (typeStr == "Pipe") itemType->setForeground(QColor(180, 140, 255));
+        else if (typeStr == "Terminal / PTY") itemType->setForeground(QColor(100, 220, 150));
+
+        fdTable_->setItem(row, 0, itemFd);
+        fdTable_->setItem(row, 1, itemType);
+        fdTable_->setItem(row, 2, itemTarget);
     }
 }
 
