@@ -324,13 +324,13 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 
 All completed core features (such as §3.13 C++ Demangling, §3.14 Hardware Watchpoints, §3.15 Script Hooking, §3.16 Page-Guard Breakpoints, §3.17 Shared Library Rendezvous, §3.18 Multi-Process Tracing, §3.19 Thread Freeze/Thaw, §3.20 Differential Memory Scanner, and §3.21 Struct Layout Visualizer) have been permanently recorded in Chapter 3. This chapter strictly documents the remaining unimplemented features and architectural extensions:
 
-1. **Multi-Architecture Support (ARM64 / x86-32 / RISC-V)**:
+### 4.1. **Multi-Architecture Support (ARM64 / x86-32 / RISC-V)**:
    - Abstract `IRegisterContext` and engine factories to support 32-bit x86 (`compat_ptrace`) and AArch64 / ARM64 (`NT_PRSTATUS` / `PTRACE_GETREGSET`).
-2. **Anti-Anti-Debugging Deep Extensions**:
+### 4.2. **Anti-Anti-Debugging Deep Extensions**:
    - Cloak `TracerPid` in `/proc/<pid>/status` and smooth `rdtsc` execution differences (Page-Guard breakpoints now fully implemented in §3.16).
-3. **Hardware Watchpoint DR6 Status Attribution & Automatic Page-Guard Fallback**:
+### 4.3. **Hardware Watchpoint DR6 Status Attribution & Automatic Page-Guard Fallback**:
    - Parse debug status register DR6 (`B0`~`B3`) to display precise status bar alerts ("Hardware watchpoint triggered: Address 0x... written"); gracefully fallback to page-guard exceptions when hardware debug registers are exhausted.
-4. **GDB Remote Serial Protocol (RSP) Support**:
+### 4.4. **GDB Remote Serial Protocol (RSP) Support**:
    - Introduce an `RspDebugEngine` client to connect to remote `gdbserver` or QEMU instances for embedded firmware and Android debugging.
 
 ---

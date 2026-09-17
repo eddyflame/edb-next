@@ -117,16 +117,18 @@ void SourceView::setSession(std::shared_ptr<DebugSession> session) {
     if (auto sess = session_.lock()) {
         connect(sess.get(), &DebugSession::sourceLocationChanged, this, &SourceView::onSourceLocationChanged, Qt::UniqueConnection);
         connect(sess.get(), &DebugSession::breakpointsUpdated, this, &SourceView::updateBreakpointsAndRip, Qt::UniqueConnection);
-        connect(sess.get(), &DebugSession::registersUpdated, this, [this]() {
-            if (auto s = session_.lock()) {
-                if (auto loc = s->currentSourceLocation()) {
-                    onSourceLocationChanged(*loc);
-                } else {
-                    currentRipLine_ = -1;
-                    updateBreakpointsAndRip();
-                }
-            }
-        }, Qt::UniqueConnection);
+        connect(sess.get(), &DebugSession::registersUpdated, this, &SourceView::onRegistersUpdated, Qt::UniqueConnection);
+    }
+}
+
+void SourceView::onRegistersUpdated() {
+    if (auto s = session_.lock()) {
+        if (auto loc = s->currentSourceLocation()) {
+            onSourceLocationChanged(*loc);
+        } else {
+            currentRipLine_ = -1;
+            updateBreakpointsAndRip();
+        }
     }
 }
 

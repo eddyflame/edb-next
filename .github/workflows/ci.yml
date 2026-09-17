@@ -46,8 +46,8 @@ jobs:
             build-essential \
             cmake \
             pkg-config \
-            qtbase5-dev \
-            libqt5widgets5 \
+            qt6-base-dev \
+            qt6-tools-dev \
             libcapstone-dev \
             libelf-dev \
             libdw-dev \
