@@ -11,10 +11,247 @@
 #include <QKeySequence>
 #include <QClipboard>
 #include <QApplication>
+#include <QStyledItemDelegate>
+#include <QPainter>
 #include <iomanip>
 #include <sstream>
+#include <unordered_set>
+#include <string_view>
+#include <cctype>
 
 namespace edb_next {
+
+namespace {
+
+enum class MnemonicClass {
+    Call,
+    Jump,
+    CondJump,
+    Return,
+    Trap,
+    Stack,
+    Nop,
+    Comparison,
+    Normal
+};
+
+static MnemonicClass classifyMnemonic(std::string_view m) {
+    if (m == "call") return MnemonicClass::Call;
+    if (m == "jmp") return MnemonicClass::Jump;
+    if (m == "ret" || m == "retn" || m == "retf" || m == "iret" || m == "iretd" || m == "iretq") return MnemonicClass::Return;
+    if (m == "push" || m == "pop" || m == "pushf" || m == "pushfq" || m == "popf" || m == "popfq" || m == "enter" || m == "leave") return MnemonicClass::Stack;
+    if (m == "syscall" || m == "sysenter" || m == "int" || m == "int3" || m == "int1" || m == "into" || m == "ud2" || m == "hlt") return MnemonicClass::Trap;
+    if (m == "nop" || m == "pause") return MnemonicClass::Nop;
+    if (m == "cmp" || m == "test") return MnemonicClass::Comparison;
+    if (m.starts_with('j') || m.starts_with("loop")) return MnemonicClass::CondJump;
+    return MnemonicClass::Normal;
+}
+
+static const std::unordered_set<std::string_view> kRegisters = {
+    // 64-bit GPR
+    "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp",
+    "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+    // 32-bit GPR
+    "eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp",
+    "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+    // 16-bit GPR
+    "ax", "bx", "cx", "dx", "si", "di", "bp", "sp",
+    "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
+    // 8-bit GPR
+    "al", "bl", "cl", "dl", "ah", "bh", "ch", "dh",
+    "sil", "dil", "bpl", "spl",
+    "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b",
+    // Special / IP / Flags / Segments
+    "rip", "eip", "ip", "rflags", "eflags", "flags",
+    "cs", "ds", "es", "fs", "gs", "ss",
+    // SIMD / Float
+    "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
+    "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+    "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
+    "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+    "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7",
+    "zmm8", "zmm9", "zmm10", "zmm11", "zmm12", "zmm13", "zmm14", "zmm15",
+    "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
+    "mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7",
+    // Control / Debug
+    "cr0", "cr2", "cr3", "cr4", "cr8",
+    "dr0", "dr1", "dr2", "dr3", "dr6", "dr7"
+};
+
+static const std::unordered_set<std::string_view> kSizeKeywords = {
+    "byte", "word", "dword", "qword", "tbyte", "xmmword", "ymmword", "zmmword", "ptr", "short", "near", "far"
+};
+
+struct OperandToken {
+    QString text;
+    QColor color;
+};
+
+static std::vector<OperandToken> tokenizeOperands(std::string_view ops) {
+    std::vector<OperandToken> tokens;
+    size_t i = 0;
+    while (i < ops.size()) {
+        if (std::isspace(static_cast<unsigned char>(ops[i]))) {
+            size_t start = i;
+            while (i < ops.size() && std::isspace(static_cast<unsigned char>(ops[i]))) {
+                ++i;
+            }
+            tokens.push_back({QString::fromLatin1(ops.data() + start, static_cast<int>(i - start)), QColor(200, 200, 200)});
+        } else if (ops[i] == '[' || ops[i] == ']') {
+            tokens.push_back({QString(ops[i]), QColor(0x64, 0xb5, 0xf6)}); // #64b5f6 blue brackets
+            ++i;
+        } else if (ops[i] == ',' || ops[i] == ':' || ops[i] == '+' || ops[i] == '-' || ops[i] == '*') {
+            tokens.push_back({QString(ops[i]), QColor(0x88, 0x88, 0x88)}); // #888888 operators
+            ++i;
+        } else if (ops[i] == '0' && i + 1 < ops.size() && (ops[i + 1] == 'x' || ops[i + 1] == 'X')) {
+            size_t start = i;
+            i += 2;
+            while (i < ops.size() && std::isxdigit(static_cast<unsigned char>(ops[i]))) {
+                ++i;
+            }
+            tokens.push_back({QString::fromLatin1(ops.data() + start, static_cast<int>(i - start)), QColor(0xff, 0xcc, 0x80)}); // #ffcc80 peach/gold
+        } else if (std::isdigit(static_cast<unsigned char>(ops[i]))) {
+            size_t start = i;
+            while (i < ops.size() && (std::isalnum(static_cast<unsigned char>(ops[i])) || ops[i] == 'h' || ops[i] == 'H')) {
+                ++i;
+            }
+            tokens.push_back({QString::fromLatin1(ops.data() + start, static_cast<int>(i - start)), QColor(0xff, 0xcc, 0x80)});
+        } else if (std::isalpha(static_cast<unsigned char>(ops[i])) || ops[i] == '_' || ops[i] == '.') {
+            size_t start = i;
+            while (i < ops.size() && (std::isalnum(static_cast<unsigned char>(ops[i])) || ops[i] == '_' || ops[i] == '.')) {
+                ++i;
+            }
+            std::string_view word = ops.substr(start, i - start);
+            char lowerBuf[32];
+            QColor col(0xe0, 0xe0, 0xe0);
+            if (word.size() < sizeof(lowerBuf)) {
+                for (size_t k = 0; k < word.size(); ++k) {
+                    lowerBuf[k] = static_cast<char>(std::tolower(static_cast<unsigned char>(word[k])));
+                }
+                std::string_view lowerWord(lowerBuf, word.size());
+                if (kRegisters.contains(lowerWord)) {
+                    col = QColor(0x90, 0xca, 0xf9); // #90caf9 light sky blue
+                } else if (kSizeKeywords.contains(lowerWord)) {
+                    col = QColor(0xb0, 0xbe, 0xc5); // #b0bec5 muted slate
+                }
+            }
+            tokens.push_back({QString::fromLatin1(word.data(), static_cast<int>(word.size())), col});
+        } else {
+            tokens.push_back({QString(ops[i]), QColor(0xe0, 0xe0, 0xe0)});
+            ++i;
+        }
+    }
+    return tokens;
+}
+
+class InstructionHighlightDelegate : public QStyledItemDelegate {
+public:
+    explicit InstructionHighlightDelegate(DisassemblyView* view, QObject* parent = nullptr)
+        : QStyledItemDelegate(parent), view_(view) {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        const auto* insn = view_ ? view_->instructionAtRow(index.row()) : nullptr;
+        if (!insn) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+
+        // Clear text so default CE_ItemViewItem draws only backgrounds and selection overlays
+        opt.text.clear();
+        QStyle* style = opt.widget ? opt.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
+
+        painter->save();
+        painter->setClipRect(opt.rect);
+
+        QFont normalFont = opt.font;
+        QFont boldFont = normalFont;
+        boldFont.setBold(true);
+
+        QFontMetrics fm(normalFont);
+        QFontMetrics fmBold(boldFont);
+
+        int x = opt.rect.left() + 6;
+        int y = opt.rect.top() + (opt.rect.height() + fm.ascent() - fm.descent()) / 2;
+
+        // 1. Draw Mnemonic
+        MnemonicClass mclass = classifyMnemonic(insn->mnemonic);
+        QColor mnemonicColor;
+        bool boldMnemonic = false;
+        switch (mclass) {
+            case MnemonicClass::Call:
+                mnemonicColor = QColor(0x4f, 0xc3, 0xf7); // #4fc3f7
+                boldMnemonic = true;
+                break;
+            case MnemonicClass::Jump:
+                mnemonicColor = QColor(0xff, 0xa7, 0x26); // #ffa726
+                boldMnemonic = true;
+                break;
+            case MnemonicClass::CondJump:
+                mnemonicColor = QColor(0xff, 0xb7, 0x4d); // #ffb74d
+                boldMnemonic = true;
+                break;
+            case MnemonicClass::Return:
+                mnemonicColor = QColor(0xef, 0x53, 0x50); // #ef5350
+                boldMnemonic = true;
+                break;
+            case MnemonicClass::Trap:
+                mnemonicColor = QColor(0xba, 0x68, 0xc8); // #ba68c8
+                boldMnemonic = true;
+                break;
+            case MnemonicClass::Stack:
+                mnemonicColor = QColor(0x81, 0xc7, 0x84); // #81c784
+                break;
+            case MnemonicClass::Nop:
+                mnemonicColor = QColor(0x75, 0x75, 0x75); // #757575
+                break;
+            case MnemonicClass::Comparison:
+                mnemonicColor = QColor(0x4d, 0xd0, 0xe1); // #4dd0e1
+                break;
+            case MnemonicClass::Normal:
+            default:
+                mnemonicColor = QColor(0xe0, 0xe0, 0xe0); // #e0e0e0
+                break;
+        }
+
+        if (boldMnemonic) {
+            painter->setFont(boldFont);
+        } else {
+            painter->setFont(normalFont);
+        }
+        painter->setPen(mnemonicColor);
+
+        QString mnemonicStr = QString::fromStdString(insn->mnemonic);
+        painter->drawText(x, y, mnemonicStr);
+
+        int mWidth = boldMnemonic ? fmBold.horizontalAdvance(mnemonicStr) : fm.horizontalAdvance(mnemonicStr);
+        // Align operands: allocate at least 8 characters width for mnemonic (or mWidth + 1 space if longer)
+        int tabStop = fm.horizontalAdvance("        ");
+        int spacing = (mWidth < tabStop) ? (tabStop - mWidth) : fm.horizontalAdvance(" ");
+        x += mWidth + spacing;
+
+        // 2. Draw Operands
+        painter->setFont(normalFont);
+        if (!insn->operands.empty()) {
+            auto tokens = tokenizeOperands(insn->operands);
+            for (const auto& token : tokens) {
+                painter->setPen(token.color);
+                painter->drawText(x, y, token.text);
+                x += fm.horizontalAdvance(token.text);
+            }
+        }
+
+        painter->restore();
+    }
+
+private:
+    DisassemblyView* view_{nullptr};
+};
+
+} // namespace
 
 DisassemblyView::DisassemblyView(QWidget* parent) : QTableWidget(parent) {
     setupUi();
@@ -23,6 +260,7 @@ DisassemblyView::DisassemblyView(QWidget* parent) : QTableWidget(parent) {
 void DisassemblyView::setupUi() {
     setColumnCount(6);
     setHorizontalHeaderLabels({"Mark", "Address", "Bytes", "Instruction", "Symbol / Label", "Comment"});
+    setItemDelegateForColumn(3, new InstructionHighlightDelegate(this, this));
 
     horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     setColumnWidth(0, 50);
@@ -841,7 +1079,7 @@ void DisassemblyView::onCurrentCellChanged(int currentRow, int currentColumn, in
     }
 
     auto details = session->inspectInstruction(*addr);
-    Q_EMIT instructionInspected(QString::fromStdString(details.summary));
+    Q_EMIT instructionInspected(QString::fromStdString(details.richSummary.empty() ? details.summary : details.richSummary));
 }
 
 } // namespace edb_next

@@ -16,6 +16,7 @@ public:
 
     void setSession(std::shared_ptr<DebugSession> session);
     void refresh();
+    [[nodiscard]] const DisassembledInstruction* instructionAtRow(int row) const;
 
 public Q_SLOTS:
     void gotoAddressPrompt();
@@ -61,7 +62,6 @@ private:
 
     void setupUi();
     [[nodiscard]] std::optional<Address> addressAtRow(int row) const;
-    [[nodiscard]] const DisassembledInstruction* instructionAtRow(int row) const;
 
     std::weak_ptr<DebugSession> session_;
     std::vector<DisassembledInstruction> currentInstructions_;

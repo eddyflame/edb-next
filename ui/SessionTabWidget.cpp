@@ -60,6 +60,7 @@ void SessionTabWidget::setupUi() {
 
     // Dynamic branch prediction bar
     insnStatusBar_ = new QLabel("Ready.", top_widget);
+    insnStatusBar_->setTextFormat(Qt::RichText);
     insnStatusBar_->setStyleSheet("background-color: #1a1a1a; color: #80c0ff; padding: 2px 6px; font-family: monospace; border-top: 1px solid #333;");
     top_layout->addWidget(insnStatusBar_);
 

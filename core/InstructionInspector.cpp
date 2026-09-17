@@ -297,27 +297,35 @@ InstructionDetails InstructionInspector::inspect(
 
     // 3. Build human readable summary
     std::ostringstream oss;
+    std::ostringstream rich;
     if (details.isBranch) {
         if (details.isConditional) {
             if (details.branchTaken) {
                 oss << "✔ JUMP IS TAKEN ➔ " << details.branchTarget.toHex();
+                rich << "<span style='color:#4caf50; font-weight:bold;'>✔ JUMP IS TAKEN</span> ➔ <span style='color:#4fc3f7; font-weight:bold;'>" << details.branchTarget.toHex() << "</span>";
             } else {
                 oss << "✘ JUMP NOT TAKEN (Fall through)";
+                rich << "<span style='color:#ef5350; font-weight:bold;'>✘ JUMP NOT TAKEN</span> (Fall through)";
             }
         } else {
             oss << "➔ UNCONDITIONAL JUMP ➔ " << details.branchTarget.toHex();
+            rich << "<span style='color:#ffb74d; font-weight:bold;'>➔ UNCONDITIONAL JUMP</span> ➔ <span style='color:#4fc3f7; font-weight:bold;'>" << details.branchTarget.toHex() << "</span>";
         }
     }
 
     if (details.hasMemoryOperand) {
         if (!oss.str().empty()) oss << " | ";
+        if (!rich.str().empty()) rich << " <span style='color:#757575;'>|</span> ";
         oss << "Mem: " << details.effectiveAddress.toHex();
+        rich << "<span style='color:#bb86fc; font-weight:bold;'>Mem:</span> " << details.effectiveAddress.toHex();
         if (details.memoryReadSuccess) {
             oss << " => 0x" << std::hex << details.memoryValue;
+            rich << " =&gt; <span style='color:#ffb74d; font-family:monospace;'>0x" << std::hex << details.memoryValue << "</span>";
         }
     }
 
     details.summary = oss.str();
+    details.richSummary = rich.str();
 
     cs_free(insn, count);
     cs_close(&handle);

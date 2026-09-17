@@ -28,6 +28,7 @@ struct InstructionDetails {
     bool memoryReadSuccess{false};
 
     std::string summary;
+    std::string richSummary;
 };
 
 class InstructionInspector {
