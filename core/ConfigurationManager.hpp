@@ -107,6 +107,12 @@ public:
     void addRecentFile(const QString& filePath);
     void clearRecentFiles();
 
+    // Window geometry and state
+    [[nodiscard]] QByteArray windowGeometry() const noexcept { return windowGeometry_; }
+    void setWindowGeometry(const QByteArray& geom) { windowGeometry_ = geom; }
+    [[nodiscard]] QByteArray windowState() const noexcept { return windowState_; }
+    void setWindowState(const QByteArray& state) { windowState_ = state; }
+
 Q_SIGNALS:
     void configurationChanged();
 
@@ -123,6 +129,8 @@ private:
     QMap<int, SignalPolicy> signals_;
     DirectoriesConfig directories_;
     QStringList recentFiles_;
+    QByteArray windowGeometry_;
+    QByteArray windowState_;
 };
 
 } // namespace edb_next

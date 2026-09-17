@@ -21,8 +21,9 @@ public:
     // Process lifecycle
     Result<Pid> launch(
         const std::string& path,
-        const std::vector<std::string>& args,
-        bool disable_aslr = true);
+        const std::vector<std::string>& args = {},
+        bool disable_aslr = true,
+        bool disable_lazy_binding = true);
 
     Result<void> attach(Pid pid);
     void detach();

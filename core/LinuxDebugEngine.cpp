@@ -42,7 +42,8 @@ bool LinuxDebugEngine::openProcMem() {
 Result<Pid> LinuxDebugEngine::launch(
     const std::string& path,
     const std::vector<std::string>& args,
-    bool disable_aslr)
+    bool disable_aslr,
+    bool disable_lazy_binding)
 {
     int pipe_fd[2];
     if (::pipe2(pipe_fd, O_CLOEXEC) != 0) {
@@ -68,6 +69,10 @@ Result<Pid> LinuxDebugEngine::launch(
             if (persona != -1) {
                 ::personality(persona | ADDR_NO_RANDOMIZE);
             }
+        }
+
+        if (disable_lazy_binding) {
+            ::setenv("LD_BIND_NOW", "1", 1);
         }
 
         if (::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) {
