@@ -2,11 +2,17 @@
 
 #include <cstdint>
 #include <string>
-#include <iomanip>
-#include <sstream>
+#include <format>
+#include <concepts>
+#include <span>
+#include <optional>
 #include <sys/types.h>
 #include <compare>
 #include <utility>
+
+#if __has_include(<QString>)
+#include <QString>
+#endif
 
 namespace edb_next {
 
@@ -39,6 +45,15 @@ struct Result<void, E> {
     explicit operator bool() const noexcept { return success; }
 };
 
+// ==========================================
+// C++20 Core Concepts
+// ==========================================
+template<typename T>
+concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
+
+template<typename T>
+concept NumericType = std::is_arithmetic_v<T>;
+
 /**
  * @brief Strongly-typed 64-bit Address abstraction
  */
@@ -51,11 +66,15 @@ public:
     [[nodiscard]] constexpr bool isNull() const noexcept { return value_ == 0; }
 
     [[nodiscard]] std::string toHex(bool prefix = true) const {
-        std::ostringstream oss;
-        if (prefix) oss << "0x";
-        oss << std::hex << std::setw(16) << std::setfill('0') << value_;
-        return oss.str();
+        return prefix ? std::format("0x{:016x}", value_) : std::format("{:016x}", value_);
     }
+
+#if __has_include(<QString>)
+    [[nodiscard]] QString toQString(bool prefix = true) const {
+        return prefix ? QString::asprintf("0x%016llx", static_cast<unsigned long long>(value_))
+                      : QString::asprintf("%016llx", static_cast<unsigned long long>(value_));
+    }
+#endif
 
     constexpr auto operator<=>(const Address& other) const = default;
 
@@ -142,34 +161,24 @@ struct DebugEvent {
     std::string message;
 
     [[nodiscard]] std::string describe() const {
-        std::ostringstream oss;
         switch (reason) {
             case StopReason::Breakpoint:
-                oss << "Breakpoint hit at " << address.toHex();
-                break;
+                return std::format("Breakpoint hit at {}", address.toHex());
             case StopReason::SingleStep:
-                oss << "Single step completed at " << address.toHex();
-                break;
+                return std::format("Single step completed at {}", address.toHex());
             case StopReason::Signal:
-                oss << "Signal " << signal << " received at " << address.toHex();
-                break;
+                return std::format("Signal {} received at {}", signal, address.toHex());
             case StopReason::ProcessExit:
-                oss << "Process exited with code " << exitCode;
-                break;
+                return std::format("Process exited with code {}", exitCode);
             case StopReason::ThreadCreated:
-                oss << "Thread event on TID " << tid;
-                break;
+                return std::format("Thread event on TID {}", tid);
             case StopReason::ProcessForked:
-                oss << "Process forked child PID " << childPid;
-                break;
+                return std::format("Process forked child PID {}", childPid);
             case StopReason::Error:
-                oss << "Error: " << message;
-                break;
+                return std::format("Error: {}", message);
             default:
-                oss << "Event: " << message;
-                break;
+                return std::format("Event: {}", message);
         }
-        return oss.str();
     }
 };
 
@@ -205,3 +214,13 @@ struct ThreadInfo {
 };
 
 } // namespace edb_next
+
+template<>
+struct std::formatter<edb_next::Address> {
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return ctx.begin();
+    }
+    auto format(const edb_next::Address& addr, std::format_context& ctx) const {
+        return std::format_to(ctx.out(), "0x{:016x}", addr.value());
+    }
+};

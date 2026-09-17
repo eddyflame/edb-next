@@ -170,7 +170,7 @@ void StackView::updateTable() {
         }
 
         // 1. Address Item
-        auto* item_addr = new QTableWidgetItem(QString("0x%1").arg(static_cast<qulonglong>(saddr.value()), 16, 16, QChar('0')));
+        auto* item_addr = new QTableWidgetItem(saddr.toQString());
         item_addr->setForeground(QBrush(QColor("#70d0ff")));
         item_addr->setData(Qt::UserRole, QVariant::fromValue(static_cast<qulonglong>(saddr.value())));
 

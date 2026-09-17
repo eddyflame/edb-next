@@ -95,7 +95,7 @@ void MemoryHexView::refresh() {
         Address row_addr = baseAddress_ + (r * 16);
 
         // Address
-        auto* item_addr = new QTableWidgetItem(QString::fromStdString(row_addr.toHex()));
+        auto* item_addr = new QTableWidgetItem(row_addr.toQString());
         item_addr->setForeground(QColor(100, 150, 200));
         setItem(static_cast<int>(r), 0, item_addr);
 
