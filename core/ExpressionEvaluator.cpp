@@ -70,11 +70,7 @@ std::optional<uint64_t> evaluateSingleToken(
         auto addrOpt = ExpressionEvaluator::evaluateValue(inner, regs, engine);
         if (!addrOpt || !engine) return std::nullopt;
 
-        uint64_t val = 0;
-        if (const_cast<LinuxDebugEngine*>(engine)->readMemory(Address(*addrOpt), &val, sizeof(val))) {
-            return val;
-        }
-        return std::nullopt;
+        return const_cast<LinuxDebugEngine*>(engine)->read<uint64_t>(Address(*addrOpt));
     }
 
     // Try register

@@ -159,7 +159,26 @@ public:
     bool setFpRegisters(const user_fpregs_struct& fpregs);
     std::vector<DisassembledInstruction> disassemble(Address start_addr, size_t count = 35);
     std::vector<uint8_t> readMemory(Address addr, size_t size);
+    bool readMemory(Address addr, void* buffer, size_t size) {
+        return engine_.readMemory(addr, buffer, size);
+    }
+    bool readMemory(Address addr, std::span<uint8_t> buffer) {
+        return engine_.readMemory(addr, buffer.data(), buffer.size());
+    }
     bool writeMemory(Address addr, const void* data, size_t size);
+    bool writeMemory(Address addr, std::span<const uint8_t> buffer) {
+        return writeMemory(addr, buffer.data(), buffer.size());
+    }
+
+    template<TriviallyCopyable T>
+    [[nodiscard]] std::optional<T> read(Address addr) {
+        return engine_.read<T>(addr);
+    }
+
+    template<TriviallyCopyable T>
+    bool write(Address addr, const T& val) {
+        return engine_.write<T>(addr, val);
+    }
     std::optional<Address> searchMemory(Address start, size_t max_bytes, const std::vector<uint8_t>& pattern);
     std::vector<MemoryRegion> memoryRegions() const;
     [[nodiscard]] const ElfParser& symbols() const noexcept { return symbols_; }

@@ -36,6 +36,26 @@ public:
     // Memory access
     bool readMemory(Address addr, void* buffer, size_t size);
     bool writeMemory(Address addr, const void* buffer, size_t size);
+    bool readMemory(Address addr, std::span<uint8_t> buffer) {
+        return readMemory(addr, buffer.data(), buffer.size());
+    }
+    bool writeMemory(Address addr, std::span<const uint8_t> buffer) {
+        return writeMemory(addr, buffer.data(), buffer.size());
+    }
+
+    template<TriviallyCopyable T>
+    [[nodiscard]] std::optional<T> read(Address addr) {
+        T val{};
+        if (readMemory(addr, &val, sizeof(T))) {
+            return val;
+        }
+        return std::nullopt;
+    }
+
+    template<TriviallyCopyable T>
+    bool write(Address addr, const T& val) {
+        return writeMemory(addr, &val, sizeof(T));
+    }
 
     // Register access
     bool getRegisters(Tid tid, RegisterContext& regs);
