@@ -644,10 +644,11 @@ void test_r_debug_rendezvous() {
     std::cout << "\n--- Testing 4.7 _r_debug Rendezvous & Shared Library Hot Reload ---" << std::endl;
 
     // 1. Prepare dynamic plugin library source and dlopen launcher
-    std::string pluginC = "./build/test_plugin.c";
-    std::string pluginSo = "./build/libtest_plugin.so";
-    std::string launcherC = "./build/test_dlopen_launcher.c";
-    std::string launcherBin = "./build/test_dlopen_launcher";
+    std::string buildDir = (access("./build", F_OK) == 0) ? "./build" : ".";
+    std::string pluginC = buildDir + "/test_plugin.c";
+    std::string pluginSo = buildDir + "/libtest_plugin.so";
+    std::string launcherC = buildDir + "/test_dlopen_launcher.c";
+    std::string launcherBin = buildDir + "/test_dlopen_launcher";
 
     {
         std::ofstream pFile(pluginC);
@@ -676,8 +677,10 @@ void test_r_debug_rendezvous() {
     }
 
     // Compile shared library and launcher
-    std::string cmdSo = "gcc -O0 -shared -fPIC -o " + pluginSo + " " + pluginC;
-    std::string cmdBin = "gcc -O0 -g -o " + launcherBin + " " + launcherC + " -ldl";
+    const char* ccEnv = ::getenv("CC");
+    std::string cc = (ccEnv && *ccEnv) ? ccEnv : "gcc";
+    std::string cmdSo = cc + " -O0 -shared -fPIC -o " + pluginSo + " " + pluginC;
+    std::string cmdBin = cc + " -O0 -g -o " + launcherBin + " " + launcherC + " -ldl";
     int r1 = ::system(cmdSo.c_str());
     int r2 = ::system(cmdBin.c_str());
     assert(r1 == 0 && r2 == 0);
@@ -787,8 +790,9 @@ void test_follow_fork_mode() {
     std::cout << "\n[TEST] Starting Follow-Fork & Multi-Process Tracking test..." << std::endl;
 
     // 1. Build a target binary that executes fork()
-    std::string forkSrc = "/home/eddy/myplace/project/edb-next/build/test_fork_target.c";
-    std::string forkBin = "/home/eddy/myplace/project/edb-next/build/test_fork_target";
+    std::string buildDir = (access("./build", F_OK) == 0) ? "./build" : ".";
+    std::string forkSrc = buildDir + "/test_fork_target.c";
+    std::string forkBin = buildDir + "/test_fork_target";
     {
         std::ofstream ofs(forkSrc);
         ofs << "#include <stdio.h>\n"
@@ -817,7 +821,9 @@ void test_follow_fork_mode() {
             << "    }\n"
             << "}\n";
     }
-    std::string compileCmd = "gcc -g -O0 " + forkSrc + " -o " + forkBin;
+    const char* ccEnv = ::getenv("CC");
+    std::string cc = (ccEnv && *ccEnv) ? ccEnv : "gcc";
+    std::string compileCmd = cc + " -g -O0 " + forkSrc + " -o " + forkBin;
     int compileRet = ::system(compileCmd.c_str());
     assert(compileRet == 0 && "Failed to compile test_fork_target");
 

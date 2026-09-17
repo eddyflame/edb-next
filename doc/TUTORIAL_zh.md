@@ -134,7 +134,7 @@ sudo pacman -S --needed \
 
 ```bash
 # 1. 切换至项目根目录
-cd /home/eddy/myplace/project/edb-debugger/edb-next
+cd /path/to/edb-next
 
 # 2. 配置 CMake 构建系统 (推荐使用 Release 模式获取最高执行性能)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -1161,7 +1161,7 @@ return false
 
 ### 11.1 插件架构与工作原理
 
-插件只需要实现纯虚接口契约 [IPlugin](file:///home/eddy/myplace/project/edb-debugger/edb-next/core/IPlugin.hpp)，并通过 [IPluginContext](file:///home/eddy/myplace/project/edb-debugger/edb-next/core/IPluginContext.hpp) 能力网关与宿主进行交互：
+插件只需要实现纯虚接口契约 [IPlugin](core/IPlugin.hpp)，并通过 [IPluginContext](core/IPluginContext.hpp) 能力网关与宿主进行交互：
 - **能力网关隔离**：插件无法直接破坏调试器的核心私有指针，必须通过 `context->activeSession()` 进行内存读写、寄存器访问与会话控制；
 - **能力扩展维度**：
   1. **主菜单注入**：向主窗口 `Plugins` 菜单挂载自定义动作与弹窗；

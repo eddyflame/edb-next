@@ -1155,7 +1155,7 @@ sudo apt install -y \
 ### 7.2 编译构建指令
 ```bash
 # 1. 进入 edb-next 项目根目录
-cd /home/eddy/myplace/project/edb-debugger/edb-next
+cd /path/to/edb-next
 
 # 2. 创建并配置 CMake 构建目录 (Release 模式推荐)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
