@@ -1,24 +1,30 @@
 #include "PatternSearcher.hpp"
 #include "LinuxDebugEngine.hpp"
-#include <sstream>
+#include <charconv>
 #include <algorithm>
 
 namespace edb_next {
 
-std::vector<PatternByte> PatternSearcher::parsePattern(const std::string& patternStr) {
+std::vector<PatternByte> PatternSearcher::parsePattern(std::string_view patternStr) {
     std::vector<PatternByte> pattern;
-    std::istringstream iss(patternStr);
-    std::string token;
-
-    while (iss >> token) {
+    size_t i = 0;
+    while (i < patternStr.size()) {
+        while (i < patternStr.size() && (patternStr[i] == ' ' || patternStr[i] == '\t')) {
+            ++i;
+        }
+        if (i >= patternStr.size()) break;
+        size_t start = i;
+        while (i < patternStr.size() && patternStr[i] != ' ' && patternStr[i] != '\t') {
+            ++i;
+        }
+        std::string_view token = patternStr.substr(start, i - start);
         if (token == "?" || token == "??" || token == "*") {
             pattern.push_back(PatternByte{.value = 0, .isWildcard = true});
         } else {
-            char* endptr = nullptr;
-            errno = 0;
-            unsigned long val = std::strtoul(token.c_str(), &endptr, 16);
-            if (endptr && *endptr == '\0' && errno == 0 && val <= 0xFF) {
-                pattern.push_back(PatternByte{.value = static_cast<uint8_t>(val), .isWildcard = false});
+            uint8_t byteVal = 0;
+            auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), byteVal, 16);
+            if (ec == std::errc{} && ptr == token.data() + token.size()) {
+                pattern.push_back(PatternByte{.value = byteVal, .isWildcard = false});
             }
         }
     }
@@ -27,7 +33,7 @@ std::vector<PatternByte> PatternSearcher::parsePattern(const std::string& patter
 
 std::vector<Address> PatternSearcher::search(
     LinuxDebugEngine& engine,
-    const std::string& patternStr,
+    std::string_view patternStr,
     bool executableOnly,
     size_t maxResults) {
 
@@ -36,6 +42,7 @@ std::vector<Address> PatternSearcher::search(
     if (pattern.empty() || !engine.isAttached()) return results;
 
     auto regions = engine.getMemoryRegions();
+    std::vector<uint8_t> buffer;
     for (const auto& region : regions) {
         if (!region.isReadable()) continue;
         if (executableOnly && !region.isExecutable()) continue;
@@ -43,7 +50,7 @@ std::vector<Address> PatternSearcher::search(
         size_t scanSize = std::min<size_t>(region.size(), 16 * 1024 * 1024);
         if (scanSize < pattern.size()) continue;
 
-        std::vector<uint8_t> buffer(scanSize);
+        buffer.resize(scanSize);
         if (!engine.readMemory(region.start, buffer.data(), scanSize)) {
             continue;
         }
