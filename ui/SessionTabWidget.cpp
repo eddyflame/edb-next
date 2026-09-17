@@ -267,6 +267,18 @@ void SessionTabWidget::setupUi() {
     });
     bottomTabs_->addTab(memScannerView_, "Memory Scanner");
 
+    // Tab 22: Type Viewer (Struct Layout & Compound Types)
+    typeViewer_ = new TypeViewer(bottomTabs_);
+    typeViewer_->setSession(session_);
+    connect(typeViewer_, &TypeViewer::jumpToDisassemblyRequested, this, [this](Address addr) {
+        disasmView_->gotoAddress(addr);
+    });
+    connect(typeViewer_, &TypeViewer::jumpToMemoryRequested, this, [this](Address addr) {
+        multiDumpWidget_->jumpToAddress(addr);
+        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+    });
+    bottomTabs_->addTab(typeViewer_, "Type Viewer");
+
     // Right: Dedicated Stack View (Classic 4-Quadrant Workstation)
     stackView_ = new StackView(bottomSplitter_);
     stackView_->setMinimumWidth(150);
@@ -337,6 +349,7 @@ void SessionTabWidget::refreshAll() {
     intermodularCallsView_->refresh();
     if (scriptConsoleView_) scriptConsoleView_->setSession(session_.get());
     if (memScannerView_) memScannerView_->refreshResults();
+    if (typeViewer_) typeViewer_->refresh();
 }
 
 void SessionTabWidget::onSessionStateChanged(SessionState state) {
@@ -353,6 +366,7 @@ void SessionTabWidget::onRegistersUpdated() {
     if (sourceView_) sourceView_->refresh();
     stackView_->refresh();
     callStackView_->refresh();
+    if (typeViewer_) typeViewer_->refresh();
 }
 
 void SessionTabWidget::onMemoryUpdated() {
@@ -360,6 +374,7 @@ void SessionTabWidget::onMemoryUpdated() {
     memDumpView_ = multiDumpWidget_->activeDump();
     stackView_->refresh();
     disasmView_->refresh();
+    if (typeViewer_) typeViewer_->refresh();
 }
 
 void SessionTabWidget::onBreakpointsUpdated() {
