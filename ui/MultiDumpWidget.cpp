@@ -21,6 +21,8 @@ void MultiDumpWidget::setupUi() {
         tabWidget_->addTab(hexView, QString("Dump %1").arg(i + 1));
 
         connect(hexView, &MemoryHexView::jumpToDisassemblyRequested, this, &MultiDumpWidget::jumpToDisassemblyRequested);
+        connect(hexView, &MemoryHexView::jumpToStackRequested, this, &MultiDumpWidget::jumpToStackRequested);
+        connect(hexView, &MemoryHexView::inspectWithTypeViewerRequested, this, &MultiDumpWidget::inspectWithTypeViewerRequested);
         connect(hexView, &MemoryHexView::patchCreated, this, &MultiDumpWidget::patchCreated);
     }
 

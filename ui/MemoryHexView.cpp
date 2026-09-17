@@ -64,6 +64,15 @@ void MemoryHexView::setupUi() {
 
     auto* sc_edit = new QShortcut(QKeySequence("Ctrl+E"), this);
     connect(sc_edit, &QShortcut::activated, this, &MemoryHexView::editBytesPrompt);
+
+    auto* sc_back = new QShortcut(QKeySequence("Alt+Left"), this);
+    connect(sc_back, &QShortcut::activated, this, &MemoryHexView::navigateBack);
+
+    auto* sc_back2 = new QShortcut(QKeySequence(Qt::Key_Backspace), this);
+    connect(sc_back2, &QShortcut::activated, this, &MemoryHexView::navigateBack);
+
+    auto* sc_fwd = new QShortcut(QKeySequence("Alt+Right"), this);
+    connect(sc_fwd, &QShortcut::activated, this, &MemoryHexView::navigateForward);
 }
 
 void MemoryHexView::setSession(std::shared_ptr<DebugSession> session) {
@@ -72,7 +81,32 @@ void MemoryHexView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void MemoryHexView::setBaseAddress(Address addr) {
+    if (addr == baseAddress_) return;
+    if (!baseAddress_.isNull()) {
+        if (navHistory_.empty() || navHistory_.back() != baseAddress_) {
+            navHistory_.push_back(baseAddress_);
+        }
+        navForward_.clear();
+    }
     baseAddress_ = addr;
+    refresh();
+}
+
+void MemoryHexView::navigateBack() {
+    if (navHistory_.empty()) return;
+    navForward_.push_back(baseAddress_);
+    Address prev = navHistory_.back();
+    navHistory_.pop_back();
+    baseAddress_ = prev;
+    refresh();
+}
+
+void MemoryHexView::navigateForward() {
+    if (navForward_.empty()) return;
+    navHistory_.push_back(baseAddress_);
+    Address next = navForward_.back();
+    navForward_.pop_back();
+    baseAddress_ = next;
     refresh();
 }
 
@@ -359,11 +393,44 @@ void MemoryHexView::handleCustomContextMenu(const QPoint& pos) {
     auto session = session_.lock();
 
     QMenu menu(this);
+
+    // Navigation back / forward
+    if (!navHistory_.empty()) {
+        menu.addAction("Navigate Back (Alt+Left)", this, &MemoryHexView::navigateBack);
+    }
+    if (!navForward_.empty()) {
+        menu.addAction("Navigate Forward (Alt+Right)", this, &MemoryHexView::navigateForward);
+    }
+    if (!navHistory_.empty() || !navForward_.empty()) {
+        menu.addSeparator();
+    }
+
     menu.addAction("Follow in Disassembler", [this, sel_addr]() {
         Q_EMIT jumpToDisassemblyRequested(sel_addr);
     });
 
     if (session && session->state() != SessionState::Stopped) {
+        auto optQword = session->read<uint64_t>(sel_addr);
+        if (optQword.has_value()) {
+            Address qword_addr(*optQword);
+            auto* followMenu = menu.addMenu("Follow QWORD");
+            followMenu->addAction(QString("Follow QWORD (%1) in Dump").arg(QString::fromStdString(qword_addr.toHex())), [this, qword_addr]() {
+                setBaseAddress(qword_addr);
+            });
+            followMenu->addAction(QString("Follow QWORD (%1) in Disassembly").arg(QString::fromStdString(qword_addr.toHex())), [this, qword_addr]() {
+                Q_EMIT jumpToDisassemblyRequested(qword_addr);
+            });
+            followMenu->addAction(QString("Follow QWORD (%1) in Stack").arg(QString::fromStdString(qword_addr.toHex())), [this, qword_addr]() {
+                Q_EMIT jumpToStackRequested(qword_addr);
+            });
+        }
+
+        menu.addAction("Inspect with Type Viewer...", [this, sel_addr]() {
+            Q_EMIT inspectWithTypeViewerRequested(sel_addr);
+        });
+
+        menu.addSeparator();
+
         auto* bpMenu = menu.addMenu("Breakpoint");
 
         bool hasBp = session->hasBreakpoint(sel_addr);
@@ -461,15 +528,28 @@ void MemoryHexView::handleCustomContextMenu(const QPoint& pos) {
     menu.addAction("Dump Memory Range to File (*.bin)...", this, &MemoryHexView::dumpMemoryRangePrompt);
 
     menu.addSeparator();
-    menu.addAction("Copy Selected Address", [sel_addr]() {
+    auto* copyMenu = menu.addMenu("Copy");
+    copyMenu->addAction("Copy Selected Address", [sel_addr]() {
         QApplication::clipboard()->setText(QString::fromStdString(sel_addr.toHex()));
     });
 
     auto* cur_item = currentItem();
     if (cur_item) {
-        menu.addAction("Copy Value", [cur_item]() {
+        copyMenu->addAction("Copy Cell Value", [cur_item]() {
             QApplication::clipboard()->setText(cur_item->text());
         });
+    }
+
+    if (session && session->state() != SessionState::Stopped) {
+        auto optQ = session->read<uint64_t>(sel_addr);
+        if (optQ.has_value()) {
+            copyMenu->addAction("Copy QWORD (Hex)", [optQ]() {
+                QApplication::clipboard()->setText(QString("0x%1").arg(*optQ, 16, 16, QChar('0')));
+            });
+            copyMenu->addAction("Copy QWORD (Dec)", [optQ]() {
+                QApplication::clipboard()->setText(QString::number(*optQ));
+            });
+        }
     }
 
     menu.addSeparator();

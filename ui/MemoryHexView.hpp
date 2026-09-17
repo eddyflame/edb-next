@@ -20,6 +20,8 @@ public:
 
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
+    void jumpToStackRequested(Address addr);
+    void inspectWithTypeViewerRequested(Address addr);
     void patchCreated(Address addr, const std::vector<uint8_t>& oldBytes, const std::vector<uint8_t>& newBytes, const QString& comment);
 
 public Q_SLOTS:
@@ -29,6 +31,8 @@ public Q_SLOTS:
     void dumpMemoryRangePrompt();
     void fillNops();
     void fillZeros();
+    void navigateBack();
+    void navigateForward();
 
 private Q_SLOTS:
     void handleCustomContextMenu(const QPoint& pos);
@@ -40,6 +44,8 @@ private:
     std::weak_ptr<DebugSession> session_;
     Address baseAddress_{0};
     size_t rowCount_{32}; // 32 rows * 16 bytes = 512 bytes per page
+    std::vector<Address> navHistory_;
+    std::vector<Address> navForward_;
 };
 
 } // namespace edb_next
