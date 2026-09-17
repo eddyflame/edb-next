@@ -228,14 +228,15 @@ void DisassemblyView::refresh() {
         }
 
         // Column 1: Address
-        auto* item_addr = new QTableWidgetItem(QString::fromStdString(insn.address.toHex()));
+        auto* item_addr = new QTableWidgetItem(insn.address.toQString());
 
         // Column 2: Bytes
-        std::ostringstream byte_oss;
+        QString bytes_str;
+        bytes_str.reserve(static_cast<int>(insn.bytes.size()) * 3);
         for (uint8_t b : insn.bytes) {
-            byte_oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b) << " ";
+            bytes_str += QString::asprintf("%02x ", b);
         }
-        auto* item_bytes = new QTableWidgetItem(QString::fromStdString(byte_oss.str()));
+        auto* item_bytes = new QTableWidgetItem(bytes_str);
         item_bytes->setForeground(QColor(130, 130, 130));
 
         // Column 3: Instruction Mnemonic & Operands

@@ -59,7 +59,7 @@ void CallStackView::refresh() {
         item_idx->setTextAlignment(Qt::AlignCenter);
 
         // 1: Instruction Pointer
-        auto* item_ip = new QTableWidgetItem(QString::fromStdString(frame.ip.toHex()));
+        auto* item_ip = new QTableWidgetItem(frame.ip.toQString());
         item_ip->setForeground(QColor(100, 180, 240));
 
         // 2: Function / Symbol
@@ -78,7 +78,7 @@ void CallStackView::refresh() {
         item_mod->setForeground(QColor(160, 160, 160));
 
         // 4: Frame Base (RBP)
-        auto* item_bp = new QTableWidgetItem(QString::fromStdString(frame.frameBase.toHex()));
+        auto* item_bp = new QTableWidgetItem(frame.frameBase.toQString());
         item_bp->setForeground(QColor(120, 120, 120));
 
         setItem(r, 0, item_idx);
