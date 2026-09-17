@@ -162,12 +162,9 @@ void StackView::updateTable() {
 
     for (int i = 0; i < kRowCount; ++i) {
         Address saddr = start_addr + (i * 8);
-        uint64_t val = 0;
-        auto bytes = session_->readMemory(saddr, sizeof(val));
-        bool read_ok = (bytes.size() == sizeof(val));
-        if (read_ok) {
-            std::memcpy(&val, bytes.data(), sizeof(val));
-        }
+        auto optVal = session_->read<uint64_t>(saddr);
+        bool read_ok = optVal.has_value();
+        uint64_t val = optVal.value_or(0);
 
         // 1. Address Item
         auto* item_addr = new QTableWidgetItem(saddr.toQString());

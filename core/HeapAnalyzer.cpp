@@ -62,15 +62,18 @@ std::vector<HeapChunkInfo> HeapAnalyzer::analyze(DebugSession& session, size_t m
         curr = heapStart;
     }
 
+    struct ChunkHeader {
+        uint64_t prevSize;
+        uint64_t rawSize;
+    };
+
     // 3. Walk the chunk chain
     while (curr + 16 <= heapEnd && chunks.size() < max_chunks) {
-        auto header = session.readMemory(curr, 16);
-        if (header.size() < 16) break;
+        auto header = session.read<ChunkHeader>(curr);
+        if (!header) break;
 
-        uint64_t prevSize = 0;
-        uint64_t rawSize = 0;
-        std::memcpy(&prevSize, &header[0], sizeof(prevSize));
-        std::memcpy(&rawSize, &header[8], sizeof(rawSize));
+        uint64_t prevSize = header->prevSize;
+        uint64_t rawSize = header->rawSize;
 
         uint64_t realSize = rawSize & ~0x7ULL;
         if (realSize < 0x20 || (realSize % 0x10 != 0)) {
@@ -99,11 +102,9 @@ std::vector<HeapChunkInfo> HeapAnalyzer::analyze(DebugSession& session, size_t m
         // Check next chunk to determine if this chunk is allocated or free
         Address nextAddr = curr + realSize;
         if (nextAddr + 16 <= heapEnd) {
-            auto nextHeader = session.readMemory(nextAddr, 16);
-            if (nextHeader.size() >= 16) {
-                uint64_t nextRaw = 0;
-                std::memcpy(&nextRaw, &nextHeader[8], sizeof(nextRaw));
-                bool nextPinuse = (nextRaw & 0x1) != 0;
+            auto nextHeader = session.read<ChunkHeader>(nextAddr);
+            if (nextHeader) {
+                bool nextPinuse = (nextHeader->rawSize & 0x1) != 0;
                 info.status = nextPinuse ? "Allocated" : "Free";
             } else {
                 info.status = "Allocated";

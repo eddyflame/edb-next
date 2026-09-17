@@ -61,17 +61,15 @@ std::vector<StackFrame> CallStackUnwinder::unwind(DebugSession& session, size_t 
         if (cur_rbp.value() % 8 != 0) break;
 
         // Read saved RBP and return address: 16 bytes
-        uint64_t buf[2] = {0, 0};
-        if (!session.readMemory(cur_rbp, 16).empty()) {
-            auto mem = session.readMemory(cur_rbp, 16);
-            if (mem.size() != 16) break;
-            std::memcpy(buf, mem.data(), 16);
-        } else {
-            break;
-        }
+        struct StackFrameData {
+            uint64_t savedRbp;
+            uint64_t returnAddr;
+        };
+        auto frameData = session.read<StackFrameData>(cur_rbp);
+        if (!frameData) break;
 
-        Address saved_rbp(buf[0]);
-        Address return_addr(buf[1]);
+        Address saved_rbp(frameData->savedRbp);
+        Address return_addr(frameData->returnAddr);
 
         if (return_addr.isNull()) break;
 
