@@ -38,6 +38,7 @@
    - 4.11 多进程 Follow-Fork 模式与子进程跟踪实战 (Follow-Fork & Inferiors)
    - 4.12 多线程独立冻结与解冻实战 (Thread Freeze / Thaw & Isolated Stepping)
    - 4.13 动态内存特征差分扫描器实战 (Differential Memory Scanner - CheatEngine style)
+   - 4.14 复合数据类型重建与结构体布局可视化实战 (Type Viewer & Struct Layout)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -656,9 +657,66 @@ scanreset                     # 重置扫描器状态并清空候选表
 
 ---
 
+### 4.14 复合数据类型重建与结构体布局可视化实战 (Type Viewer & Struct Layout)
+
+在网络协议分析、Linux 内核模块逆向以及复杂 C/C++ 业务逻辑逆向中，内存中的数据绝非零散的孤立字节，而是根据结构体定义精心对齐排布的复合数据。传统的十六进制编辑器无法直观呈现字段边界，逆向人员需要反复肉眼计算偏移并手工比对数据类型。
+
+`edb-next` 引入了 CheatEngine 风格的结构体剖析与复合数据类型重构工作台（Tab 22: "Type Viewer"），支持导入 C 语法结构体并在实时内存上完成字段切分、类型解析与交互跳转：
+
+#### 1. 结构体布局分析工作台全景 (Tab 22)
+切换到底部抽屉 **Type Viewer**（Tab 22）：
+- **顶部工具栏**：
+  - **Struct 下拉菜单**：快速选择已注册的结构体模板（内置 `timespec`、`timeval`、`sockaddr_in`、`list_head`、`io_vec` 等）；
+  - **`➕ Define Struct...` 按钮**：弹出 C 语言语法声明编辑器，支持直接粘贴 C 头文件中的结构体源码并瞬时完成解析注册；
+  - **Address 地址输入框**：输入待解析的内存基地址，原生支持寄存器与动态算式表达式（如 `rsp`、`rbp - 0x40`、`0x7fffffffd7d0`）；
+  - **`🔬 Inspect` 按钮**：从目标进程读取指定结构体尺寸的内存数据并格式化刷新各个字段；
+  - **`🔄 Refresh` 按钮**：在程序单步或恢复运行后，重新读取当前地址的内存变动；
+  - **Size 标签**：自动指示当前结构体的总字节大小与内存对齐基数（如 `Size: 56 bytes (align 8)`）。
+
+#### 2. 六维字段表格呈现与指针解引用穿梭
+- **`Offset`（偏移列）**：清晰显示每个字段相对于结构体首地址的十六进制偏移（如 `+0x000`、`+0x008`、`+0x010`），自动展示 System V AMD64 ABI 填充对齐空隙（Padding）；
+- **`Field Name` / `Type` / `Size`**：呈现字段变量名、数据类型（如 `char[16]`、`int32`、`void*`）以及所占物理字节大小；
+- **`Raw Hex`**：展示该字段在目标进程内存中的原始字节序列（以小端序呈现）；
+- **`Value / Dereference`（取值与解引用列）**：
+  - 数值型字段同步显示十进制与十六进制；
+  - 单字节字段展示数字及可读 ASCII 字符（如 `42 ('*')`）；
+  - 字符数组展示双引号转义文本（如 `"PlayerOne"`）；
+  - **指针跳转穿梭**：指针字段以醒目青色下划线标注（如 `0x00007fffffffe100`），在单元格上**双击**即可直接一键穿梭：
+    - 若指向代码段，自动跳转至反汇编视图（Disassembly）；
+    - 若指向数据段/堆栈，自动在多路转储视图（MultiDump）中精准定位该物理内存；
+- **右键上下文菜单**：
+  - **`Edit Field Value...`**：弹出字段就地编辑对话框，直接向目标进程物理地址写入新的整数、浮点数或文本内容，写完后自动刷新展示；
+  - `Follow in Hex Dump` / `Follow in Disassembly`：联动主工作区跳转；
+  - `Copy Field Value`：将格式化数值直接复制到系统剪贴板。
+
+#### 3. 动态自定义结构体定义 (C 语言语法解析)
+点击 `➕ Define Struct...` 或在 CommandBar 执行 `defstruct`，可以直接输入标准 C 声明：
+```c
+struct PlayerState {
+    char id;
+    short level;
+    int health;
+    long score;
+    void* pTarget;
+    float moveSpeed;
+    double mana;
+    char heroName[16];
+};
+```
+系统内部解析器自动根据 x86_64 体系规则计算自然对齐（如 `short` 自动对齐至 2 字节偏移、`int` 自动对齐至 4 字节偏移、`long` / 指针自动对齐至 8 字节偏移），确保与 GCC/Clang 编译生成的实际二进制二进制完全吻合！
+
+#### 4. CommandBar 命令行快速操作
+```text
+structs                       # 列出当前所有已注册的结构体模板名称、总尺寸与字段数
+struct <name> <addr_or_expr>  # 解析并打印指定内存地址上的结构体字段展开详情
+defstruct <c_code...>         # 在命令行直接注册新的 C 语言结构体定义
+```
+
+---
+
 ## 5. 高级逆向分析工具箱实战 (Advanced Reverse Engineering)
 
-在主工作台左下角，内置了 18 个按需切换的高级分析抽屉：
+在主工作台左下角，内置了 22 个按需切换的高级分析抽屉：
 
 ### 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView - Tab 9)
 - 点击 Tab 9 **Heap**，自动定位进程中的 `[heap]` 虚拟段；
@@ -864,6 +922,9 @@ scanreset                     # 重置扫描器状态并清空候选表
 | `nextscan <cmp> [val]` | `nextscan` | 执行下一轮差分收敛。例：`nextscan >`、`nextscan <`、`nextscan ==`、`nextscan 105` |
 | `scanresults [limit]` | `scanresults` | 打印当前扫描结果列表的前 N 个条目 |
 | `scanreset` | `scanreset` | 重置内存扫描器状态并清空候选表 |
+| `structs` | `structs` | 列出当前所有已注册的复合结构体模板、总大小与字段数 |
+| `struct <name> <addr>` | `struct` | 按结构体模板解析并打印目标内存地址各个字段展开详情 |
+| `defstruct <c_code...>` | `defstruct` | 在命令行动态注册新的 C 语言结构体声明 |
 | `dumpstate` | `dps` | 导出当前 CPU 完整快照并复制到剪贴板 |
 | `py <code...>` | `py` | 直接执行 Python 3 语句或代码块求值。例：`py print(hex(edb.get_reg('rip')))` |
 | `lua <code...>` | `lua` | 直接执行 Lua 5.4 语句或代码块求值。例：`lua print(string.format('0x%x', edb.get_reg('rip')))` |

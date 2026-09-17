@@ -524,6 +524,35 @@
    - `scanresults [limit]`：打印当前前 N 个收敛候选地址详情；
    - `scanreset`：一键重置扫描器状态。
 
+### 3.21 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout Visualizer)
+
+在逆向工程、内核驱动分析与网络协议还原中，内存数据通常以复杂的 C 结构体（`struct`）或对象内存模型存在。纯粹基于字节维度的十六进制转储难以直观辨识字段边界、指针依赖以及编译器引入的对齐填充字节。`edb-next` 构建了强大的复合数据类型重构与结构体可视化系统：
+
+1. **C 语法结构体解析引擎 (`TypeManager::parseCStruct`)**：
+   - 原生支持 C 语言标准语法声明解析，兼容单行与多行声明格式（例如 `struct Player { char id; short level; int health; long score; void* target; char name[16]; };` 或 `typedef struct { ... } Node;`）；
+   - 内置自动剥离单行 `//` 与块状 `/* */` 注释，自动解析定长数组维度（如 `char name[32]`）；
+   - 严格遵循 **System V AMD64 ABI 自然对齐规则**，精准计算成员自然对齐基数、字段间填充对齐边界（Padding Bytes）以及结构体尾部对齐膨胀。
+
+2. **多模态数据类型映射与字段值格式化**：
+   - 覆盖 14 种基础数据类型与衍生类型：`Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、`UInt32`、`Int64`、`UInt64`、`Float`、`Double`、`Pointer`、`String`、`ByteArray`、`CustomStruct`；
+   - 智能格式化输出：整数字段同步显示十进制与十六进制，单字节同步显示字符形式（如 `'A'`），定长字符数组智能截断打印可读字符串，指针字段标注 `0x...` 并在 NULL 时显式标明。
+
+3. **内置 Linux / POSIX 核心标准结构体**：
+   - 开箱即用预置高频系统结构体：`timespec`、`timeval`、`sockaddr_in`、Linux 内核侵入式双向链表 `list_head` 以及分散读写块 `io_vec`，极大加速系统调用分析。
+
+4. **可视化交互面板 (`TypeViewer` - Tab 22)**：
+   - 位于底部抽屉 **Tab 22: "Type Viewer"**，提供 CheatEngine 风格的结构体剖析工作台；
+   - 顶部提供 Struct 下拉选择、`➕ Define Struct...` 动态声明弹窗、Address 输入框（支持寄存器与数学表达式，如 `rsp + 0x20`）以及实时刷新控制；
+   - 表格清晰展示六大核心列：`Offset`（字段相对偏移，如 `+0x008`）、`Field Name`、`Type`、`Size`、`Raw Hex`（原始十六进制字节）与 `Value / Dereference`；
+   - **交互穿梭与原位编辑**：
+     - 指针字段以青色下划线突出显示，双击指针字段可直接一键在内存 Hex Dump 或反汇编视图中跳转追踪其解引用指向的物理地址；
+     - 右键菜单提供 `Edit Field Value...` 原位修改目标进程内存、`Copy Field Value`、`Follow in Hex Dump` 与 `Follow in Disassembly`。
+
+5. **极客 CLI 指令集成 (`structs` / `struct` / `defstruct`)**：
+   - `structs`：列出当前所有已注册的结构体及其总大小、对齐与字段统计；
+   - `struct <name> <addr_or_expr>`：按指定结构体模板解析并格式化打印目标地址内存；
+   - `defstruct <c_code...>`：直接在命令行动态注册新的 C 语言结构体定义。
+
 ---
 
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
@@ -544,10 +573,10 @@
   2. **RDTSC 指令陷阱抹平**：利用 CR4 寄存器标志或硬件单步对 `rdtsc` / `rdtscp` 指令进行时间戳平滑，抹平单步执行的时间延迟。
 
 ### 4.3 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout)
-- **当前状态**：C++ 符号反混淆已在 3.13 节完整实现并落地；当前版本尚缺少将内存按复合数据类型（struct/union）结构化格式化呈现的能力。
-- **待完善方案**：
-  1. **结构体与类型布局解析**：允许逆向人员导入 C 语言头文件或手动定义结构体字段（如 `struct my_task { int id; char name[32]; void* ptr; };`）；
-  2. **Memory Hex View 结构体视图叠加**：将内存转储区域按结构体字段进行着色对齐与字段名标注展示。
+- **当前状态**：**已在 3.21 节全景实现 (v1.0)**。基于 `TypeManager` 与自然对齐算法，完整支持 C 结构体声明解析、14 种字段类型映射、实时内存取样、Tab 22 结构体可视化面板、指针双击解引用跳转、原位修改，以及 `structs` / `struct` / `defstruct` CLI 完整指令。
+- **后续进阶方向**：
+  1. **DWARF 类型信息自动反写 (Auto-Import from DWARF)**：直接从二进制调试符号中的 `.debug_info` 提取编译期结构体定义并自动注入 `TypeManager`；
+  2. **嵌套复合类型与联合体 (Nested Structs & Unions)**：支持结构体嵌套与联合体内存重叠布局可视化。
 
 ### 4.4 多进程 Follow-Fork 与子进程跟踪
 - **当前状态**：**已在 3.18 节全景实现 (v1.0)**。基于内核 `PTRACE_O_TRACEFORK`/`TRACEVFORK` 与 Tracer 亲和性设计，完整支持 `Parent` / `Child` / `Both` 三态跟踪、`catch fork` 捕获、`SessionManager` 独立子会话树与 `inferiors` / `inferior` 命令行多进程穿梭。
@@ -601,7 +630,7 @@
 | **4.4 多进程 Follow-Fork 与子进程跟踪** | ★★★★☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.18 节全景实现**。支持 Parent/Child/Both 三态跟踪、PTRACE_EVENT_FORK 拦截、子会话树派生与 inferiors 多会话穿梭。 |
 | **4.9 多线程独立冻结与解冻 (Freeze/Thaw)** | ★★★☆☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.19 节全景实现**。支持单个/全部线程冻结与解冻、冰蓝冻结状态指示、多并发下隔离单步步进与 CLI 快捷调度。 |
 | **4.10 动态内存特征差分扫描器** | ★★★☆☆ | 较高 (High) | **已完成 (v1.0)** | **已在 3.20 节全景实现**。支持 8 种数据类型、多轮差分收敛、内存段流式扫描、Tab 21 可视化面板与 CLI 指令。 |
-| **4.3 复合数据类型与结构体解析 (Type Viewer)** | ★★★☆☆ | 中等 (Medium) | **P2 (高阶进阶)** | 允许导入 C 头文件并结构化排布 Hex 内存，提升逆向结构体可读性。 |
+| **4.3 复合数据类型与结构体解析 (Type Viewer)** | ★★★☆☆ | 中等 (Medium) | **已完成 (v1.0)** | **已在 3.21 节全景实现**。支持 C 语言结构体解析、自然对齐计算、Tab 22 布局可视化、指针解引用跳转与 CLI 解析指令。 |
 | **4.1 多 CPU 架构扩展 (ARM64 / x86-32)** | ★★★★☆ | 极高 (Very High) | **P3 (长期演进)** | 涉及底层寄存器结构与 ptrace 平台抽象重构，建议在 x86_64 体系完全稳定后展开。 |
 | **4.6 GDB 远程调试协议 (RSP) 客户端** | ★★★☆☆ | 较高 (High) | **P3 (长期演进)** | 面向嵌入式固件与 Android 远程逆向的前端协议重构，属于跨生态扩展。 |
 
@@ -653,6 +682,8 @@ edb-next/
 │   ├── ScriptEngineManager.hpp/cpp# 多脚本引擎生命周期调度与语言路由管理器
 │   ├── PageGuardManager.hpp/cpp# 4KB 虚拟内存页保护权限管理、PROT 变更与隐匿断点状态机
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug 协议、link_map 遍历与动态库热重载
+│   ├── MemoryScanner.hpp/cpp   # CheatEngine 风格动态内存特征差分扫描器与多轮收敛引擎
+│   ├── TypeManager.hpp/cpp     # 复合数据类型管理、C 结构体语法解析、ABI 自然对齐与实时取样
 │   ├── DebugSession.hpp/cpp    # 独立调试会话高阶门面 (外观模式，聚合引擎、断点、线程与解析器)
 │   └── SessionManager.hpp/cpp  # 多会话容器与活动会话调度器
 ├── ui/                         # 现代 Qt5 GUI 表现层
@@ -680,13 +711,15 @@ edb-next/
 │   ├── BinaryInfoView.hpp/cpp  # ELF 文件头、节区表、段头表与动态依赖全景视图
 │   ├── IntermodularCallsView.hpp/cpp # 跨模块共享库 API 外呼搜寻与定位视图
 │   ├── OpcodeSearcherView.hpp/cpp# 指令序列搜寻视图 (工作台 Tab 19)
+│   ├── MemoryScannerView.hpp/cpp# 内存差分扫描器可视化控制台 (工作台 Tab 21)
+│   ├── TypeViewer.hpp/cpp       # 复合数据类型与结构体布局可视化面板 (工作台 Tab 22)
 │   ├── CommandBarView.hpp/cpp  # 底部 x64dbg 风格交互式 CLI 命令栏
 │   ├── PreferencesDialog.hpp/cpp# 7 大分类完整偏好设置对话框
 │   ├── LaunchArgumentsDialog.hpp/cpp# 目标命令行参数与工作目录配置弹窗
 │   ├── PluginManagerDialog.hpp/cpp# 插件管理与热加载控制对话框
 │   ├── PatchManagerDialog.hpp/cpp# 集中补丁管理与文件磁盘保存对话框 (Ctrl+P)
 │   ├── XRefDialog.hpp/cpp      # 交互式代码交叉引用跳转弹窗
-│   ├── SessionTabWidget.hpp/cpp# 4 象限黄金工作台容器 + 19 大分析抽屉 + 底部动态推演条
+│   ├── SessionTabWidget.hpp/cpp# 4 象限黄金工作台容器 + 22 大分析抽屉 + 底部动态推演条
 │   └── MainWindow.hpp/cpp      # 主窗口 (标准菜单栏、工具栏、全局快捷键分发、项目持久化)
 ├── plugins/
 │   └── SamplePlugin/           # 标准 C++20 参考插件工程 (编译为 sample_plugin.so)

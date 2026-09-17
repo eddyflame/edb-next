@@ -293,6 +293,28 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
   - `scanresults [limit]`: Inspect top candidate addresses.
   - `scanreset`: Reset memory scanner state.
 
+### 3.21 Compound Type Reconstruction & Struct Layout Visualizer (Type Viewer)
+- **C Struct Syntax Parser (`TypeManager::parseCStruct`)**:
+  - Parses standard C-style `struct` declarations across single-line and multi-line formats (e.g. `struct Player { char id; short level; int health; long score; void* target; char name[16]; };`).
+  - Automatically strips line (`//`) and block (`/* */`) comments; parses fixed-size array dimensions (`char name[32]`).
+  - Strictly adheres to the **System V AMD64 ABI natural alignment standard**, calculating natural member alignments, intra-field padding bytes, and total struct tail padding.
+- **Rich Field Type Formatting**:
+  - Supports 14 distinct primitive and compound types: `Int8`, `UInt8`, `Int16`, `UInt16`, `Int32`, `UInt32`, `Int64`, `UInt64`, `Float`, `Double`, `Pointer`, `String`, `ByteArray`, and `CustomStruct`.
+  - Displays dual decimal and hexadecimal representations for integers, character literals for bytes, null-terminated string previews for char arrays, and formatted pointer targets.
+- **Built-in POSIX / Linux Kernel Structs**:
+  - Pre-registered with standard system structs: `timespec`, `timeval`, `sockaddr_in`, Linux intrusive double-linked list `list_head`, and `io_vec`.
+- **Visual Type Viewer Drawer (`TypeViewer` - Tab 22)**:
+  - Modern CheatEngine-style workbench located at bottom **Tab 22: "Type Viewer"**.
+  - Top toolbar provides struct dropdown selector, `➕ Define Struct...` C code dialog, Address evaluation box (supporting registers and arithmetic, e.g. `rsp + 0x20`), and live refresh.
+  - Interactive table displays 6 columns: `Offset` (e.g. `+0x008`), `Field Name`, `Type`, `Size`, `Raw Hex`, and `Value / Dereference`.
+  - **Pointer Dereference Navigation & In-Place Editing**:
+    - Pointer fields are highlighted in cyan; double-clicking a pointer automatically navigates the Disassembly or Hex Dump view to the dereferenced target address.
+    - Right-click context menu provides `Edit Field Value...` (in-place memory mutation), `Copy Field Value`, `Follow in Hex Dump`, and `Follow in Disassembly`.
+- **CLI Command Bar Integration (`structs` / `struct` / `defstruct`)**:
+  - `structs`: List all registered struct definitions with total size, alignment, and field count.
+  - `struct <name> <addr_or_expr>`: Evaluate and print struct fields at the specified address.
+  - `defstruct <c_code...>`: Dynamically parse and register a new C struct directly from the command bar.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -302,7 +324,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 2. **Anti-Anti-Debugging Extensions**:
    - Cloak `TracerPid` in `/proc/<pid>/status` and smooth `rdtsc` execution differences (Page-Guard breakpoints now fully implemented in §3.16).
 3. **Compound Data Type Reconstruction & Struct Layout Visualization**:
-   - Import C headers or user-defined struct specifications; overlay fields and alignments onto the memory hex dump.
+   - **Completed in §3.21 (v1.0)**. C struct parsing with natural AMD64 ABI alignment, live memory sampling, 14 field types, Tab 22 layout inspector, double-click pointer dereference navigation, in-place memory mutation, and `structs` / `struct` / `defstruct` CLI commands.
 4. **Multi-Process Follow-Fork**:
    - **Completed in §3.18 (v1.0)**. Full kernel `PTRACE_O_TRACEFORK`/`TRACEVFORK` support, tracer thread affinity architecture, tri-state follow-fork (`Parent`/`Child`/`Both`), `catch fork` triggers, and multi-inferior session tabs (`inferiors` / `inferior <id|pid>`).
 5. **Hardware Watchpoint DR6 Status Attribution & Page-Guard Watchpoints**:
@@ -332,7 +354,7 @@ To guide engineering milestones effectively, each unimplemented roadmap capabili
 | **4.4 Multi-Process Follow-Fork** | ★★★★☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.18**. Tri-state follow-fork, ptrace fork event trapping, child session tree & inferior CLI switching. |
 | **4.9 Independent Thread Freeze & Thaw** | ★★★☆☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.19**. Single/batch thread freeze & thaw, ice-blue status badges, isolated stepping, and CLI commands. |
 | **4.10 Differential Memory Pattern Scanner** | ★★★☆☆ | High | **Completed (v1.0)** | **Fully implemented in §3.20**. Multi-pass convergence, 8 data types, streamed chunk scan, Tab 21 panel & CLI. |
-| **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **P2 (Advanced)** | Format memory views using custom C struct definitions. |
+| **4.3 Type Reconstruction & Struct Layout (Type Viewer)** | ★★★☆☆ | Medium | **Completed (v1.0)** | **Fully implemented in §3.21**. C struct parsing, AMD64 natural alignment, Tab 22 visualizer, pointer dereference jump & CLI commands. |
 | **4.1 Multi-Architecture Support (ARM64 / x86-32)** | ★★★★☆ | Very High | **P3 (Long-Term)** | Broad architectural refactor across register models and ptrace adapters; tackle after x86_64 stabilizes. |
 | **4.6 GDB Remote Serial Protocol (RSP) Client** | ★★★☆☆ | High | **P3 (Long-Term)** | Extends edb-next UI as a universal frontend for QEMU, Android, and embedded targets. |
 
@@ -384,6 +406,8 @@ edb-next/
 │   ├── ScriptEngineManager.hpp/cpp# Multi-engine lifecycle and language routing manager
 │   ├── PageGuardManager.hpp/cpp# 4KB virtual memory page protection manager & stealth breakpoint state machine
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug protocol, link_map crawler & shared library hot-reloader
+│   ├── MemoryScanner.hpp/cpp   # CheatEngine-style differential memory scanner & multi-pass engine
+│   ├── TypeManager.hpp/cpp     # Compound data type manager, C struct parser, AMD64 ABI alignment & live evaluator
 │   ├── DebugSession.hpp/cpp    # Facade aggregating engine, breakpoints, symbols, and thread control
 │   └── SessionManager.hpp/cpp  # Multi-session container and active session dispatcher
 ├── ui/                         # Qt5 Presentation Layer
@@ -411,13 +435,15 @@ edb-next/
 │   ├── BinaryInfoView.hpp/cpp  # Comprehensive ELF structural explorer
 │   ├── IntermodularCallsView.hpp/cpp# External API call searcher
 │   ├── OpcodeSearcherView.hpp/cpp# Instruction sequence search panel (Tab 19)
+│   ├── MemoryScannerView.hpp/cpp# Differential memory scanner console (Tab 21)
+│   ├── TypeViewer.hpp/cpp       # Compound data type & struct layout visualizer (Tab 22)
 │   ├── CommandBarView.hpp/cpp  # Bottom interactive CLI console
 │   ├── PreferencesDialog.hpp/cpp# Comprehensive 7-category preferences dialog
 │   ├── LaunchArgumentsDialog.hpp/cpp# Target argv and cwd setup dialog
 │   ├── PluginManagerDialog.hpp/cpp# Plugin manager and hot-loader dialog
 │   ├── PatchManagerDialog.hpp/cpp# Centralized patch manager & disk export dialog (Ctrl+P)
 │   ├── XRefDialog.hpp/cpp      # Interactive cross-reference navigation popup
-│   ├── SessionTabWidget.hpp/cpp# 4-quadrant workspace container & 18-tab drawer
+│   ├── SessionTabWidget.hpp/cpp# 4-quadrant workspace container & 22-tab drawer
 │   └── MainWindow.hpp/cpp      # Main application window, menus, toolbars, global hotkeys
 ├── plugins/
 │   └── SamplePlugin/           # Reference C++20 plugin implementation (sample_plugin.so)

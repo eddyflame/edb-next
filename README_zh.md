@@ -56,7 +56,8 @@
 - 🌿 **多进程 Follow-Fork 与子进程会话树 (Follow-Fork & Multi-Process Debugging)**：基于 Linux 内核 `PTRACE_O_TRACEFORK`/`TRACEVFORK` 与 Tracer 亲和性机制，支持 `Parent`（保持父进程）、`Child`（切换至子进程）与 `Both`（父子多进程独立会话树同屏协同）三态跟踪策略；支持 `catch fork` 物理断下拦截；底栏集成 `inferiors` 与 `inferior <id|pid>` 指令，无缝管理多进程工作区标签页。
 - ❄️ **多线程独立冻结与解冻及隔离单步步进 (Thread Freeze / Thaw & Isolated Stepping)**：支持单个或批量轻量级线程（TID）独立冻结与解冻，在 `ThreadsView`（Tab 10）全景呈现 8 列信息与冰蓝 `❄ FROZEN` 状态高亮；提供 `❄ Freeze Others` 与 `🔥 Thaw All` 快捷控制；支持隔离单步（Isolated Stepping），彻底消除高并发 Worker 线程干扰；CLI 支持 `freeze <tid|all>` 与 `thaw <tid|all>`。
 - 🔍 **CheatEngine 级动态内存特征差分扫描器 (Differential Memory Scanner)**：专为动态密钥定位与外挂变量收敛打造，在底部抽屉提供专属 **Memory Scanner** 面板（Tab 21）；原生支持 8 种数据类型（Int8~64、Float、Double、String、Hex 通配符）；支持多轮差分收敛（增大、减小、变动、未变、增减指定 Delta）；聚焦可读写段流式扫描，单轮耗时仅数十毫秒；候选列表支持增绿减红变动指示、双击联动 Hex Dump 以及原位直接修改目标内存；CLI 全面支持 `scan`, `nextscan`, `scanresults`, `scanreset`。
-- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors` 等指令，并向插件全面开放扩展接口。
+- 🧬 **复合数据类型重构与结构体布局可视化 (Type Viewer & Struct Layout)**：专为复杂对象反向解析与网络协议还原设计，在底部抽屉提供专属 **Type Viewer** 工作台（Tab 22）；原生支持 C 语言标准语法解析与 System V AMD64 ABI 自然对齐/填充计算；覆盖 14 种基础数据类型与定长数组；预置 `timespec`、`timeval`、`sockaddr_in`、`list_head`、`io_vec` 等 Linux 核心结构体；支持字段相对偏移与原始 Hex 呈现，青色高亮指针字段并支持双击直接解引用追踪（Jump to Hex Dump / Disassembly），支持右键原位修改内存；CLI 支持 `structs`、`struct <name> <addr>`、`defstruct <c_code...>`。
+- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
 ---
@@ -80,6 +81,7 @@
 | **多进程 Follow-Fork / 子进程跟踪** | 仅单进程跟踪 | 支持多进程附加 | **原生 PTRACE_EVENT_FORK 捕获 + Parent/Child/Both 三态会话树 + inferiors 穿梭** |
 | **多线程独立冻结 / 隔离单步** | 仅查看线程列表 | 支持暂停/恢复线程 | **原生 SYS_tgkill 信号阻断 + 调度掩码 + 冰蓝高亮 + 隔离单步** |
 | **动态内存差分扫描 (CheatEngine 级)** | 基础静态特征搜索 | 需挂接外部 CE | **原生 8 种数据类型 + 多轮差分收敛 + 增减 Delta + 原位覆写 (Tab 21)** |
+| **复合结构体解析与布局可视化** | 无此功能 | 需复杂插件扩展 | **原生 C 语言语法解析 + AMD64 ABI 对齐 + 字段原位编辑 + 解引用穿梭 (Tab 22)** |
 | **漏洞利用辅助** | 基础 ROP 插件 | 需第三方插件 | **内置 ROP 工具箱与 Python `p64()` 导出** |
 
 ---
