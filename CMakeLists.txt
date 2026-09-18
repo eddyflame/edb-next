@@ -120,6 +120,7 @@ set(UI_SOURCES
     ui/LaunchArgumentsDialog.cpp
     ui/PluginManagerDialog.cpp
     ui/PatchManagerDialog.cpp
+    ui/CommandRegistry.cpp
     ui/CommandBarView.cpp
     ui/WatchView.cpp
     ui/TraceView.cpp
