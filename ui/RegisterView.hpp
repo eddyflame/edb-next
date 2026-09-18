@@ -30,11 +30,18 @@ private Q_SLOTS:
     void handleFlagClicked(int bit);
     void handleGprContextMenu(const QPoint& pos);
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void setupUi();
     void updateFlagsDisplay();
     void updateGprDisplay();
     void updateFpDisplay();
+
+    void adjustSelectedGpr(int row, int64_t delta);
+    void setSelectedGpr(int row, uint64_t val);
+    void toggleSelectedGpr(int row);
 
     std::weak_ptr<DebugSession> session_;
 

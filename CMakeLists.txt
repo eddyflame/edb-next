@@ -113,6 +113,7 @@ set(UI_SOURCES
     ui/ThreadsView.cpp
     ui/ROPToolView.cpp
     ui/XRefDialog.cpp
+    ui/AssembleDialog.cpp
     ui/SessionTabWidget.cpp
     ui/PreferencesDialog.cpp
     ui/LaunchArgumentsDialog.cpp

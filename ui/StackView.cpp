@@ -9,6 +9,8 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QFont>
+#include <QKeyEvent>
+#include <QShortcut>
 #include <cctype>
 
 namespace edb_next {
@@ -87,6 +89,10 @@ void StackView::setupUi() {
     table_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(table_, &QTableWidget::cellDoubleClicked, this, &StackView::onCellDoubleClicked);
     connect(table_, &QTableWidget::customContextMenuRequested, this, &StackView::onCustomContextMenuRequested);
+
+    table_->installEventFilter(this);
+    auto* scGoto = new QShortcut(QKeySequence("Ctrl+G"), this, nullptr, nullptr, Qt::WidgetWithChildrenShortcut);
+    connect(scGoto, &QShortcut::activated, this, &StackView::onGotoAddressClicked);
 
     layout->addWidget(table_, 1);
 }
@@ -369,7 +375,7 @@ void StackView::onCustomContextMenuRequested(const QPoint& pos) {
     menu.addSeparator();
     auto* act_follow_saddr_dump = menu.addAction("Follow Stack Address in Dump");
     auto* act_follow_saddr_disasm = menu.addAction("Follow Stack Address in Disassembly");
-    auto* act_modify_val = menu.addAction("Modify Stack Value (QWORD)...");
+    auto* act_modify_val = menu.addAction("Modify Stack Value (Space)...");
     menu.addSeparator();
 
     auto* copyMenu = menu.addMenu("Copy");
@@ -395,7 +401,7 @@ void StackView::onCustomContextMenuRequested(const QPoint& pos) {
     });
     menu.addSeparator();
     auto* act_sync_rsp = menu.addAction("Sync to RSP");
-    auto* act_goto = menu.addAction("Go to Address...");
+    auto* act_goto = menu.addAction("Go to Address... (Ctrl+G)");
 
     connect(act_follow_disasm, &QAction::triggered, this, [this, val_addr] {
         if (!val_addr.isNull()) Q_EMIT jumpToDisassemblyRequested(val_addr);
@@ -450,6 +456,26 @@ void StackView::onModifyValueClicked() {
             }
         }
     }
+}
+
+bool StackView::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == table_ && event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            int row = table_->currentRow();
+            if (row >= 0) {
+                onCellDoubleClicked(row, 1);
+                return true;
+            }
+        } else if (keyEvent->key() == Qt::Key_Space) {
+            onModifyValueClicked();
+            return true;
+        } else if ((keyEvent->modifiers() & Qt::ControlModifier) && keyEvent->key() == Qt::Key_G) {
+            onGotoAddressClicked();
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 } // namespace edb_next

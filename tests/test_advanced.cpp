@@ -20,6 +20,10 @@
 #include "core/TypeManager.hpp"
 #include "ui/TypeViewer.hpp"
 #include "ui/DisassemblyView.hpp"
+#include "ui/AssembleDialog.hpp"
+#include "ui/StackView.hpp"
+#include "ui/RegisterView.hpp"
+#include <QKeyEvent>
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -1451,6 +1455,119 @@ void test_disassembly_flow_lines() {
     std::cout << "[PASS] Disassembly flow lines verified." << std::endl;
 }
 
+void test_x64dbg_p1_ergonomics() {
+    std::cout << "\n[TEST] Starting x64dbg P1 Ergonomics test (AssembleDialog, StackView & RegisterView keyboard flows)..." << std::endl;
+
+    auto sess_ptr = std::make_shared<DebugSession>("test_p1_session", "P1Ergonomics");
+    bool launched = sess_ptr->launch(getTestTargetPath(), {"WorkerP1"});
+    assert(launched && "Failed to launch test target");
+
+    Address rip = sess_ptr->registers().rip();
+    assert(!rip.isNull());
+
+    // 1. Test AssembleDialog
+    bool signalEmitted = false;
+    Address assembledAt{0};
+    size_t writtenCount = 0;
+    Address advancedTo{0};
+
+    AssembleDialog dlg(sess_ptr, rip, 3, "nop");
+    assert(dlg.fillWithNops() == true);
+    assert(dlg.currentAddress() == rip);
+
+    QObject::connect(&dlg, &AssembleDialog::instructionAssembled, [&](Address a, size_t w, Address n) {
+        signalEmitted = true;
+        assembledAt = a;
+        writtenCount = w;
+        advancedTo = n;
+    });
+
+    auto* txt = dlg.findChild<QLineEdit*>();
+    assert(txt != nullptr);
+    txt->setText("nop");
+
+    // Trigger returnPressed to assemble
+    Q_EMIT txt->returnPressed();
+
+    assert(signalEmitted && "AssembleDialog should emit instructionAssembled");
+    assert(assembledAt == rip);
+    assert(writtenCount == 3); // 1 byte nop + 2 bytes padding because original length was 3
+    assert(advancedTo == rip + 3);
+
+    auto mem = sess_ptr->readMemory(rip, 3);
+    assert(mem.size() == 3);
+    assert(mem[0] == 0x90 && mem[1] == 0x90 && mem[2] == 0x90);
+    std::cout << "[PASS] AssembleDialog continuous assembly and NOP padding verified." << std::endl;
+
+    // 2. Test StackView Keyboard Flow
+    StackView stackView;
+    stackView.setSession(sess_ptr);
+    stackView.refresh();
+
+    auto* stackTable = stackView.findChild<QTableWidget*>();
+    assert(stackTable != nullptr);
+    if (stackTable->rowCount() > 0) {
+        stackTable->selectRow(0);
+        stackTable->setCurrentCell(0, 1);
+
+        bool jumpDisasmTriggered = false;
+        bool jumpMemTriggered = false;
+        QObject::connect(&stackView, &StackView::jumpToDisassemblyRequested, [&](Address) { jumpDisasmTriggered = true; });
+        QObject::connect(&stackView, &StackView::jumpToMemoryRequested, [&](Address) { jumpMemTriggered = true; });
+
+        QKeyEvent keyEnter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(stackTable, &keyEnter);
+        assert((jumpDisasmTriggered || jumpMemTriggered) && "Enter on stack row should trigger jump request");
+        std::cout << "[PASS] StackView keyboard navigation (Enter smart follow) verified." << std::endl;
+    }
+
+    // 3. Test RegisterView Keyboard Flow
+    RegisterView regView;
+    regView.setSession(sess_ptr);
+    regView.refresh();
+
+    auto* gprTable = regView.findChild<QTableWidget*>("gprTable");
+    assert(gprTable != nullptr);
+    assert(gprTable->rowCount() >= 16);
+
+    // Find RAX row
+    int raxRow = -1;
+    for (int r = 0; r < gprTable->rowCount(); ++r) {
+        if (gprTable->item(r, 0) && gprTable->item(r, 0)->text() == "RAX") {
+            raxRow = r;
+            break;
+        }
+    }
+    assert(raxRow >= 0);
+    gprTable->setCurrentCell(raxRow, 1);
+
+    uint64_t origRax = sess_ptr->registers().rax();
+
+    // Send '+' key event
+    QKeyEvent keyPlus(QEvent::KeyPress, Qt::Key_Plus, Qt::NoModifier, "+");
+    QApplication::sendEvent(gprTable, &keyPlus);
+    assert(sess_ptr->registers().rax() == origRax + 1);
+
+    // Send '-' key event
+    QKeyEvent keyMinus(QEvent::KeyPress, Qt::Key_Minus, Qt::NoModifier, "-");
+    QApplication::sendEvent(gprTable, &keyMinus);
+    assert(sess_ptr->registers().rax() == origRax);
+
+    // Send '0' key event
+    QKeyEvent keyZero(QEvent::KeyPress, Qt::Key_0, Qt::NoModifier, "0");
+    QApplication::sendEvent(gprTable, &keyZero);
+    assert(sess_ptr->registers().rax() == 0);
+
+    // Send '~' key event
+    QKeyEvent keyTilde(QEvent::KeyPress, Qt::Key_AsciiTilde, Qt::NoModifier, "~");
+    QApplication::sendEvent(gprTable, &keyTilde);
+    assert(sess_ptr->registers().rax() == ~0ULL);
+
+    std::cout << "[PASS] RegisterView keyboard flow (+, -, 0, ~) verified." << std::endl;
+
+    sess_ptr->terminate();
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1477,6 +1594,7 @@ int main(int argc, char* argv[]) {
     test_memory_scanner();
     test_type_viewer();
     test_disassembly_flow_lines();
+    test_x64dbg_p1_ergonomics();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

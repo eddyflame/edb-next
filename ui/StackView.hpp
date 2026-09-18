@@ -34,6 +34,9 @@ private Q_SLOTS:
     void onSyncToRbpClicked();
     void onModifyValueClicked();
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void setupUi();
     void updateTable();
