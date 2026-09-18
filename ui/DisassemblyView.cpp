@@ -722,7 +722,7 @@ void DisassemblyView::refresh() {
         }
     }
 
-    if (target_scroll_row >= 0) {
+    if (followRip_ && target_scroll_row >= 0) {
         scrollToItem(item(target_scroll_row, 0), QAbstractItemView::PositionAtCenter);
     }
 }

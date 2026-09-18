@@ -26,23 +26,30 @@ void EventLoopThread::startLoop() {
 }
 
 void EventLoopThread::setSuspended(bool s) {
+    if (!isRunning() || !running_.load()) return;
+    std::unique_lock<std::mutex> lock(suspendMutex_);
     if (s) {
-        if (!isRunning() || !running_.load()) return;
         suspendRequested_.store(true);
-        while (!isSuspended_.load() && running_.load()) {
-            usleep(200); // 0.2ms polling for suspension handshake
-        }
+        suspendCv_.wait(lock, [this] {
+            return isSuspended_.load() || !running_.load();
+        });
     } else {
         suspendRequested_.store(false);
         suspendCv_.notify_all();
+        suspendCv_.wait(lock, [this] {
+            return !isSuspended_.load() || !running_.load();
+        });
     }
 }
 
 void EventLoopThread::stopLoop() {
     if (running_.load()) {
-        running_.store(false);
-        suspendRequested_.store(false);
-        suspendCv_.notify_all();
+        {
+            std::lock_guard<std::mutex> lock(suspendMutex_);
+            running_.store(false);
+            suspendRequested_.store(false);
+            suspendCv_.notify_all();
+        }
         disconnect();
         wait(500);
         if (isRunning()) {
@@ -60,12 +67,16 @@ void EventLoopThread::addDetachedChild(Pid pid) {
 void EventLoopThread::run() {
     while (running_.load()) {
         if (suspendRequested_.load()) {
-            isSuspended_.store(true);
-            std::unique_lock<std::mutex> lock(suspendMutex_);
-            suspendCv_.wait(lock, [this] {
-                return !suspendRequested_.load() || !running_.load();
-            });
-            isSuspended_.store(false);
+            {
+                std::unique_lock<std::mutex> lock(suspendMutex_);
+                isSuspended_.store(true);
+                suspendCv_.notify_all();
+                suspendCv_.wait(lock, [this] {
+                    return !suspendRequested_.load() || !running_.load();
+                });
+                isSuspended_.store(false);
+                suspendCv_.notify_all();
+            }
             continue;
         }
 
@@ -90,7 +101,9 @@ void EventLoopThread::run() {
         }
 
         if (waited_pid < 0) {
-            std::cerr << "[WAITPID-ERR] waitpid returned " << waited_pid << ", errno=" << errno << " (" << strerror(errno) << ")" << std::endl;
+            if (errno != ECHILD && errno != EINTR) {
+                std::cerr << "[WAITPID-ERR] waitpid returned " << waited_pid << ", errno=" << errno << " (" << strerror(errno) << ")" << std::endl;
+            }
             if (errno == ECHILD) {
                 // Child has terminated
                 DebugEvent ev{

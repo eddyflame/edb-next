@@ -14,6 +14,7 @@
 #include <chrono>
 #include <unistd.h>
 #include <sys/uio.h>
+#include <sys/ptrace.h>
 
 namespace edb_next {
 
@@ -536,7 +537,16 @@ void DebugSession::handleForkEvent(const DebugEvent& event) {
                 if (bp.enabled && bp.type == BreakpointType::Software) {
                     struct iovec local_iov{const_cast<uint8_t*>(&bp.originalByte), 1};
                     struct iovec remote_iov{reinterpret_cast<void*>(bp.address.value()), 1};
-                    ::process_vm_writev(child_pid, &local_iov, 1, &remote_iov, 1, 0);
+                    if (::process_vm_writev(child_pid, &local_iov, 1, &remote_iov, 1, 0) != 1) {
+                        // Fallback to PTRACE_POKEDATA on read-only executable pages
+                        errno = 0;
+                        long word = ::ptrace(PTRACE_PEEKDATA, child_pid, reinterpret_cast<void*>(bp.address.value()), nullptr);
+                        if (errno == 0) {
+                            auto* bytePtr = reinterpret_cast<uint8_t*>(&word);
+                            *bytePtr = bp.originalByte;
+                            ::ptrace(PTRACE_POKEDATA, child_pid, reinterpret_cast<void*>(bp.address.value()), reinterpret_cast<void*>(word));
+                        }
+                    }
                 }
             }
             eventLoop_.addDetachedChild(child_pid);
@@ -554,6 +564,12 @@ void DebugSession::handleForkEvent(const DebugEvent& event) {
 
     if (followForkMode_ == FollowForkMode::Child) {
         // Detach parent, follow child
+        // Restore software breakpoints in parent before detaching parent
+        for (const auto& bp : bpMgr_.allBreakpoints()) {
+            if (bp.enabled && bp.type == BreakpointType::Software) {
+                engine_.writeMemory(bp.address, &bp.originalByte, 1);
+            }
+        }
         engine_.detachProcess(event.pid);
         adoptChild(child_pid);
         if (stopOnForkEvents_) {
@@ -611,8 +627,21 @@ bool DebugSession::handleInternalStep(const DebugEvent& /*event*/) {
         // We just stepped over the original byte of the breakpoint
         bpMgr_.finishStepOver();
         isStepOverBreak_ = false;
-        if (!isThreadFrozen(engine_.activeTid())) {
-            engine_.continueExecution(engine_.activeTid());
+
+        auto allTids = engine_.enumerateTids();
+        Tid act = engine_.activeTid();
+        bool actResumed = false;
+        for (Tid t : allTids) {
+            if (isThreadFrozen(t)) continue;
+            if (t == act) {
+                engine_.continueExecution(t, 0);
+                actResumed = true;
+            } else {
+                engine_.resumeThread(t, 0);
+            }
+        }
+        if (!actResumed && !isThreadFrozen(act)) {
+            engine_.continueExecution(act, 0);
         }
         return true;
     }
