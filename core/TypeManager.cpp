@@ -1,5 +1,5 @@
 #include "TypeManager.hpp"
-#include "LinuxDebugEngine.hpp"
+#include "IDebugBackend.hpp"
 #include <sstream>
 #include <iomanip>
 #include <cstring>
@@ -410,7 +410,7 @@ bool TypeManager::parseAndRegister(const std::string& cCode, std::string* errorM
 std::optional<EvaluatedStruct> TypeManager::evaluate(
     const std::string& structName,
     Address baseAddr,
-    LinuxDebugEngine& engine) const {
+    IDebugBackend& engine) const {
 
     const auto* def = findStruct(structName);
     if (!def || def->totalSize == 0 || !engine.isAttached()) return std::nullopt;

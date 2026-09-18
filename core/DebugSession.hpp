@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.hpp"
+#include "IDebugBackend.hpp"
 #include "LinuxDebugEngine.hpp"
 #include "BreakpointManager.hpp"
 #include "EventLoopThread.hpp"
@@ -58,8 +59,11 @@ public:
     [[nodiscard]] SessionState state() const noexcept { return state_; }
     [[nodiscard]] Pid pid() const noexcept { return engine_.pid(); }
     [[nodiscard]] Tid tid() const noexcept { return engine_.mainTid(); }
-    [[nodiscard]] LinuxDebugEngine& engine() noexcept { return engine_; }
-    [[nodiscard]] const LinuxDebugEngine& engine() const noexcept { return engine_; }
+    // P1-C: expose via abstract interface so callers need not depend on LinuxDebugEngine
+    [[nodiscard]] IDebugBackend& engine() noexcept { return engine_; }
+    [[nodiscard]] const IDebugBackend& engine() const noexcept { return engine_; }
+    // Direct access to concrete type for internal use within core/
+    [[nodiscard]] LinuxDebugEngine& concreteEngine() noexcept { return engine_; }
 
     // Memory Scanner wrappers
     size_t firstMemoryScan(const ScanOptions& options) { return memoryScanner_.firstScan(engine_, options); }

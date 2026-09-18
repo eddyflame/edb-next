@@ -9,7 +9,7 @@
 
 namespace edb_next {
 
-class LinuxDebugEngine;
+class IDebugBackend;
 
 enum class FieldKind {
     Int8,
@@ -85,7 +85,7 @@ public:
     [[nodiscard]] std::optional<EvaluatedStruct> evaluate(
         const std::string& structName,
         Address baseAddr,
-        LinuxDebugEngine& engine) const;
+        IDebugBackend& engine) const;
 
     // Static parser helper for C struct definitions
     static std::optional<StructDefinition> parseCStruct(const std::string& cCode, std::string* errorMsg = nullptr);
