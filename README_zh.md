@@ -177,12 +177,14 @@ chmod +x edb-next-x86_64.AppImage
 | :--- | :--- | :--- | :--- |
 | **F9** | Continue (全速运行) | **Enter** | Follow Branch (跟随分支/跟入) |
 | **F7** | Step Into (单步步入) | **Esc / Backspace** | Go Back (沿历史栈瞬时回退) |
-| **F8** | Step Over (单步步过) | **Space** | Assemble (就地内联汇编) |
-| **Shift+F11** | Step Out (跳出当前函数) | **; (分号)** | Add Comment (添加/修改指令注释) |
-| **F4** | Run to Selection (运行到光标) | **Ctrl+B** | Toggle Bookmark (打下/取消书签) |
-| **Ctrl+F2** | Restart (重启会话) | **X** | Show Cross References (交叉引用) |
-| **Ctrl+\*** | Set RIP (设置指令指针) | **Ctrl+E** | Modify Hex Bytes (就地编辑内存) |
-| **F2** | Toggle Breakpoint (切换断点) | **Ctrl+P** | Patch Manager (补丁管理与落盘) |
+| **F8** | Step Over (单步步过) | **\*** *(小键盘 / 键)* | **Origin**: 居中显示当前执行指针 RIP |
+| **Shift+F11** | Step Out (跳出当前函数) | **Space** | Assemble (就地内联汇编) |
+| **F4** | Run to Selection (运行到光标) | **; (分号)** | Add Comment (添加/修改指令注释) |
+| **Ctrl+F2** | Restart (重启会话) | **: (冒号)** | Set / Edit Label (自定义用户标签 `🏷`) |
+| **Ctrl+\*** | Set RIP (强制重设当前执行指针) | **Ctrl+B** | Toggle Bookmark (打下/取消书签) |
+| **F2** | Toggle Breakpoint (切换断点) | **X** | Show Cross References (交叉引用) |
+| **Ctrl+Alt+S** | Search All Strings (搜索引用字符串) | **Ctrl+E** | Modify Hex Bytes (就地编辑内存) |
+| **Ctrl+Alt+C** | Search All Calls (搜索跨模块调用) | **Ctrl+P** | Patch Manager (补丁管理与落盘) |
 | **Alt+P** | Script Console (Python/Lua 控制台) | **Alt+S** | Focus Source View (聚焦源码浏览器) |
 | **Ctrl+Shift+S** | Toggle Mixed ASM/Source (混合渲染切换) | **Alt+C** | Focus CPU / Disassembly (聚焦反汇编) |
 | **Ctrl+S** | Save Project (.edb_db 项目保存) | **Ctrl+D** | Dump CPU State (导出机器状态快照) |

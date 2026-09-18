@@ -108,7 +108,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
    - Parses ELF `PT_LOAD` Program Headers and translates Virtual Memory Addresses ($VAddr$) to file offsets ($FileOffset = VAddr - Segment.p\_vaddr + Segment.p\_offset$).
    - Writes memory modifications directly back into a new ELF binary on disk with `0755` executable permissions.
 4. **Persistent Project Database (`.edb_db`)**:
-   - Automatically saves and restores comments, bookmarks, breakpoints (with conditions & ignore counts), watches, memory patches, and reverse engineering scratch notes in standard JSON format.
+   - Automatically saves and restores comments, user labels (with `🏷` badge and global resolution), bookmarks, breakpoints (with conditions & ignore counts), watches, memory patches, and reverse engineering scratch notes in standard JSON format.
 5. **Classic 4-Quadrant Golden Workspace Layout**:
    - **Top-Left**: `DisassemblyView` (syntax coloring, jump route arrows, operand previews, branch history stack).
    - **Top-Right**: `RegisterView` (16 GPRs, smart dereferencing, live EFLAGS toggle badges, SSE/AVX vectors).
@@ -169,7 +169,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 - **Analysis Notes (Tab 15)**: Integrated monospace scratchpad with one-click RIP and timestamp insertion, synchronized to project database.
 
 ### 3.8 Project Database & Session Persistence
-- **DatabaseManager**: High-performance JSON project format storing all comments, bookmarks, breakpoints, watches, patches, and scratch notes; automatically matches and loads `<binary>.edb_db` on program startup.
+- **DatabaseManager**: High-performance JSON project format storing all comments, user labels, bookmarks, breakpoints, watches, patches, and scratch notes; automatically matches and loads `<binary>.edb_db` on program startup.
 
 ### 3.9 Interactive CLI Console & Plugin System
 - **CommandBarView**: Bottom interactive CLI supporting `bp`, `bph`, `bc`, `bd`, `be`, `r`, `d`, `u`, `step`, `stepo`, `ret`, `run`, `eval`, `mprotect`, `alloc`, `free`, `dumpstate`, `help`.
@@ -379,8 +379,22 @@ High information density, semantic color differentiation, and fluid keyboard/mou
   - **Multi-Destination QWORD Follow**: Context menu options to `Follow QWORD in Dump`, `Follow QWORD in Disassembly`, and `Follow QWORD in Stack`.
   - **Type Viewer Linking**: `View as Struct (Type Viewer)...` instantly switches to bottom Tab 22, prefilling the current cursor address into the Type Viewer.
 
-- **Ergonomic Shortcuts Alignment**:
-  - `Ctrl+*`: Set Origin (forces instruction pointer RIP to the selected instruction).
+- **x64dbg-Aligned Muscle Memory & Ergonomic Navigation Suite**:
+  - **Origin Navigation Dual-Mode (`*` vs `Ctrl+*`)**:
+    - Pressing `*` (Numpad `*` or keyboard `*`): Instantly centers disassembly on the active execution pointer (`RIP`) without modifying CPU state (Follow RIP). Added to toolbar and Debug menu.
+    - Pressing `Ctrl+*` (Set New Origin Here): Forces the target CPU's instruction pointer `RIP` to the currently selected address.
+  - **Custom User Labels (`:` User Labels)**:
+    - Press `:` (or `Shift+;`) to open the inline label editor modal; rendered with high-contrast emerald teal badges (`🏷 <label_name>`, bold) in Column 4 (ColSymbol), retaining ELF symbol notes if present (e.g. `🏷 DecryptRoutine (main+0x42)`).
+    - Globally integrated into `AnnotationManager`, `DebugSession::resolveSymbol()`, CommandBar CLI (`u MyLabel`, `bp MyLabel`), and expression evaluation (`eval MyLabel + 0x10`).
+    - Fully serialized to `.edb_db` JSON project databases.
+  - **Disassembly "Search for" Context Submenu**:
+    - `All Referenced Text Strings (Ctrl+Alt+S)`: Switches to StringReferencesView and automatically launches deep ASCII string scanning.
+    - `All Intermodular Calls (Ctrl+Alt+C)`: Switches to IntermodularCallsView and scans external PLT/GOT function imports.
+    - `Find References to Address... (X)`: Code cross-reference lookup.
+  - **CommandBar CLI Aliases & Command Suite**:
+    - `lbl [addr] [name]` (alias `label`): List, query, set, or delete (`-`/`del`) custom user labels.
+    - `origin` without arguments centers RIP; standalone `rip` shortcut.
+    - Added `step` alias `sti`, `stepo` alias `sto`, and `ret` alias `rtr` to seamlessly honor x64dbg terminal habits.
 
 ---
 
@@ -432,7 +446,7 @@ edb-next/
 │   ├── SourceFileManager.hpp/cpp# Physical source file reader and line caching manager
 │   ├── CallStackUnwinder.hpp/cpp# RBP-based safe call stack frame unwinding
 │   ├── StringScanner.hpp/cpp   # Readable memory ASCII string extraction & code cross-referencing
-│   ├── AnnotationManager.hpp/cpp# User comments & bookmark management
+│   ├── AnnotationManager.hpp/cpp# User comments, labels & bookmark management
 │   ├── FunctionFinder.hpp/cpp  # Heuristic prologue/epilogue function boundary detection
 │   ├── HeapAnalyzer.hpp/cpp    # Glibc ptmalloc malloc_chunk parser
 │   ├── Assembler.hpp/cpp       # GNU as + objcopy inline assembler

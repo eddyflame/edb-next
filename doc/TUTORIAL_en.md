@@ -609,7 +609,7 @@ flowchart LR
 
 ## 7. Project Database & Automatic Session Persistence (.edb_db)
 
-- **Persistence Scope**: Instruction comments (`;`), bookmarks (`Ctrl+B`), breakpoints (with conditions), watch expressions, patches, and scratch notes.
+- **Persistence Scope**: Instruction comments (`;`), custom user labels (`:` with `🏷` badge, globally resolved across the session), bookmarks (`Ctrl+B`), breakpoints (with conditions), watch expressions, patches, and scratch notes.
 - **Save**: Press **Ctrl+S** to generate `<binary>.edb_db`.
 - **Automatic Restore**: Reopening the binary detects and restores the `.edb_db` project database seamlessly.
 
@@ -625,7 +625,10 @@ flowchart LR
 | `r <reg> <val>` | Set register value. Ex: `r rax 0x1337` |
 | `d <addr>` | Follow address in active hex dump. Ex: `d 0x7fffffffd7d0` |
 | `u <addr \| sym>` | Follow address in disassembly. Ex: `u calculate_fib` |
-| `step` / `stepo` / `ret` / `run` | Step into (`s`) / Step over (`so`) / Step out (`rto`) / Run (`g`) |
+| `step` / `stepo` / `ret` / `run` | Step into (`s`, `sti`) / Step over (`so`, `sto`) / Step out (`rtr`, `rto`) / Run (`g`) |
+| `origin [addr]` / `rip` | Center disassembly on current RIP (`origin` / `rip`), or set RIP if address given |
+| `setrip <addr>` | Explicitly set target instruction pointer (`setrip 0x401000`) |
+| `lbl [addr] [name]` / `label` | List all user labels, inspect, set, or remove (`-`/`del`) custom labels |
 | `eval <expr>` | Evaluate expression. Ex: `eval rax + 0x20`, `eval [rbp-8]` |
 | `mprotect <addr> <size> <prot>` | Change target page protections (7=RWX). Ex: `mprotect 0x555555555000 4096 7` |
 | `alloc <size> [prot]` | Allocate target memory page. Ex: `alloc 4096 7` |
@@ -950,6 +953,7 @@ target_link_libraries(my_plugin PRIVATE Qt6::Widgets Qt6::Core)
 | **Shift+F11** | Step Out of Function | Execution |
 | **F4** | Run to Selection | Execution |
 | **Ctrl+F2** | Restart Session | Execution |
+| **\*** *(Numpad / Key)* | **Origin**: Follow / Center on Current RIP | Disassembly |
 | **Ctrl+\*** | Set RIP (New Origin) | Execution |
 | **F2** | Toggle Software Breakpoint | Breakpoints |
 | **Enter** | Follow Branch | Disassembly |
@@ -963,7 +967,10 @@ target_link_libraries(my_plugin PRIVATE Qt6::Widgets Qt6::Core)
 | **Right-Click Stack -> Follow in Disasm** | Follow `[Return Address]` to Call Site | Stack Analysis |
 | **Space** | Assemble In-Place | Patching |
 | **; (Semicolon)** | Add / Edit Comment | Reverse Engineering |
+| **: (Colon)** | Set / Edit User Label (`🏷`) | Reverse Engineering |
 | **Ctrl+B** | Toggle Bookmark (`★`) | Reverse Engineering |
+| **Ctrl+Alt+S** | Search for All Referenced Strings | Reverse Engineering |
+| **Ctrl+Alt+C** | Search for All Intermodular Calls | Reverse Engineering |
 | **X** | Show Cross References (XREFs) | Reverse Engineering |
 | **Ctrl+E** | Modify Hex Bytes | Memory Patching |
 | **Ctrl+P** | Patch Manager & Disk Export | Patching & Unpacking |
