@@ -269,6 +269,9 @@ private:
     bool handleSignalPolicy(const edb_next::DebugEvent& event);
     void handleBreakpointOrTrap(const edb_next::DebugEvent& event);
 
+    // P1-A: sync all active hardware breakpoints into a newly-created thread's DR regs
+    void syncHardwareBreakpointsToAllThreads();
+
     void setState(SessionState s);
     void refreshRegisters();
     void setupRendezvousHook(const std::string& targetPath, Address baseAddr);

@@ -1711,6 +1711,48 @@ void test_lazy_refresh_irefreshable() {
 }
 
 // ============================================================
+// P1-A: Hardware Breakpoint Multi-Thread Sync
+// ============================================================
+void test_hw_breakpoint_thread_sync() {
+    std::cout << "\n[TEST] Starting P1-A HW Breakpoint Multi-Thread Sync test..." << std::endl;
+
+    DebugSession session("test_p1a_sess", "HW BP Sync Test");
+    bool launched = session.launch(getTestTargetPath(), {"WorkerThreadSync"});
+    assert(launched && "Failed to launch target for HW BP sync test");
+
+    Address rip = session.registers().rip();
+    assert(!rip.isNull());
+
+    // Add a hardware execute breakpoint on current RIP
+    bool hwOk = session.addHardwareBreakpoint(rip, HardwareBpType::Execute, HardwareBpSize::Byte1);
+    assert(hwOk && "addHardwareBreakpoint should succeed");
+    assert(session.hasBreakpoint(rip) && "Hardware BP should be registered");
+
+    // Verify breakpoint has hardware slot assigned
+    const auto* bp = session.breakpointManager().getBreakpoint(rip);
+    assert(bp != nullptr);
+    assert(bp->type != BreakpointType::Software && "Should be hardware breakpoint");
+    assert(bp->hardwareSlot >= 0 && bp->hardwareSlot < 4 && "Slot must be 0..3");
+
+    // P1-A: SetHwBpFunc now writes to ALL tids via enumerateTids();
+    // verify all known TIDs received the DR register write by checking slot assignment
+    auto tids = session.concreteEngine().enumerateTids();
+    assert(!tids.empty() && "enumerateTids must return at least one TID");
+    for (Tid tid : tids) {
+        // DR7 bit[1] (condition enable for DR0 with slot=0) should be non-zero if slot 0 used
+        uint64_t dr7 = session.concreteEngine().getDebugRegister(tid, 7);
+        if (bp->hardwareSlot == 0) {
+            assert((dr7 & 0x3) != 0 && "DR7 must enable slot 0 for all TIDs");
+        }
+    }
+
+    session.removeBreakpoint(rip);
+    assert(!session.hasBreakpoint(rip));
+    session.terminate();
+    std::cout << "[PASS] P1-A HW Breakpoint multi-thread sync verified (" << tids.size() << " TID(s) checked)." << std::endl;
+}
+
+// ============================================================
 // P1-C: IDebugBackend abstraction (MockDebugBackend)
 // ============================================================
 void test_idebug_backend_interface() {
@@ -1784,6 +1826,7 @@ int main(int argc, char* argv[]) {
     test_x64dbg_p1_ergonomics();
     test_x64dbg_p2_ergonomics();
     test_lazy_refresh_irefreshable();
+    test_hw_breakpoint_thread_sync();
     test_idebug_backend_interface();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;

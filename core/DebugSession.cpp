@@ -23,11 +23,25 @@ DebugSession::DebugSession(std::string id, std::string name, QObject* parent)
       bpMgr_(
           [this](Address addr, void* buf, size_t sz) { return engine_.readMemory(addr, buf, sz); },
           [this](Address addr, const void* buf, size_t sz) { return engine_.writeMemory(addr, buf, sz); },
+          // P1-A: write DR registers into active TID and propagate to all other alive threads
           [this](int slot, Address addr, HardwareBpType t, HardwareBpSize s) {
-              return engine_.setHardwareBreakpoint(engine_.activeTid(), slot, addr, t, s);
+              bool activeOk = engine_.setHardwareBreakpoint(engine_.activeTid(), slot, addr, t, s);
+              for (Tid tid : engine_.enumerateTids()) {
+                  if (tid != engine_.activeTid()) {
+                      engine_.setHardwareBreakpoint(tid, slot, addr, t, s);
+                  }
+              }
+              return activeOk;
           },
+          // P1-A: clear DR registers from active TID and propagate to all other alive threads
           [this](int slot) {
-              return engine_.clearHardwareBreakpoint(engine_.activeTid(), slot);
+              bool activeOk = engine_.clearHardwareBreakpoint(engine_.activeTid(), slot);
+              for (Tid tid : engine_.enumerateTids()) {
+                  if (tid != engine_.activeTid()) {
+                      engine_.clearHardwareBreakpoint(tid, slot);
+                  }
+              }
+              return activeOk;
           }
       ),
       pageGuardMgr_(
@@ -549,6 +563,8 @@ void DebugSession::handleThreadCreatedEvent(const DebugEvent& event) {
     if (isThreadFrozen(event.tid)) {
         return;
     }
+    // P1-A: propagate all existing hardware breakpoints into the new thread's DR registers
+    syncHardwareBreakpointsToAllThreads();
     // Resume thread (clone event or initial SIGSTOP) from the TRACER thread!
     engine_.continueExecution(event.tid);
 }
@@ -1578,6 +1594,26 @@ bool DebugSession::initAsChild(std::shared_ptr<DebugSession> parent, Pid child_p
     Q_EMIT memoryUpdated();
     Q_EMIT breakpointsUpdated();
     return true;
+}
+
+// P1-A: Replay all currently-active hardware breakpoints into every alive thread's DR registers.
+// Called when a new thread is created so it inherits the parent thread's hardware BPs.
+void DebugSession::syncHardwareBreakpointsToAllThreads() {
+    const auto allBps = bpMgr_.allBreakpoints(/*include_internal=*/true);
+    const auto tids   = engine_.enumerateTids();
+
+    for (const auto& bp : allBps) {
+        if (bp.type == BreakpointType::Software || bp.hardwareSlot < 0) {
+            continue;
+        }
+        HardwareBpType hwType = HardwareBpType::Execute;
+        if (bp.type == BreakpointType::HardwareWrite)     hwType = HardwareBpType::Write;
+        if (bp.type == BreakpointType::HardwareReadWrite) hwType = HardwareBpType::ReadWrite;
+
+        for (Tid tid : tids) {
+            engine_.setHardwareBreakpoint(tid, bp.hardwareSlot, bp.address, hwType, HardwareBpSize::Byte1);
+        }
+    }
 }
 
 } // namespace edb_next
