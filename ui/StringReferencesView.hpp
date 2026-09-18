@@ -27,8 +27,10 @@ Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
     void jumpToMemoryRequested(Address addr);
 
-private Q_SLOTS:
+public Q_SLOTS:
     void onScanClicked();
+
+private Q_SLOTS:
     void onFilterChanged(const QString& filter);
     void onCellDoubleClicked(int row, int col);
 

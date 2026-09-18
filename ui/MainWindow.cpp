@@ -290,6 +290,14 @@ void MainWindow::setupActions() {
     actRunUntilReturn_->setShortcut(QKeySequence("Ctrl+F9"));
     connect(actRunUntilReturn_, &QAction::triggered, this, &MainWindow::onRunUntilReturnTriggered);
 
+    actOrigin_ = new QAction("📍 &Origin (Go to RIP)", this);
+    actOrigin_->setShortcuts({QKeySequence("*"), QKeySequence(Qt::Key_Asterisk), QKeySequence(Qt::Key_multiply)});
+    connect(actOrigin_, &QAction::triggered, this, [this] {
+        if (auto* tab = currentSessionTabWidget()) {
+            tab->disasmView()->followRip();
+        }
+    });
+
     actTerminate_ = new QAction("⏹ &Terminate", this);
     actTerminate_->setShortcut(QKeySequence("Shift+F5"));
     connect(actTerminate_, &QAction::triggered, this, &MainWindow::onTerminateTriggered);
@@ -501,6 +509,7 @@ void MainWindow::setupMenusAndToolbars() {
     menuDebug_->addAction(actStepOver_);
     menuDebug_->addAction(actStepOut_);
     menuDebug_->addAction(actRunUntilReturn_);
+    menuDebug_->addAction(actOrigin_);
     menuDebug_->addSeparator();
     menuDebug_->addAction(actResumePassSig_);
     menuDebug_->addAction(actStepIntoPassSig_);
@@ -543,6 +552,7 @@ void MainWindow::setupMenusAndToolbars() {
     toolbar->addAction(actStepOver_);
     toolbar->addAction(actStepOut_);
     toolbar->addAction(actRunUntilReturn_);
+    toolbar->addAction(actOrigin_);
     toolbar->addAction(actRestart_);
     toolbar->addAction(actTerminate_);
     toolbar->addSeparator();

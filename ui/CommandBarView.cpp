@@ -294,21 +294,30 @@ void CommandBarView::setupDefaultCommands() {
 
     registerCommand("step", [this](const std::vector<std::string>&) {
         if (session_) session_->stepInto();
-    }, "step (or s) - Step into single instruction");
+    }, "step (or s / sti) - Step into single instruction");
     registerCommand("s", [this](const std::vector<std::string>&) {
         if (session_) session_->stepInto();
     }, "Alias for step");
+    registerCommand("sti", [this](const std::vector<std::string>&) {
+        if (session_) session_->stepInto();
+    }, "Alias for step (x64dbg style)");
 
     registerCommand("stepo", [this](const std::vector<std::string>&) {
         if (session_) session_->stepOver();
-    }, "stepo (or so) - Step over call/instruction");
+    }, "stepo (or so / sto) - Step over call/instruction");
     registerCommand("so", [this](const std::vector<std::string>&) {
         if (session_) session_->stepOver();
     }, "Alias for stepo");
+    registerCommand("sto", [this](const std::vector<std::string>&) {
+        if (session_) session_->stepOver();
+    }, "Alias for stepo (x64dbg style)");
 
     registerCommand("ret", [this](const std::vector<std::string>&) {
         if (session_) session_->stepOut();
-    }, "ret - Step out / Run until return");
+    }, "ret (or rtr) - Step out / Run until return");
+    registerCommand("rtr", [this](const std::vector<std::string>&) {
+        if (session_) session_->stepOut();
+    }, "Alias for ret (x64dbg style)");
 
     // 4. Register inspection & setting: r [reg] [= val]
     registerCommand("r", [this](const std::vector<std::string>& args) {
@@ -392,17 +401,78 @@ void CommandBarView::setupDefaultCommands() {
 
     // 6. Extended Commands: origin, mprotect, alloc, free, dumpstate, cls, patch, trace
     registerCommand("origin", [this](const std::vector<std::string>& args) {
-        if (args.empty()) { Q_EMIT outputLogged("Usage: origin <addr/symbol>", true); return; }
+        if (!session_) return;
+        if (args.empty()) {
+            Address rip = session_->registers().rip();
+            Q_EMIT jumpToDisassemblyRequested(rip);
+            Q_EMIT outputLogged("Disassembly centered on current RIP: " + rip.toQString(), false);
+            return;
+        }
+        Address addr = parseAddress(args[0]);
+        if (!addr.isNull()) {
+            session_->setInstructionPointer(addr);
+            Q_EMIT outputLogged("RIP set to: " + addr.toQString(), false);
+        }
+    }, "origin [addr/symbol] - Jump to current RIP, or set RIP if address given");
+
+    registerCommand("rip", [this](const std::vector<std::string>&) {
+        if (!session_) return;
+        Address rip = session_->registers().rip();
+        Q_EMIT jumpToDisassemblyRequested(rip);
+        Q_EMIT outputLogged("Disassembly centered on current RIP: " + rip.toQString(), false);
+    }, "rip - Center disassembly on current RIP");
+
+    registerCommand("setrip", [this](const std::vector<std::string>& args) {
+        if (args.empty()) { Q_EMIT outputLogged("Usage: setrip <addr/symbol>", true); return; }
         Address addr = parseAddress(args[0]);
         if (!addr.isNull() && session_) {
             session_->setInstructionPointer(addr);
             Q_EMIT outputLogged("RIP set to: " + addr.toQString(), false);
         }
-    }, "origin <addr/symbol> - Set RIP to address without executing");
+    }, "setrip <addr/symbol> - Force set RIP register to target address");
 
-    registerCommand("setrip", [this](const std::vector<std::string>& args) {
-        executeCommand("origin " + QString::fromStdString(args.empty() ? "" : args[0]));
-    }, "Alias for origin");
+    registerCommand("lbl", [this](const std::vector<std::string>& args) {
+        if (!session_) return;
+        if (args.empty()) {
+            const auto& all = session_->annotations().allLabels();
+            if (all.empty()) {
+                Q_EMIT outputLogged("No user labels defined.", false);
+                return;
+            }
+            QString out = QString("User Defined Labels (%1):\n").arg(all.size());
+            for (const auto& [addrVal, lbl] : all) {
+                out += QString("  %1 -> %2\n").arg(Address(addrVal).toQString(), QString::fromStdString(lbl));
+            }
+            Q_EMIT outputLogged(out.trimmed(), false);
+            return;
+        }
+        Address addr = parseAddress(args[0]);
+        if (addr.isNull()) {
+            Q_EMIT outputLogged("Invalid address/symbol: " + QString::fromStdString(args[0]), true);
+            return;
+        }
+        if (args.size() == 1) {
+            std::string cur = session_->annotations().getLabel(addr);
+            if (cur.empty()) {
+                Q_EMIT outputLogged(QString("No label set at %1").arg(addr.toQString()), false);
+            } else {
+                Q_EMIT outputLogged(QString("Label at %1: %2").arg(addr.toQString(), QString::fromStdString(cur)), false);
+            }
+            return;
+        }
+        std::string labelName = args[1];
+        if (labelName == "-" || labelName == "none" || labelName == "del") {
+            session_->annotations().removeLabel(addr);
+            Q_EMIT outputLogged(QString("Label removed from %1").arg(addr.toQString()), false);
+        } else {
+            session_->annotations().setLabel(addr, labelName);
+            Q_EMIT outputLogged(QString("Label set at %1 -> %2").arg(addr.toQString(), QString::fromStdString(labelName)), false);
+        }
+    }, "lbl [addr] [name] - List, show, set, or remove user labels");
+
+    registerCommand("label", [this](const std::vector<std::string>& args) {
+        executeCommand(QString::fromStdString("lbl " + (args.empty() ? "" : args[0] + (args.size() > 1 ? " " + args[1] : ""))));
+    }, "Alias for lbl");
 
     registerCommand("mprotect", [this](const std::vector<std::string>& args) {
         if (args.size() < 3) { Q_EMIT outputLogged("Usage: mprotect <addr> <size> <r|w|x|rwx>", true); return; }

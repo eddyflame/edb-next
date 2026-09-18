@@ -375,11 +375,27 @@ void DisassemblyView::setupUi() {
     auto* sc_runto = new QShortcut(QKeySequence("F4"), this);
     connect(sc_runto, &QShortcut::activated, this, &DisassemblyView::runToSelection);
 
+    // Origin / Follow RIP (* / keypad *)
+    auto* sc_follow_rip = new QShortcut(QKeySequence(Qt::Key_Asterisk), this);
+    connect(sc_follow_rip, &QShortcut::activated, this, &DisassemblyView::followRip);
+
+    auto* sc_follow_rip_pad = new QShortcut(QKeySequence(Qt::Key_multiply), this);
+    connect(sc_follow_rip_pad, &QShortcut::activated, this, &DisassemblyView::followRip);
+
+    auto* sc_follow_rip_str = new QShortcut(QKeySequence("*"), this);
+    connect(sc_follow_rip_str, &QShortcut::activated, this, &DisassemblyView::followRip);
+
     auto* sc_origin = new QShortcut(QKeySequence("Ctrl+*"), this);
     connect(sc_origin, &QShortcut::activated, this, &DisassemblyView::setOriginToSelection);
 
     auto* sc_comment = new QShortcut(QKeySequence(";"), this);
     connect(sc_comment, &QShortcut::activated, this, &DisassemblyView::editCommentPrompt);
+
+    auto* sc_label = new QShortcut(QKeySequence(":"), this);
+    connect(sc_label, &QShortcut::activated, this, &DisassemblyView::editLabelPrompt);
+
+    auto* sc_label2 = new QShortcut(QKeySequence("Shift+;"), this);
+    connect(sc_label2, &QShortcut::activated, this, &DisassemblyView::editLabelPrompt);
 
     auto* sc_bmark = new QShortcut(QKeySequence("Ctrl+B"), this);
     connect(sc_bmark, &QShortcut::activated, this, &DisassemblyView::toggleBookmark);
@@ -398,6 +414,17 @@ void DisassemblyView::setupUi() {
 
     auto* sc_xref = new QShortcut(QKeySequence("X"), this);
     connect(sc_xref, &QShortcut::activated, this, &DisassemblyView::findXRefsPrompt);
+
+    // Search for shortcuts (x64dbg style)
+    auto* sc_search_str = new QShortcut(QKeySequence("Ctrl+Alt+S"), this);
+    connect(sc_search_str, &QShortcut::activated, this, [this]() {
+        Q_EMIT searchStringsRequested();
+    });
+
+    auto* sc_search_calls = new QShortcut(QKeySequence("Ctrl+Alt+C"), this);
+    connect(sc_search_calls, &QShortcut::activated, this, [this]() {
+        Q_EMIT searchIntermodularCallsRequested();
+    });
 
     // x64dbg-style fast branch navigation & history
     auto* sc_enter = new QShortcut(QKeySequence(Qt::Key_Return), this);
@@ -571,9 +598,23 @@ void DisassemblyView::refresh() {
         QString asm_text = QString::fromStdString(insn.mnemonic + " " + insn.operands);
         auto* item_asm = new QTableWidgetItem(asm_text);
 
-        // Column 4: Symbol / Label
-        auto* item_sym = new QTableWidgetItem(QString::fromStdString(insn.symbol));
-        item_sym->setForeground(QColor(70, 190, 220));
+        // Column 4: Symbol / Label (User Label takes precedence and is highlighted)
+        std::string userLabel = session->annotations().getLabel(insn.address);
+        QTableWidgetItem* item_sym = nullptr;
+        if (!userLabel.empty()) {
+            QString labelText = QString("🏷 %1").arg(QString::fromStdString(userLabel));
+            if (!insn.symbol.empty()) {
+                labelText += QString(" (%1)").arg(QString::fromStdString(insn.symbol));
+            }
+            item_sym = new QTableWidgetItem(labelText);
+            item_sym->setForeground(QColor(80, 220, 160));
+            QFont boldFont = font();
+            boldFont.setBold(true);
+            item_sym->setFont(boldFont);
+        } else {
+            item_sym = new QTableWidgetItem(QString::fromStdString(insn.symbol));
+            item_sym->setForeground(QColor(70, 190, 220));
+        }
 
         // Column 5: User Comment
         std::string commentStr = session->annotations().getComment(insn.address);
@@ -885,6 +926,31 @@ void DisassemblyView::editCommentPrompt() {
     }
 }
 
+void DisassemblyView::editLabelPrompt() {
+    int row = currentRow();
+    auto addr = addressAtRow(row);
+    auto session = session_.lock();
+    if (!addr || !session) return;
+
+    std::string existing = session->annotations().getLabel(*addr);
+
+    bool ok = false;
+    QString text = QInputDialog::getText(
+        this,
+        "Set / Edit Label (:)",
+        QString("Label for %1 (leave empty to remove):").arg(QString::fromStdString(addr->toHex())),
+        QLineEdit::Normal,
+        QString::fromStdString(existing),
+        &ok
+    );
+
+    if (ok) {
+        session->annotations().setLabel(*addr, text.trimmed().toStdString());
+        refresh();
+        Q_EMIT labelChanged(*addr, text.trimmed());
+    }
+}
+
 void DisassemblyView::toggleBookmark() {
     int row = currentRow();
     auto addr = addressAtRow(row);
@@ -942,9 +1008,12 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
 
         menu.addSeparator();
 
-        // Comments & Bookmarks
+        // Comments, Labels & Bookmarks
         QAction* act_comment = menu.addAction("Set / Edit Comment... (;)");
         connect(act_comment, &QAction::triggered, this, &DisassemblyView::editCommentPrompt);
+
+        QAction* act_label = menu.addAction("Set / Edit Label... (:)");
+        connect(act_label, &QAction::triggered, this, &DisassemblyView::editLabelPrompt);
 
         bool isBmk = session->annotations().isBookmarked(*addr);
         QAction* act_bmk = menu.addAction(isBmk ? "Remove Bookmark (Ctrl+B)" : "Add Bookmark (Ctrl+B)");
@@ -953,6 +1022,9 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
         menu.addSeparator();
 
         // Origin & Navigation
+        QAction* act_follow_rip = menu.addAction("Origin: Go to Current RIP (*)");
+        connect(act_follow_rip, &QAction::triggered, this, &DisassemblyView::followRip);
+
         QAction* act_origin = menu.addAction("Set New Origin Here (Set RIP) (Ctrl+*)");
         connect(act_origin, &QAction::triggered, this, &DisassemblyView::setOriginToSelection);
 
@@ -1048,6 +1120,22 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
 
         menu.addSeparator();
 
+        // Search for Submenu (x64dbg style)
+        auto* searchSub = menu.addMenu("Search for");
+        QAction* act_search_str = searchSub->addAction("All Referenced Text Strings (Ctrl+Alt+S)");
+        connect(act_search_str, &QAction::triggered, this, [this]() {
+            Q_EMIT searchStringsRequested();
+        });
+
+        QAction* act_search_calls = searchSub->addAction("All Intermodular Calls (Ctrl+Alt+C)");
+        connect(act_search_calls, &QAction::triggered, this, [this]() {
+            Q_EMIT searchIntermodularCallsRequested();
+        });
+
+        searchSub->addSeparator();
+        QAction* act_xref_sub = searchSub->addAction("Find References to Address... (X)");
+        connect(act_xref_sub, &QAction::triggered, this, &DisassemblyView::findXRefsPrompt);
+
         // XREFS
         QAction* act_xref = menu.addAction("Find References to Address... (X)");
         connect(act_xref, &QAction::triggered, this, &DisassemblyView::findXRefsPrompt);
@@ -1076,7 +1164,7 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
     QAction* act_goto = menu.addAction("Goto Address / Symbol... (Ctrl+G)");
     connect(act_goto, &QAction::triggered, this, &DisassemblyView::gotoAddressPrompt);
 
-    QAction* act_follow = menu.addAction("Follow Current RIP");
+    QAction* act_follow = menu.addAction("Origin: Go to Current RIP (*)");
     connect(act_follow, &QAction::triggered, this, &DisassemblyView::followRip);
 
     menu.addSeparator();
