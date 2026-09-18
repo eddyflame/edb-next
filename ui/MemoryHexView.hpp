@@ -21,6 +21,7 @@ public:
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
     void jumpToStackRequested(Address addr);
+    void jumpToDumpRequested(Address addr, int tabIndex = -1);
     void inspectWithTypeViewerRequested(Address addr);
     void patchCreated(Address addr, const std::vector<uint8_t>& oldBytes, const std::vector<uint8_t>& newBytes, const QString& comment);
 
@@ -33,6 +34,9 @@ public Q_SLOTS:
     void fillZeros();
     void navigateBack();
     void navigateForward();
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
 
 private Q_SLOTS:
     void handleCustomContextMenu(const QPoint& pos);

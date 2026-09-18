@@ -262,6 +262,7 @@ void BreakpointManagerView::handleItemChanged(QTableWidgetItem* item) {
             session->disableBreakpoint(addr);
         }
         refresh();
+        Q_EMIT breakpointChanged();
     }
 }
 
@@ -361,6 +362,7 @@ void BreakpointManagerView::onAddBreakpointClicked() {
     if (!target_addr.isNull()) {
         session->addBreakpoint(target_addr, query);
         refresh();
+        Q_EMIT breakpointChanged();
         Q_EMIT jumpToAddressRequested(target_addr);
     } else {
         QMessageBox::warning(this, "Error", "Could not resolve address or symbol.");
@@ -379,6 +381,7 @@ void BreakpointManagerView::onToggleBreakpointClicked() {
             session->enableBreakpoint(addr);
         }
         refresh();
+        Q_EMIT breakpointChanged();
     }
 }
 
@@ -389,6 +392,7 @@ void BreakpointManagerView::onDeleteBreakpointClicked() {
         if (!session) return;
         session->removeBreakpoint(currentBreakpoints_[row].address);
         refresh();
+        Q_EMIT breakpointChanged();
     }
 }
 

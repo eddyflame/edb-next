@@ -66,12 +66,15 @@ void SessionTabWidget::setupUi() {
 
     connect(disasmView_, &DisassemblyView::instructionInspected, insnStatusBar_, &QLabel::setText);
 
-    connect(disasmView_, &DisassemblyView::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
+    connect(disasmView_, &DisassemblyView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
+        multiDumpWidget_->jumpToAddress(addr, tabIndex);
         bottomTabs_->setCurrentWidget(multiDumpWidget_);
     });
-    connect(regView_, &RegisterView::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
+    connect(disasmView_, &DisassemblyView::breakpointToggled, this, [this](Address) {
+        bpView_->refresh();
+    });
+    connect(regView_, &RegisterView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
+        multiDumpWidget_->jumpToAddress(addr, tabIndex);
         bottomTabs_->setCurrentWidget(multiDumpWidget_);
     });
     connect(regView_, &RegisterView::jumpToDisassemblyRequested, this, [this](Address addr) {
@@ -120,6 +123,9 @@ void SessionTabWidget::setupUi() {
     bpView_->setSession(session_);
     connect(bpView_, &BreakpointManagerView::jumpToAddressRequested, this, [this](Address addr) {
         disasmView_->gotoAddress(addr);
+    });
+    connect(bpView_, &BreakpointManagerView::breakpointChanged, this, [this]() {
+        disasmView_->refresh();
     });
     bottomTabs_->addTab(bpView_, "Breakpoints");
 
@@ -287,8 +293,8 @@ void SessionTabWidget::setupUi() {
     connect(stackView_, &StackView::jumpToDisassemblyRequested, this, [this](Address addr) {
         disasmView_->gotoAddress(addr);
     });
-    connect(stackView_, &StackView::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
+    connect(stackView_, &StackView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
+        multiDumpWidget_->jumpToAddress(addr, tabIndex);
         bottomTabs_->setCurrentWidget(multiDumpWidget_);
     });
     connect(stackView_, &StackView::jumpToStackRequested, this, [this](Address addr) {

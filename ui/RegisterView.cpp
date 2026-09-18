@@ -572,9 +572,12 @@ void RegisterView::handleGprContextMenu(const QPoint& pos) {
         Q_EMIT jumpToDisassemblyRequested(regAddr);
     });
 
-    menu.addAction(QString("Follow %1 (%2) in Dump").arg(regName, QString::fromStdString(regAddr.toHex())), [this, regAddr]() {
-        Q_EMIT jumpToMemoryRequested(regAddr);
-    });
+    auto* dumpSub = menu.addMenu(QString("Follow %1 (%2) in Dump").arg(regName, QString::fromStdString(regAddr.toHex())));
+    for (int d = 0; d < 4; ++d) {
+        dumpSub->addAction(QString("Dump %1").arg(d + 1), [this, regAddr, d]() {
+            Q_EMIT jumpToMemoryRequested(regAddr, d);
+        });
+    }
 
     menu.addAction(QString("Follow %1 (%2) in Stack").arg(regName, QString::fromStdString(regAddr.toHex())), [this, regAddr]() {
         Q_EMIT jumpToStackRequested(regAddr);

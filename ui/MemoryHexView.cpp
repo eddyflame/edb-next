@@ -10,6 +10,7 @@
 #include <QFileDialog>
 #include <QClipboard>
 #include <QApplication>
+#include <QKeyEvent>
 #include <iomanip>
 #include <sstream>
 #include <cctype>
@@ -73,6 +74,24 @@ void MemoryHexView::setupUi() {
 
     auto* sc_fwd = new QShortcut(QKeySequence("Alt+Right"), this);
     connect(sc_fwd, &QShortcut::activated, this, &MemoryHexView::navigateForward);
+
+    connect(this, &QTableWidget::cellDoubleClicked, this, [this](int row, int col) {
+        if (col >= 1 && col <= 16) {
+            editBytesPrompt();
+        }
+    });
+}
+
+void MemoryHexView::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space) {
+        int col = currentColumn();
+        if (col >= 1 && col <= 16) {
+            editBytesPrompt();
+            event->accept();
+            return;
+        }
+    }
+    QTableWidget::keyPressEvent(event);
 }
 
 void MemoryHexView::setSession(std::shared_ptr<DebugSession> session) {
@@ -281,29 +300,52 @@ void MemoryHexView::editBytesPrompt() {
     int c = currentColumn();
     Address target_addr = addressAtCell(r, c);
 
+    auto cur_bytes = session->readMemory(target_addr, 1);
+    QString default_val;
+    if (!cur_bytes.empty()) {
+        default_val = QString("%1").arg(cur_bytes[0], 2, 16, QChar('0')).toUpper();
+    }
+
     bool ok = false;
     QString text = QInputDialog::getText(
         this,
-        "Edit Memory Bytes (Ctrl+E)",
-        QString("Enter hex bytes to write at %1 (e.g. 90 90 90 or 48 31 c0):")
+        "Edit Memory Bytes (Enter / Space)",
+        QString("Enter hex bytes to write at %1 (e.g. 90, 90 90, or 48 31 c0):")
             .arg(QString::fromStdString(target_addr.toHex())),
         QLineEdit::Normal,
-        "",
+        default_val,
         &ok
     );
 
     if (!ok || text.trimmed().isEmpty()) return;
 
-    QStringList tokens = text.trimmed().split(' ', Qt::SkipEmptyParts);
+    QString clean = text.trimmed();
     std::vector<uint8_t> new_bytes;
-    for (const auto& tok : tokens) {
-        bool b_ok = false;
-        uint b_val = tok.toUInt(&b_ok, 16);
-        if (b_ok && b_val <= 0xFF) {
-            new_bytes.push_back(static_cast<uint8_t>(b_val));
-        } else {
-            QMessageBox::warning(this, "Hex Parse Error", "Invalid hex byte: " + tok);
-            return;
+    if (clean.contains(' ')) {
+        QStringList tokens = clean.split(' ', Qt::SkipEmptyParts);
+        for (const auto& tok : tokens) {
+            bool b_ok = false;
+            uint b_val = tok.toUInt(&b_ok, 16);
+            if (b_ok && b_val <= 0xFF) {
+                new_bytes.push_back(static_cast<uint8_t>(b_val));
+            } else {
+                QMessageBox::warning(this, "Hex Parse Error", "Invalid hex byte: " + tok);
+                return;
+            }
+        }
+    } else {
+        if (clean.size() % 2 != 0) {
+            clean.prepend('0');
+        }
+        for (int i = 0; i < clean.size(); i += 2) {
+            bool b_ok = false;
+            uint b_val = clean.mid(i, 2).toUInt(&b_ok, 16);
+            if (b_ok && b_val <= 0xFF) {
+                new_bytes.push_back(static_cast<uint8_t>(b_val));
+            } else {
+                QMessageBox::warning(this, "Hex Parse Error", "Invalid hex byte: " + clean.mid(i, 2));
+                return;
+            }
         }
     }
 
@@ -409,14 +451,24 @@ void MemoryHexView::handleCustomContextMenu(const QPoint& pos) {
         Q_EMIT jumpToDisassemblyRequested(sel_addr);
     });
 
+    auto* followDumpMenu = menu.addMenu("Follow in Dump");
+    for (int d = 0; d < 4; ++d) {
+        followDumpMenu->addAction(QString("Dump %1").arg(d + 1), [this, sel_addr, d]() {
+            Q_EMIT jumpToDumpRequested(sel_addr, d);
+        });
+    }
+
     if (session && session->state() != SessionState::Stopped) {
         auto optQword = session->read<uint64_t>(sel_addr);
         if (optQword.has_value()) {
             Address qword_addr(*optQword);
             auto* followMenu = menu.addMenu("Follow QWORD");
-            followMenu->addAction(QString("Follow QWORD (%1) in Dump").arg(QString::fromStdString(qword_addr.toHex())), [this, qword_addr]() {
-                setBaseAddress(qword_addr);
-            });
+            auto* qwordDumpMenu = followMenu->addMenu(QString("Follow QWORD (%1) in Dump").arg(QString::fromStdString(qword_addr.toHex())));
+            for (int d = 0; d < 4; ++d) {
+                qwordDumpMenu->addAction(QString("Dump %1").arg(d + 1), [this, qword_addr, d]() {
+                    Q_EMIT jumpToDumpRequested(qword_addr, d);
+                });
+            }
             followMenu->addAction(QString("Follow QWORD (%1) in Disassembly").arg(QString::fromStdString(qword_addr.toHex())), [this, qword_addr]() {
                 Q_EMIT jumpToDisassemblyRequested(qword_addr);
             });

@@ -22,6 +22,9 @@ void MultiDumpWidget::setupUi() {
 
         connect(hexView, &MemoryHexView::jumpToDisassemblyRequested, this, &MultiDumpWidget::jumpToDisassemblyRequested);
         connect(hexView, &MemoryHexView::jumpToStackRequested, this, &MultiDumpWidget::jumpToStackRequested);
+        connect(hexView, &MemoryHexView::jumpToDumpRequested, this, [this](Address addr, int tabIndex) {
+            jumpToAddress(addr, tabIndex);
+        });
         connect(hexView, &MemoryHexView::inspectWithTypeViewerRequested, this, &MultiDumpWidget::inspectWithTypeViewerRequested);
         connect(hexView, &MemoryHexView::patchCreated, this, &MultiDumpWidget::patchCreated);
     }

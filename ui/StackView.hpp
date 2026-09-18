@@ -23,7 +23,7 @@ public:
 
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
-    void jumpToMemoryRequested(Address addr);
+    void jumpToMemoryRequested(Address addr, int tabIndex = -1);
     void jumpToStackRequested(Address addr);
 
 private Q_SLOTS:

@@ -43,7 +43,7 @@ public Q_SLOTS:
 Q_SIGNALS:
     void breakpointToggled(Address addr);
     void instructionInspected(const QString& summary);
-    void jumpToMemoryRequested(Address addr);
+    void jumpToMemoryRequested(Address addr, int tabIndex = -1);
     void jumpToStackRequested(Address addr);
     void labelChanged(Address addr, const QString& label);
     void searchStringsRequested();
