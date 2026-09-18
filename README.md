@@ -63,6 +63,8 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 - 🔄 **Multi-Thread Hardware Breakpoint Synchronization**: Synchronizes x86_64 debug registers (DR0~DR7) across all existing threads on breakpoint configuration and automatically replicates them onto newly spawned threads (`handleThreadCreatedEvent`), preventing hardware breakpoint misses in multi-threaded targets.
 - ⚡ **Incremental Disassembly Cache (`DisasmCache`)**: Version-controlled in-memory instruction cache bypasses redundant Capstone re-initialization and memory reads during single-stepping and trace execution, with fine-grained selective invalidation upon memory writes and breakpoint mutations.
 - 🔌 **Pluggable Debug Engine Abstraction (`IDebugBackend`)**: Decoupled `DebugSession`, `EventLoopThread`, and `TypeManager` behind a pure virtual backend interface, allowing headless mock backend unit testing (`MockDebugBackend`) and establishing the architectural gateway for future remote GDB/LLDB RSP servers.
+- 🚌 **Centralized Cross-View Routing (`NavigationBus`)**: Replaces dozens of point-to-point Qt signal-slot bindings across 22+ views with a centralized event bus. Coordinates jumps to disassembly, memory dumps, stack frames, struct viewer, string references, and intermodular calls with zero inter-view dependency leaks.
+- 🗂️ **Modular Command Registry (`CommandRegistry`)**: Decouples the 1100+ line `CommandBarView` into categorized modular command handlers (`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`). Supports prefix autocompletion, alias resolution (`g` -> `run`, `libs` -> `modules`), category filtering, and seamless third-party plugin command injection.
 
 ---
 
