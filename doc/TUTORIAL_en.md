@@ -959,13 +959,18 @@ target_link_libraries(my_plugin PRIVATE Qt6::Widgets Qt6::Core)
 | **Enter** | Follow Branch | Disassembly |
 | **Esc / Backspace** | Go Back in History (Disasm & Dump) | Navigation |
 | **Alt+Left / Alt+Right** | Navigate History Back / Forward (Disasm & Dump) | Navigation |
-| **Right-Click GPR -> +1 / -1** | Increment / Decrement Register (+1 / -1) | Registers |
+| **Register Table: + / -** | Increment / Decrement Register (+1 / -1) | Registers |
+| **Register Table: 0 / ~** | Instant Zero Out / Bitwise Invert (~val) | Registers |
+| **Register Table: Enter** | Edit Register Value Modal | Registers |
 | **Right-Click GPR -> Follow in Stack** | Navigate Register Stack Pointer to Quadrant 4 | Linking |
 | **Right-Click GPR -> Copy As...** | Copy As Hex, Decimal, or Dereferenced String/Bytes | Registers |
+| **Stack View: Enter** | Smart Follow (Code to Disasm, Data to Dump) | Stack Analysis |
+| **Stack View: Space** | Modify QWORD Value In-Place | Stack Analysis |
+| **Stack View: Ctrl+G** | Go to Stack Virtual Address | Stack Navigation |
 | **Right-Click Dump -> Follow QWORD** | Follow QWORD in Dump / Disassembly / Stack | Memory Analysis |
 | **Right-Click Dump -> View as Struct** | Instant Struct Layout Decoding in Tab 22 Type Viewer | Struct Analysis |
 | **Right-Click Stack -> Follow in Disasm** | Follow `[Return Address]` to Call Site | Stack Analysis |
-| **Space** | Assemble In-Place | Patching |
+| **Space** | Continuous Assemble (Auto-advancing with NOP fill) | Patching |
 | **; (Semicolon)** | Add / Edit Comment | Reverse Engineering |
 | **: (Colon)** | Set / Edit User Label (`🏷`) | Reverse Engineering |
 | **Ctrl+B** | Toggle Bookmark (`★`) | Reverse Engineering |

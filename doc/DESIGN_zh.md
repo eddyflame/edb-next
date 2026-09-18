@@ -637,6 +637,27 @@
      - `origin` 无参调用直接居中 RIP，并提供 `rip` 独立快捷命令；
      - 拓展 `step` 别名 `sti`、`stepo` 别名 `sto`、`ret` 别名 `rtr`，消除从 x64dbg 迁移至 Linux 逆向环境时的任何输入违和感。
 
+7. **连续就地内联汇编系统 (`Space` Continuous Assemble Dialog)**:
+   - 彻底淘汰传统的单次简易 `QInputDialog`，深度对标 x64dbg 打造专属非模态连续汇编对话框 `AssembleDialog`；
+   - 每次按下 Enter 汇编写入成功后，目标地址自动步进到下一条物理指令行，汇编输入框保持焦点并全选文本，实现连续流畅的代码打补丁与逻辑重构体验；
+   - 默认勾选 "Fill with NOPs"（以 NOP 填充剩余字节），防止新指令长度短于原指令导致紧随其后的字节残片崩溃；
+   - 语法/机器码报错就地以红色警示文本呈现，不关闭窗口，极大提高逆向 Patch 效率。
+
+8. **栈视图键盘极速流 (`StackView` Keyboard Flow)**:
+   - `Enter`（智能跟入）：对当前选中的栈单元数值进行多模态研判——若位于已加载模块代码段或含有已知符号则跳转反汇编视图（跟随返回地址/代码指针），若位于有效内存范围则跳转转储视图（Follow in Dump）；
+   - `Space`（就地数值改写）：按空格直接弹出当前栈槽 64 位十六进制 QWORD 修改对话框，支持快速篡改局部变量与返回地址；
+   - `Ctrl+G`（栈内存寻址）：支持纯键盘快速跳转指定栈偏移或栈底/栈顶绝对内存地址。
+
+9. **寄存器表原生键盘微调流 (`RegisterView` Keyboard Flow)**:
+   - 选中通用寄存器后：
+     - 单按 `+`：寄存器数值原子递增 1；
+     - 单按 `-`：寄存器数值原子递减 1；
+     - 单按 `0`：寄存器数值快速清零；
+     - 单按 `~`：寄存器数值按位取反（Bitwise Invert）；
+     - 单按 `Enter`：呼出十六进制数值编辑弹框；
+   - 标志位 EFLAGS 表支持 Tab / Space 快速切换与翻转状态位，实现真正的纯键盘操控。
+
+
 ---
 
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
@@ -762,6 +783,7 @@ edb-next/
 │   ├── TypeViewer.hpp/cpp       # 复合数据类型与结构体布局可视化面板 (工作台 Tab 22)
 │   ├── CommandBarView.hpp/cpp  # 底部 x64dbg 风格交互式 CLI 命令栏
 │   ├── PreferencesDialog.hpp/cpp# 7 大分类完整偏好设置对话框
+│   ├── AssembleDialog.hpp/cpp  # x64dbg 风格连续就地内联汇编对话框 (Space)
 │   ├── LaunchArgumentsDialog.hpp/cpp# 目标命令行参数与工作目录配置弹窗
 │   ├── PluginManagerDialog.hpp/cpp# 插件管理与热加载控制对话框
 │   ├── PatchManagerDialog.hpp/cpp# 集中补丁管理与文件磁盘保存对话框 (Ctrl+P)

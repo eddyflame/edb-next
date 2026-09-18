@@ -1431,13 +1431,18 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 | **Enter** | Follow Branch (跟随分支跳转/函数跟入) | 反汇编导航 |
 | **Esc / Backspace** | Go Back (沿反汇编/转储历史栈瞬时回退) | 历史导航 |
 | **Alt+Left / Alt+Right** | Navigate History (反汇编与转储历史后退 / 前进) | 历史导航 |
-| **右键寄存器 -> +1 / -1** | GPR 极速加 1 / 减 1 (Increment / Decrement) | 寄存器微调 |
+| **寄存器表: + / -** | GPR 极速加 1 / 减 1 (Increment / Decrement) | 寄存器微调 |
+| **寄存器表: 0 / ~** | GPR 极速清零 / 取反 (~val) | 寄存器微调 |
+| **寄存器表: Enter** | 呼出修改寄存器数值对话框 | 寄存器编辑 |
 | **右键寄存器 -> Follow in Stack** | 快速追踪寄存器栈指针至象限 4 栈视图 | 视图联动 |
 | **右键寄存器 -> Copy As...** | 多格式复制寄存器值 (Hex / Decimal / String) | 数据提取 |
+| **栈视图: Enter** | 智能跨视图跟入 (代码跳反汇编，数据跳转储) | 栈分析导航 |
+| **栈视图: Space** | 就地修改栈槽 64 位 QWORD 数值 | 栈内存修补 |
+| **栈视图: Ctrl+G** | 跳转指定栈内存虚拟地址 | 栈视图导航 |
 | **右键转储 -> Follow QWORD** | 智能跨视图追踪 QWORD (Dump / Disasm / Stack) | 内存分析 |
 | **右键转储 -> View as Struct** | 一键携带当前地址直达 Tab 22 Type Viewer 解析 | 结构体分析 |
 | **右键栈单元 -> Follow in Disasm** | 追踪函数返回地址 `[Return Address]` 至调用点 | 调用栈分析 |
-| **Space** | Assemble (就地呼出内联汇编框) | 代码修补 |
+| **Space** | 连续就地汇编 (AssembleDialog 自动步进下一条 + NOP 补齐) | 代码修补 |
 | **; (分号)** | Add / Edit Comment (为指令添加/编辑注释) | 逆向分析 |
 | **: (冒号)** | Add / Edit Label (为当前地址设定用户标签 `🏷`) | 逆向分析 |
 | **Ctrl+B** | Toggle Bookmark (打下/清除黄色五角星书签) | 逆向分析 |
