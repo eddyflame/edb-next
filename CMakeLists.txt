@@ -114,6 +114,7 @@ set(UI_SOURCES
     ui/ROPToolView.cpp
     ui/XRefDialog.cpp
     ui/AssembleDialog.cpp
+    ui/NavigationBus.cpp
     ui/SessionTabWidget.cpp
     ui/PreferencesDialog.cpp
     ui/LaunchArgumentsDialog.cpp

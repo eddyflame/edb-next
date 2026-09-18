@@ -27,6 +27,7 @@
 #include "ScriptConsoleView.hpp"
 #include "MemoryScannerView.hpp"
 #include "TypeViewer.hpp"
+#include "NavigationBus.hpp"
 #include "core/TraceEngine.hpp"
 #include <QWidget>
 #include <QSplitter>
@@ -77,6 +78,8 @@ public:
     MemoryScannerView* memoryScannerView() const noexcept { return memScannerView_; }
     TypeViewer* typeViewer() const noexcept { return typeViewer_; }
     TraceEngine& traceEngine() noexcept { return traceEngine_; }
+    [[nodiscard]] NavigationBus& navigationBus() noexcept { return navBus_; }
+    [[nodiscard]] const NavigationBus& navigationBus() const noexcept { return navBus_; }
 
     QTabWidget* bottomTabs() const noexcept { return bottomTabs_; }
     QSplitter* bottomSplitter() const noexcept { return bottomSplitter_; }
@@ -95,9 +98,11 @@ private Q_SLOTS:
 
 private:
     void setupUi();
+    void setupNavigationBus();
 
     std::shared_ptr<DebugSession> session_;
     TraceEngine traceEngine_;
+    NavigationBus navBus_;
 
     DisassemblyView* disasmView_{nullptr};
     SourceView* sourceView_{nullptr};

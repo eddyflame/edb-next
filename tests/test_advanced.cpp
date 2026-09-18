@@ -1848,6 +1848,75 @@ void test_idebug_backend_interface() {
     std::cout << "[PASS] P1-C IDebugBackend abstraction and MockDebugBackend verified." << std::endl;
 }
 
+void test_navigation_bus() {
+    std::cout << "\n[TEST] Starting NavigationBus Centralized Routing (P2-A) test..." << std::endl;
+
+    // 1. Direct unit verification of NavigationBus signals and slots
+    NavigationBus bus;
+    Address disasmTarget{0};
+    Address dumpTarget{0};
+    int dumpTargetTab = -99;
+    Address stackTarget{0};
+    Address structTarget{0};
+    bool strRefRequested = false;
+    bool intermodularRequested = false;
+    int bottomTabIndex = -1;
+    bool bpNotified = false;
+
+    QObject::connect(&bus, &NavigationBus::navigateToDisassembly, [&](Address a) { disasmTarget = a; });
+    QObject::connect(&bus, &NavigationBus::navigateToDump, [&](Address a, int t) { dumpTarget = a; dumpTargetTab = t; });
+    QObject::connect(&bus, &NavigationBus::navigateToStack, [&](Address a) { stackTarget = a; });
+    QObject::connect(&bus, &NavigationBus::navigateToStruct, [&](Address a) { structTarget = a; });
+    QObject::connect(&bus, &NavigationBus::navigateToStringReferences, [&]() { strRefRequested = true; });
+    QObject::connect(&bus, &NavigationBus::navigateToIntermodularCalls, [&]() { intermodularRequested = true; });
+    QObject::connect(&bus, &NavigationBus::navigateToBottomTabIndex, [&](int idx) { bottomTabIndex = idx; });
+    QObject::connect(&bus, &NavigationBus::breakpointChangedNotification, [&]() { bpNotified = true; });
+
+    bus.requestDisassembly(Address(0x401000));
+    assert(disasmTarget == Address(0x401000));
+
+    bus.requestDump(Address(0x602000), 2);
+    assert(dumpTarget == Address(0x602000) && dumpTargetTab == 2);
+
+    bus.requestStack(Address(0x7fffffffe000));
+    assert(stackTarget == Address(0x7fffffffe000));
+
+    bus.requestStruct(Address(0x500000));
+    assert(structTarget == Address(0x500000));
+
+    bus.requestStringReferences();
+    assert(strRefRequested);
+
+    bus.requestIntermodularCalls();
+    assert(intermodularRequested);
+
+    bus.requestBottomTabIndex(3);
+    assert(bottomTabIndex == 3);
+
+    bus.notifyBreakpointChanged();
+    assert(bpNotified);
+
+    // 2. Integration with SessionTabWidget
+    auto session = std::make_shared<DebugSession>("nav_bus_sess", "NavBusTest");
+    bool launched = session->launch(getTestTargetPath(), {"WorkerNavBus"});
+    assert(launched && "Failed to launch test target");
+
+    SessionTabWidget sessionWidget(session);
+    NavigationBus& sessionBus = sessionWidget.navigationBus();
+
+    // Verify requesting bottom tab index switches the tab
+    sessionBus.requestBottomTabIndex(2);
+    assert(sessionWidget.bottomTabs()->currentIndex() == 2);
+
+    // Verify requesting dump tab switches to multi dump widget (tab 0)
+    sessionBus.requestDump(Address(0x400000), 0);
+    assert(sessionWidget.bottomTabs()->currentIndex() == 0);
+
+    session->terminate();
+
+    std::cout << "[PASS] P2-A NavigationBus routing and SessionTabWidget integration verified." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1880,7 +1949,9 @@ int main(int argc, char* argv[]) {
     test_hw_breakpoint_thread_sync();
     test_disasm_cache();
     test_idebug_backend_interface();
+    test_navigation_bus();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;
 }
+

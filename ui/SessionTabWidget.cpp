@@ -76,30 +76,6 @@ void SessionTabWidget::setupUi() {
 
     connect(disasmView_, &DisassemblyView::instructionInspected, insnStatusBar_, &QLabel::setText);
 
-    connect(disasmView_, &DisassemblyView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
-        multiDumpWidget_->jumpToAddress(addr, tabIndex);
-        switchToBottomTab(multiDumpWidget_);
-    });
-    connect(disasmView_, &DisassemblyView::breakpointToggled, this, [this](Address) {
-        bpView_->refresh();
-    });
-    connect(regView_, &RegisterView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
-        multiDumpWidget_->jumpToAddress(addr, tabIndex);
-        switchToBottomTab(multiDumpWidget_);
-    });
-    connect(regView_, &RegisterView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        showDisassemblyView();
-        disasmView_->gotoAddress(addr);
-    });
-    connect(sourceView_, &SourceView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        showDisassemblyView();
-        disasmView_->gotoAddress(addr);
-    });
-    connect(sourceView_, &SourceView::breakpointToggled, this, [this](Address) {
-        disasmView_->refresh();
-        bpView_->refresh();
-    });
-
     v_splitter->addWidget(top_widget);
     v_splitter->setChildrenCollapsible(true);
 
@@ -124,70 +100,36 @@ void SessionTabWidget::setupUi() {
     multiDumpWidget_ = new MultiDumpWidget(bottomTabs_);
     multiDumpWidget_->setSession(session_);
     memDumpView_ = multiDumpWidget_->activeDump();
-    connect(multiDumpWidget_, &MultiDumpWidget::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(multiDumpWidget_, "Dump (1-4)");
 
     // Tab 2: Call Stack
     callStackView_ = new CallStackView(bottomTabs_);
     callStackView_->setSession(session_);
-    connect(callStackView_, &CallStackView::jumpToAddressRequested, this, [this](Address ip) {
-        disasmView_->gotoAddress(ip);
-    });
     bottomTabs_->addTab(callStackView_, "Call Stack");
 
     // Tab 4: Breakpoints
     bpView_ = new BreakpointManagerView(bottomTabs_);
     bpView_->setSession(session_);
-    connect(bpView_, &BreakpointManagerView::jumpToAddressRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
-    connect(bpView_, &BreakpointManagerView::breakpointChanged, this, [this]() {
-        disasmView_->refresh();
-    });
     bottomTabs_->addTab(bpView_, "Breakpoints");
 
     // Tab 5: Memory Regions
     regionsView_ = new MemoryRegionsView(bottomTabs_);
     regionsView_->setSession(session_);
-    connect(regionsView_, &MemoryRegionsView::jumpToAddressRequested, this, [this](Address addr, bool isExecutable) {
-        if (isExecutable) {
-            disasmView_->gotoAddress(addr);
-        } else {
-            multiDumpWidget_->jumpToAddress(addr);
-            switchToBottomTab(multiDumpWidget_);
-        }
-    });
     bottomTabs_->addTab(regionsView_, "Memory Regions");
 
     // Tab 6: Strings
     strRefView_ = new StringReferencesView(bottomTabs_);
     strRefView_->setSession(session_);
-    connect(strRefView_, &StringReferencesView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
-    connect(strRefView_, &StringReferencesView::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
-        switchToBottomTab(multiDumpWidget_);
-    });
     bottomTabs_->addTab(strRefView_, "Strings");
 
     // Tab 7: Symbols
     symView_ = new SymbolViewer(bottomTabs_);
     symView_->setSession(session_);
-    connect(symView_, &SymbolViewer::jumpToAddressRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(symView_, "Symbols");
 
     // Tab 8: Heap Analysis
     heapView_ = new HeapView(bottomTabs_);
     heapView_->setSession(session_);
-    connect(heapView_, &HeapView::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
-        switchToBottomTab(multiDumpWidget_);
-    });
     bottomTabs_->addTab(heapView_, "Heap Analysis");
 
     // Tab 9: Process Properties
@@ -198,9 +140,6 @@ void SessionTabWidget::setupUi() {
     // Tab 10: Threads
     threadsView_ = new ThreadsView(bottomTabs_);
     threadsView_->setSession(session_);
-    connect(threadsView_, &ThreadsView::jumpToAddressRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     connect(threadsView_, &ThreadsView::threadSwitched, this, [this](Tid) {
         refreshAll();
     });
@@ -209,9 +148,6 @@ void SessionTabWidget::setupUi() {
     // Tab 11: ROP Tool
     ropView_ = new ROPToolView(bottomTabs_);
     ropView_->setSession(session_);
-    connect(ropView_, &ROPToolView::jumpToAddressRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(ropView_, "ROP Tool");
 
     // Tab 12: Watches
@@ -222,17 +158,11 @@ void SessionTabWidget::setupUi() {
     // Tab 13: Trace & Coverage
     traceView_ = new TraceView(traceEngine_, bottomTabs_);
     traceView_->setSession(session_);
-    connect(traceView_, &TraceView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(traceView_, "Trace & Coverage");
 
     // Tab 14: Control Flow Graph (CFG)
     cfgView_ = new CFGGraphView(bottomTabs_);
     cfgView_->setSession(session_);
-    connect(cfgView_, &CFGGraphView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(cfgView_, "Control Flow Graph");
 
     // Tab 15: Notes (Scratchpad)
@@ -250,30 +180,16 @@ void SessionTabWidget::setupUi() {
     // Tab 17: Binary Info
     binaryInfoView_ = new BinaryInfoView(bottomTabs_);
     binaryInfoView_->setSession(session_);
-    connect(binaryInfoView_, &BinaryInfoView::jumpToAddressRequested, this, [this](Address addr, bool isExec) {
-        if (isExec) {
-            disasmView_->gotoAddress(addr);
-        } else {
-            multiDumpWidget_->jumpToAddress(addr);
-            switchToBottomTab(multiDumpWidget_);
-        }
-    });
     bottomTabs_->addTab(binaryInfoView_, "Binary Info");
 
     // Tab 18: Intermodular Calls
     intermodularCallsView_ = new IntermodularCallsView(bottomTabs_);
     intermodularCallsView_->setSession(session_);
-    connect(intermodularCallsView_, &IntermodularCallsView::jumpToAddressRequested, this, [this](Address addr, bool) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(intermodularCallsView_, "Intermodular Calls");
 
     // Tab 19: Opcode Search
     opcodeSearcherView_ = new OpcodeSearcherView(bottomTabs_);
     opcodeSearcherView_->setSession(session_);
-    connect(opcodeSearcherView_, &OpcodeSearcherView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
     bottomTabs_->addTab(opcodeSearcherView_, "Opcode Search");
 
     // Tab 20: Script Console (Python 3 & Lua 5.4)
@@ -284,67 +200,17 @@ void SessionTabWidget::setupUi() {
     // Tab 21: Memory Scanner (CheatEngine-style Differential Scanner)
     memScannerView_ = new MemoryScannerView(bottomTabs_);
     memScannerView_->setSession(session_);
-    connect(memScannerView_, &MemoryScannerView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
-    connect(memScannerView_, &MemoryScannerView::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
-        switchToBottomTab(multiDumpWidget_);
-    });
     bottomTabs_->addTab(memScannerView_, "Memory Scanner");
 
     // Tab 22: Type Viewer (Struct Layout & Compound Types)
     typeViewer_ = new TypeViewer(bottomTabs_);
     typeViewer_->setSession(session_);
-    connect(typeViewer_, &TypeViewer::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
-    connect(typeViewer_, &TypeViewer::jumpToMemoryRequested, this, [this](Address addr) {
-        multiDumpWidget_->jumpToAddress(addr);
-        switchToBottomTab(multiDumpWidget_);
-    });
     bottomTabs_->addTab(typeViewer_, "Type Viewer");
 
     // Right: Dedicated Stack View (Classic 4-Quadrant Workstation)
     stackView_ = new StackView(bottomSplitter_);
     stackView_->setMinimumWidth(150);
     stackView_->setSession(session_);
-    connect(stackView_, &StackView::jumpToDisassemblyRequested, this, [this](Address addr) {
-        disasmView_->gotoAddress(addr);
-    });
-    connect(stackView_, &StackView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
-        multiDumpWidget_->jumpToAddress(addr, tabIndex);
-        switchToBottomTab(multiDumpWidget_);
-    });
-    connect(stackView_, &StackView::jumpToStackRequested, this, [this](Address addr) {
-        stackView_->setBaseAddress(addr);
-    });
-    connect(disasmView_, &DisassemblyView::jumpToStackRequested, this, [this](Address addr) {
-        stackView_->setBaseAddress(addr);
-    });
-    connect(regView_, &RegisterView::jumpToStackRequested, this, [this](Address addr) {
-        stackView_->setBaseAddress(addr);
-    });
-    connect(multiDumpWidget_, &MultiDumpWidget::jumpToStackRequested, this, [this](Address addr) {
-        stackView_->setBaseAddress(addr);
-    });
-    connect(multiDumpWidget_, &MultiDumpWidget::inspectWithTypeViewerRequested, this, [this](Address addr) {
-        switchToBottomTab(typeViewer_);
-        typeViewer_->setInspectAddress(addr);
-        typeViewer_->refresh();
-    });
-    connect(disasmView_, &DisassemblyView::searchStringsRequested, this, [this]() {
-        if (bottomTabs_ && strRefView_) {
-            switchToBottomTab(strRefView_);
-            strRefView_->onScanClicked();
-        }
-    });
-    connect(disasmView_, &DisassemblyView::searchIntermodularCallsRequested, this, [this]() {
-        if (bottomTabs_ && intermodularCallsView_) {
-            switchToBottomTab(intermodularCallsView_);
-            intermodularCallsView_->handleScanClicked();
-        }
-    });
 
     bottomSplitter_->addWidget(bottomTabs_);
     bottomSplitter_->addWidget(stackView_);
@@ -356,6 +222,150 @@ void SessionTabWidget::setupUi() {
     v_splitter->setStretchFactor(1, 2);
 
     main_layout->addWidget(v_splitter);
+
+    // Wire up centralized NavigationBus for all cross-view navigation requests
+    setupNavigationBus();
+}
+
+void SessionTabWidget::setupNavigationBus() {
+    // 1. Destination bindings: NavigationBus signals -> Target view actions
+    connect(&navBus_, &NavigationBus::navigateToDisassembly, this, [this](Address addr) {
+        showDisassemblyView();
+        if (disasmView_) disasmView_->gotoAddress(addr);
+    });
+    connect(&navBus_, &NavigationBus::navigateToDump, this, [this](Address addr, int tabIndex) {
+        if (multiDumpWidget_) {
+            multiDumpWidget_->jumpToAddress(addr, tabIndex);
+            switchToBottomTab(multiDumpWidget_);
+        }
+    });
+    connect(&navBus_, &NavigationBus::navigateToStack, this, [this](Address addr) {
+        if (stackView_) stackView_->setBaseAddress(addr);
+    });
+    connect(&navBus_, &NavigationBus::navigateToStruct, this, [this](Address addr) {
+        if (typeViewer_) {
+            switchToBottomTab(typeViewer_);
+            typeViewer_->setInspectAddress(addr);
+            typeViewer_->refresh();
+        }
+    });
+    connect(&navBus_, &NavigationBus::navigateToStringReferences, this, [this]() {
+        if (bottomTabs_ && strRefView_) {
+            switchToBottomTab(strRefView_);
+            strRefView_->onScanClicked();
+        }
+    });
+    connect(&navBus_, &NavigationBus::navigateToIntermodularCalls, this, [this]() {
+        if (bottomTabs_ && intermodularCallsView_) {
+            switchToBottomTab(intermodularCallsView_);
+            intermodularCallsView_->handleScanClicked();
+        }
+    });
+    connect(&navBus_, &NavigationBus::navigateToBottomTab, this, [this](QWidget* widget) {
+        switchToBottomTab(widget);
+    });
+    connect(&navBus_, &NavigationBus::navigateToBottomTabIndex, this, [this](int idx) {
+        selectBottomTab(idx);
+    });
+    connect(&navBus_, &NavigationBus::breakpointChangedNotification, this, [this]() {
+        if (disasmView_) disasmView_->refresh();
+        if (bpView_) bpView_->refresh();
+    });
+
+    // 2. Source bindings: Route all subview navigation requests through NavigationBus
+    if (disasmView_) {
+        connect(disasmView_, &DisassemblyView::jumpToMemoryRequested, &navBus_, &NavigationBus::requestDump);
+        connect(disasmView_, &DisassemblyView::jumpToStackRequested, &navBus_, &NavigationBus::requestStack);
+        connect(disasmView_, &DisassemblyView::searchStringsRequested, &navBus_, &NavigationBus::requestStringReferences);
+        connect(disasmView_, &DisassemblyView::searchIntermodularCallsRequested, &navBus_, &NavigationBus::requestIntermodularCalls);
+        connect(disasmView_, &DisassemblyView::breakpointToggled, &navBus_, &NavigationBus::notifyBreakpointChanged);
+    }
+    if (sourceView_) {
+        connect(sourceView_, &SourceView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(sourceView_, &SourceView::breakpointToggled, &navBus_, &NavigationBus::notifyBreakpointChanged);
+    }
+    if (regView_) {
+        connect(regView_, &RegisterView::jumpToMemoryRequested, &navBus_, &NavigationBus::requestDump);
+        connect(regView_, &RegisterView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(regView_, &RegisterView::jumpToStackRequested, &navBus_, &NavigationBus::requestStack);
+    }
+    if (multiDumpWidget_) {
+        connect(multiDumpWidget_, &MultiDumpWidget::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(multiDumpWidget_, &MultiDumpWidget::jumpToStackRequested, &navBus_, &NavigationBus::requestStack);
+        connect(multiDumpWidget_, &MultiDumpWidget::inspectWithTypeViewerRequested, &navBus_, &NavigationBus::requestStruct);
+    }
+    if (stackView_) {
+        connect(stackView_, &StackView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(stackView_, &StackView::jumpToMemoryRequested, &navBus_, [this](Address addr, int tab) {
+            navBus_.requestDump(addr, tab);
+        });
+        connect(stackView_, &StackView::jumpToStackRequested, &navBus_, &NavigationBus::requestStack);
+    }
+    if (callStackView_) {
+        connect(callStackView_, &CallStackView::jumpToAddressRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (bpView_) {
+        connect(bpView_, &BreakpointManagerView::jumpToAddressRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(bpView_, &BreakpointManagerView::breakpointChanged, &navBus_, &NavigationBus::notifyBreakpointChanged);
+    }
+    if (regionsView_) {
+        connect(regionsView_, &MemoryRegionsView::jumpToAddressRequested, &navBus_, [this](Address addr, bool isExec) {
+            if (isExec) navBus_.requestDisassembly(addr);
+            else navBus_.requestDump(addr);
+        });
+    }
+    if (strRefView_) {
+        connect(strRefView_, &StringReferencesView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(strRefView_, &StringReferencesView::jumpToMemoryRequested, &navBus_, [this](Address addr) {
+            navBus_.requestDump(addr);
+        });
+    }
+    if (symView_) {
+        connect(symView_, &SymbolViewer::jumpToAddressRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (heapView_) {
+        connect(heapView_, &HeapView::jumpToMemoryRequested, &navBus_, [this](Address addr) {
+            navBus_.requestDump(addr);
+        });
+    }
+    if (threadsView_) {
+        connect(threadsView_, &ThreadsView::jumpToAddressRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (ropView_) {
+        connect(ropView_, &ROPToolView::jumpToAddressRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (traceView_) {
+        connect(traceView_, &TraceView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (cfgView_) {
+        connect(cfgView_, &CFGGraphView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (binaryInfoView_) {
+        connect(binaryInfoView_, &BinaryInfoView::jumpToAddressRequested, &navBus_, [this](Address addr, bool isExec) {
+            if (isExec) navBus_.requestDisassembly(addr);
+            else navBus_.requestDump(addr);
+        });
+    }
+    if (intermodularCallsView_) {
+        connect(intermodularCallsView_, &IntermodularCallsView::jumpToAddressRequested, &navBus_, [this](Address addr, bool) {
+            navBus_.requestDisassembly(addr);
+        });
+    }
+    if (opcodeSearcherView_) {
+        connect(opcodeSearcherView_, &OpcodeSearcherView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+    }
+    if (memScannerView_) {
+        connect(memScannerView_, &MemoryScannerView::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(memScannerView_, &MemoryScannerView::jumpToMemoryRequested, &navBus_, [this](Address addr) {
+            navBus_.requestDump(addr);
+        });
+    }
+    if (typeViewer_) {
+        connect(typeViewer_, &TypeViewer::jumpToDisassemblyRequested, &navBus_, &NavigationBus::requestDisassembly);
+        connect(typeViewer_, &TypeViewer::jumpToMemoryRequested, &navBus_, [this](Address addr) {
+            navBus_.requestDump(addr);
+        });
+    }
 }
 
 void SessionTabWidget::toggleStackView() {
