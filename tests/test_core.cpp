@@ -340,10 +340,19 @@ void test_phase3_2_patching_comments_and_proc_info() {
     assert(disasm_restored[0].mnemonic != "nop");
     std::cout << "[PASS] Original opcodes restored successfully." << std::endl;
 
-    // 2. AnnotationManager (Comments & Bookmarks)
+    // 2. AnnotationManager (Comments, Labels & Bookmarks)
     session.annotations().setComment(*fib_sym, "Recursive Fibonacci calculation start");
     assert(session.annotations().getComment(*fib_sym) == "Recursive Fibonacci calculation start");
     assert(session.annotations().hasComment(*fib_sym));
+
+    // Labels & Symbol resolution
+    session.annotations().setLabel(*fib_sym, "fib_entry_custom");
+    assert(session.annotations().hasLabel(*fib_sym));
+    assert(session.annotations().getLabel(*fib_sym) == "fib_entry_custom");
+    auto found_addr = session.annotations().findAddressByLabel("fib_entry_custom");
+    assert(found_addr.has_value() && *found_addr == *fib_sym);
+    auto resolved_sym = session.resolveSymbol("fib_entry_custom");
+    assert(resolved_sym.has_value() && *resolved_sym == *fib_sym);
 
     Address bmk1 = *fib_sym;
     Address bmk2 = *fib_sym + 0x20;
@@ -354,7 +363,7 @@ void test_phase3_2_patching_comments_and_proc_info() {
 
     auto next_bmk = session.annotations().nextBookmark(bmk1);
     assert(next_bmk.has_value() && *next_bmk == bmk2);
-    std::cout << "[PASS] AnnotationManager comments and bookmark navigation verified." << std::endl;
+    std::cout << "[PASS] AnnotationManager comments, labels and bookmark navigation verified." << std::endl;
 
     // 3. Process Introspection
     assert(session.pid() > 0);

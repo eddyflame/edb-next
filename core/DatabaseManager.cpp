@@ -49,6 +49,18 @@ bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProj
     }
     root["comments"] = comments_arr;
 
+    // Labels
+    QJsonArray labels_arr;
+    for (const auto& [addr, text] : project.labels) {
+        QJsonObject l_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << addr;
+        l_obj["address"] = QString::fromStdString(ss.str());
+        l_obj["label"] = QString::fromStdString(text);
+        labels_arr.append(l_obj);
+    }
+    root["labels"] = labels_arr;
+
     // Bookmarks
     QJsonArray bm_arr;
     for (uint64_t addr : project.bookmarks) {
@@ -152,6 +164,16 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
         project.comments.emplace_back(addr, text);
     }
 
+    // Labels
+    project.labels.clear();
+    QJsonArray labels_arr = root["labels"].toArray();
+    for (const auto& val : labels_arr) {
+        QJsonObject obj = val.toObject();
+        uint64_t addr = obj["address"].toString().toULongLong(nullptr, 16);
+        std::string text = obj["label"].toString().toStdString();
+        project.labels.emplace_back(addr, text);
+    }
+
     // Bookmarks
     project.bookmarks.clear();
     QJsonArray bm_arr = root["bookmarks"].toArray();
@@ -228,9 +250,12 @@ bool DatabaseManager::exportSession(std::shared_ptr<DebugSession> session,
     proj.notes = notes;
     proj.watches = watches;
 
-    // Comments & Bookmarks
+    // Comments, Labels & Bookmarks
     for (const auto& [addr, comment] : session->annotationManager().allComments()) {
         proj.comments.emplace_back(addr, comment);
+    }
+    for (const auto& [addr, label] : session->annotationManager().allLabels()) {
+        proj.labels.emplace_back(addr, label);
     }
     for (const auto& addr : session->annotationManager().bookmarks()) {
         proj.bookmarks.push_back(addr.value());
@@ -303,9 +328,12 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
     outNotes = proj.notes;
     outWatches = proj.watches;
 
-    // Restore comments & bookmarks
+    // Restore comments, labels & bookmarks
     for (const auto& [addr, text] : proj.comments) {
         session->annotationManager().setComment(Address(addr), text);
+    }
+    for (const auto& [addr, text] : proj.labels) {
+        session->annotationManager().setLabel(Address(addr), text);
     }
     for (uint64_t addr : proj.bookmarks) {
         session->annotationManager().setBookmark(Address(addr), true);
