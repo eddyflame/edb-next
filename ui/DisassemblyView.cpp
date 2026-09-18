@@ -1,5 +1,6 @@
 #include "DisassemblyView.hpp"
 #include "XRefDialog.hpp"
+#include "AssembleDialog.hpp"
 #include "core/ConfigurationManager.hpp"
 #include <QHeaderView>
 #include <QFontDatabase>
@@ -1193,55 +1194,36 @@ void DisassemblyView::assemblePrompt() {
     if (!insn || !session || session->state() == SessionState::Stopped) return;
 
     QString defaultAsm = QString::fromStdString(insn->mnemonic + " " + insn->operands).trimmed();
-    bool ok = false;
-    QString text = QInputDialog::getText(
-        this,
-        "Assemble Instruction (Space)",
-        QString("Assemble at %1 (original length: %2 bytes):")
-            .arg(QString::fromStdString(insn->address.toHex()))
-            .arg(insn->bytes.size()),
-        QLineEdit::Normal,
-        defaultAsm,
-        &ok
-    );
+    auto* dlg = new AssembleDialog(session, insn->address, insn->bytes.size(), defaultAsm, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
 
-    if (!ok || text.trimmed().isEmpty()) return;
-
-    auto res = session->assemble(text.trimmed().toStdString(), insn->address);
-    if (!res) {
-        QMessageBox::critical(this, "Assemble Failed", QString::fromStdString(res.error));
-        return;
-    }
-
-    std::vector<uint8_t> newBytes = std::move(res.value);
-    size_t origLen = insn->bytes.size();
-
-    // If new instruction is shorter than original, pad with NOPs
-    if (newBytes.size() < origLen) {
-        size_t padCount = origLen - newBytes.size();
-        auto reply = QMessageBox::question(
-            this,
-            "Pad with NOPs?",
-            QString("New instruction is %1 bytes (original was %2 bytes).\nPad remaining %3 bytes with NOP (0x90)?")
-                .arg(newBytes.size()).arg(origLen).arg(padCount),
-            QMessageBox::Yes | QMessageBox::No
-        );
-        if (reply == QMessageBox::Yes) {
-            newBytes.insert(newBytes.end(), padCount, 0x90);
+    connect(dlg, &AssembleDialog::instructionAssembled, this, [this, dlg](Address /*assembledAddr*/, size_t /*bytesWritten*/, Address nextAddr) {
+        refresh();
+        int nextRow = -1;
+        for (int r = 0; r < rowCount(); ++r) {
+            auto addr = addressAtRow(r);
+            if (addr && *addr == nextAddr) {
+                nextRow = r;
+                break;
+            }
         }
-    } else if (newBytes.size() > origLen) {
-        auto reply = QMessageBox::warning(
-            this,
-            "Instruction Overwrite Warning",
-            QString("New instruction is %1 bytes, which is %2 bytes longer than original (%3 bytes).\nThis will overwrite the following instruction bytes! Continue?")
-                .arg(newBytes.size()).arg(newBytes.size() - origLen).arg(origLen),
-            QMessageBox::Yes | QMessageBox::Cancel
-        );
-        if (reply != QMessageBox::Yes) return;
-    }
 
-    session->writeMemory(insn->address, newBytes.data(), newBytes.size());
-    refresh();
+        if (nextRow >= 0) {
+            setCurrentCell(nextRow, 3);
+            if (auto* it = item(nextRow, 1)) {
+                scrollToItem(it);
+            }
+            auto* nextInsn = instructionAtRow(nextRow);
+            if (nextInsn) {
+                QString nextAsm = QString::fromStdString(nextInsn->mnemonic + " " + nextInsn->operands).trimmed();
+                dlg->setTargetInstruction(nextAddr, nextInsn->bytes.size(), nextAsm);
+                return;
+            }
+        }
+        dlg->setTargetInstruction(nextAddr, 1, "");
+    });
+
+    dlg->show();
 }
 
 void DisassemblyView::findXRefsPrompt() {

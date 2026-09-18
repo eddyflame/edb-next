@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QClipboard>
 #include <QApplication>
+#include <QKeyEvent>
 #include <iomanip>
 #include <sstream>
 #include <cstring>
@@ -53,6 +54,7 @@ void RegisterView::setupUi() {
         auto* btn = new QPushButton(name + " 0", this);
         btn->setMaximumWidth(46);
         btn->setMaximumHeight(22);
+        btn->setFocusPolicy(Qt::StrongFocus);
         QFont btnFont = btn->font();
         btnFont.setPointSize(8);
         btnFont.setBold(true);
@@ -78,6 +80,7 @@ void RegisterView::setupUi() {
 
     // GPR Table
     gprTable_ = new QTableWidget(this);
+    gprTable_->setObjectName("gprTable");
     gprTable_->setColumnCount(4);
     gprTable_->setHorizontalHeaderLabels({"Register", "Hex Value", "Comment / Dereference", "Decimal"});
     gprTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -90,11 +93,13 @@ void RegisterView::setupUi() {
     gprTable_->verticalHeader()->setVisible(false);
     gprTable_->setShowGrid(true);
     gprTable_->setFont(monoFont);
+    gprTable_->installEventFilter(this);
 
     tabWidget_->addTab(gprTable_, "General (GPR)");
 
     // FP / SSE Table
     fpTable_ = new QTableWidget(this);
+    fpTable_->setObjectName("fpTable");
     fpTable_->setColumnCount(4);
     fpTable_->setHorizontalHeaderLabels({"Register", "Hex (128-bit)", "4x Float", "2x Double"});
     fpTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -107,6 +112,7 @@ void RegisterView::setupUi() {
     fpTable_->verticalHeader()->setVisible(false);
     fpTable_->setShowGrid(true);
     fpTable_->setFont(monoFont);
+    fpTable_->installEventFilter(this);
 
     tabWidget_->addTab(fpTable_, "FPU / SSE (XMM)");
 
@@ -462,6 +468,90 @@ static void setNamedGpr(RegisterContext& regs, const QString& regName, uint64_t 
 
 } // namespace
 
+void RegisterView::adjustSelectedGpr(int row, int64_t delta) {
+    if (row < 0 || row >= gprTable_->rowCount()) return;
+    auto s = session_.lock();
+    if (!s || s->state() == SessionState::Stopped) return;
+
+    QString regName = gprTable_->item(row, 0)->text();
+    QString curHex = gprTable_->item(row, 1)->text();
+    bool convOk = false;
+    uint64_t val = curHex.toULongLong(&convOk, 16);
+    if (!convOk) return;
+
+    auto regs = s->registers();
+    setNamedGpr(regs, regName, val + delta);
+    s->setRegisters(regs);
+    refresh();
+}
+
+void RegisterView::setSelectedGpr(int row, uint64_t val) {
+    if (row < 0 || row >= gprTable_->rowCount()) return;
+    auto s = session_.lock();
+    if (!s || s->state() == SessionState::Stopped) return;
+
+    QString regName = gprTable_->item(row, 0)->text();
+    auto regs = s->registers();
+    setNamedGpr(regs, regName, val);
+    s->setRegisters(regs);
+    refresh();
+}
+
+void RegisterView::toggleSelectedGpr(int row) {
+    if (row < 0 || row >= gprTable_->rowCount()) return;
+    auto s = session_.lock();
+    if (!s || s->state() == SessionState::Stopped) return;
+
+    QString regName = gprTable_->item(row, 0)->text();
+    QString curHex = gprTable_->item(row, 1)->text();
+    bool convOk = false;
+    uint64_t val = curHex.toULongLong(&convOk, 16);
+    if (!convOk) return;
+
+    auto regs = s->registers();
+    setNamedGpr(regs, regName, ~val);
+    s->setRegisters(regs);
+    refresh();
+}
+
+bool RegisterView::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == gprTable_ && event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        int row = gprTable_->currentRow();
+        if (row >= 0 && row < gprTable_->rowCount()) {
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+                handleGprDoubleClicked(row, 1);
+                return true;
+            } else if (keyEvent->key() == Qt::Key_Plus || keyEvent->text() == "+") {
+                adjustSelectedGpr(row, 1);
+                return true;
+            } else if (keyEvent->key() == Qt::Key_Minus || keyEvent->text() == "-") {
+                adjustSelectedGpr(row, -1);
+                return true;
+            } else if (keyEvent->key() == Qt::Key_0) {
+                setSelectedGpr(row, 0);
+                return true;
+            } else if (keyEvent->key() == Qt::Key_AsciiTilde || keyEvent->text() == "~") {
+                toggleSelectedGpr(row);
+                return true;
+            } else if (keyEvent->key() == Qt::Key_Space) {
+                handleGprDoubleClicked(row, 1);
+                return true;
+            }
+        }
+    } else if (watched == fpTable_ && event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        int row = fpTable_->currentRow();
+        if (row >= 0 && row < fpTable_->rowCount()) {
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Space) {
+                handleFpDoubleClicked(row, 1);
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
 void RegisterView::handleGprContextMenu(const QPoint& pos) {
     int row = gprTable_->currentRow();
     if (row < 0 || row >= gprTable_->rowCount()) return;
@@ -492,44 +582,24 @@ void RegisterView::handleGprContextMenu(const QPoint& pos) {
 
     menu.addSeparator();
 
-    menu.addAction("Modify Value...", [this, row]() {
+    menu.addAction("Modify Value... (Enter)", [this, row]() {
         handleGprDoubleClicked(row, 1);
     });
 
-    menu.addAction("Increment (+1)", [this, regName, val]() {
-        if (auto s = session_.lock()) {
-            auto regs = s->registers();
-            setNamedGpr(regs, regName, val + 1);
-            s->setRegisters(regs);
-            refresh();
-        }
+    menu.addAction("Increment (+1 / +)", [this, row]() {
+        adjustSelectedGpr(row, 1);
     });
 
-    menu.addAction("Decrement (-1)", [this, regName, val]() {
-        if (auto s = session_.lock()) {
-            auto regs = s->registers();
-            setNamedGpr(regs, regName, val - 1);
-            s->setRegisters(regs);
-            refresh();
-        }
+    menu.addAction("Decrement (-1 / -)", [this, row]() {
+        adjustSelectedGpr(row, -1);
     });
 
-    menu.addAction("Zero Register (Set to 0)", [this, regName]() {
-        if (auto s = session_.lock()) {
-            auto regs = s->registers();
-            setNamedGpr(regs, regName, 0);
-            s->setRegisters(regs);
-            refresh();
-        }
+    menu.addAction("Zero Register (0)", [this, row]() {
+        setSelectedGpr(row, 0);
     });
 
-    menu.addAction("Toggle Value (~val)", [this, regName, val]() {
-        if (auto s = session_.lock()) {
-            auto regs = s->registers();
-            setNamedGpr(regs, regName, ~val);
-            s->setRegisters(regs);
-            refresh();
-        }
+    menu.addAction("Toggle Value (~)", [this, row]() {
+        toggleSelectedGpr(row);
     });
 
     menu.addSeparator();
