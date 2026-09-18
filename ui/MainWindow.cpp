@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 #include <QDateTime>
 #include <QApplication>
+#include <QDir>
 #include <QClipboard>
 #include <QShortcut>
 
@@ -35,9 +36,27 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&sessionMgr_, &SessionManager::sessionClosed, this, &MainWindow::onSessionClosed);
     connect(&sessionMgr_, &SessionManager::activeSessionChanged, this, &MainWindow::onActiveSessionChanged);
 
-    // Load plugins from configured directory
+    // Multi-directory plugin discovery:
+    // 1. Built-in plugins (AppImage bundle / system FHS / local build directory)
+    const QString appDir = QApplication::applicationDirPath();
+    const QStringList builtinPluginCandidates = {
+        appDir + "/plugins",
+        appDir + "/../lib/edb-next/plugins",
+        appDir + "/../lib/x86_64-linux-gnu/edb-next/plugins",
+        appDir + "/../lib64/edb-next/plugins"
+    };
+
+    for (const auto& dir : builtinPluginCandidates) {
+        if (QDir(dir).exists()) {
+            pluginMgr_.loadPluginsFromDirectory(dir);
+        }
+    }
+
+    // 2. User configured directory (defaults to ~/.config/edb-next/plugins)
     QString pdir = ConfigurationManager::instance().directories().pluginDir;
-    pluginMgr_.loadPluginsFromDirectory(pdir);
+    if (!pdir.isEmpty() && QDir(pdir).exists()) {
+        pluginMgr_.loadPluginsFromDirectory(pdir);
+    }
 
     // Mount loaded plugins into Plugins menu
     for (const auto& p : pluginMgr_.loadedPlugins()) {

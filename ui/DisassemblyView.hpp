@@ -45,12 +45,18 @@ Q_SIGNALS:
     void jumpToMemoryRequested(Address addr);
     void jumpToStackRequested(Address addr);
 
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void scrollContentsBy(int dx, int dy) override;
+
 private Q_SLOTS:
     void handleCellDoubleClicked(int row, int col);
     void handleCustomContextMenu(const QPoint& pos);
     void onCurrentCellChanged(int currentRow, int currentColumn, int previousRow, int previousColumn);
 
 private:
+    void drawFlowLines(QPainter& painter);
+
     enum class RowType {
         Instruction,
         SourceBanner

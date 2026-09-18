@@ -291,6 +291,13 @@ InstructionDetails InstructionInspector::inspect(
                 details.memoryValue = memVal;
                 details.memoryReadSuccess = true;
             }
+            if (details.isBranch && details.branchTarget.isNull()) {
+                if (details.memoryReadSuccess) {
+                    details.branchTarget = Address(details.memoryValue);
+                } else if (!details.effectiveAddress.isNull()) {
+                    details.branchTarget = details.effectiveAddress;
+                }
+            }
             break; // take first memory operand
         }
     }

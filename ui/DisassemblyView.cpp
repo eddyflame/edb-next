@@ -13,6 +13,8 @@
 #include <QApplication>
 #include <QStyledItemDelegate>
 #include <QPainter>
+#include <QPainterPath>
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
@@ -36,14 +38,22 @@ enum class MnemonicClass {
 };
 
 static MnemonicClass classifyMnemonic(std::string_view m) {
-    if (m == "call") return MnemonicClass::Call;
-    if (m == "jmp") return MnemonicClass::Jump;
-    if (m == "ret" || m == "retn" || m == "retf" || m == "iret" || m == "iretd" || m == "iretq") return MnemonicClass::Return;
-    if (m == "push" || m == "pop" || m == "pushf" || m == "pushfq" || m == "popf" || m == "popfq" || m == "enter" || m == "leave") return MnemonicClass::Stack;
-    if (m == "syscall" || m == "sysenter" || m == "int" || m == "int3" || m == "int1" || m == "into" || m == "ud2" || m == "hlt") return MnemonicClass::Trap;
-    if (m == "nop" || m == "pause") return MnemonicClass::Nop;
-    if (m == "cmp" || m == "test") return MnemonicClass::Comparison;
-    if (m.starts_with('j') || m.starts_with("loop")) return MnemonicClass::CondJump;
+    char buf[16];
+    size_t len = std::min(m.size(), sizeof(buf) - 1);
+    for (size_t i = 0; i < len; ++i) {
+        buf[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(m[i])));
+    }
+    buf[len] = '\0';
+    std::string_view lowerM(buf, len);
+
+    if (lowerM == "call" || lowerM == "callq") return MnemonicClass::Call;
+    if (lowerM == "jmp" || lowerM == "jmpq") return MnemonicClass::Jump;
+    if (lowerM == "ret" || lowerM == "retn" || lowerM == "retf" || lowerM == "retq" || lowerM == "iret" || lowerM == "iretd" || lowerM == "iretq") return MnemonicClass::Return;
+    if (lowerM == "push" || lowerM == "pop" || lowerM == "pushf" || lowerM == "pushfq" || lowerM == "popf" || lowerM == "popfq" || lowerM == "enter" || lowerM == "leave") return MnemonicClass::Stack;
+    if (lowerM == "syscall" || lowerM == "sysenter" || lowerM == "int" || lowerM == "int3" || lowerM == "int1" || lowerM == "into" || lowerM == "ud2" || lowerM == "hlt") return MnemonicClass::Trap;
+    if (lowerM == "nop" || lowerM == "pause") return MnemonicClass::Nop;
+    if (lowerM == "cmp" || lowerM == "test") return MnemonicClass::Comparison;
+    if (lowerM.starts_with('j') || lowerM.starts_with("loop")) return MnemonicClass::CondJump;
     return MnemonicClass::Normal;
 }
 
@@ -142,6 +152,59 @@ static std::vector<OperandToken> tokenizeOperands(std::string_view ops) {
         }
     }
     return tokens;
+}
+
+static std::optional<Address> extractBranchTarget(
+    const DisassembledInstruction& insn,
+    const std::shared_ptr<DebugSession>& session)
+{
+    const std::string& ops = insn.operands;
+    // 1. Direct branch/call without memory indirect brackets (e.g. "0x555555555297", "0x7ffff7fe51d0", "401000h")
+    if (ops.find('[') == std::string::npos && ops.find(']') == std::string::npos) {
+        auto pos = ops.find("0x");
+        if (pos == std::string::npos) pos = ops.find("0X");
+        if (pos != std::string::npos) {
+            size_t end = pos + 2;
+            while (end < ops.size() && std::isxdigit(static_cast<unsigned char>(ops[end]))) {
+                ++end;
+            }
+            if (end > pos + 2) {
+                try {
+                    return Address(std::stoull(ops.substr(pos, end - pos), nullptr, 16));
+                } catch (...) {}
+            }
+        }
+        // Handle hex with suffix 'h' / 'H', e.g. "401000h"
+        size_t hpos = ops.rfind('h');
+        if (hpos == std::string::npos) hpos = ops.rfind('H');
+        if (hpos != std::string::npos && hpos > 0) {
+            size_t start = hpos;
+            while (start > 0 && std::isxdigit(static_cast<unsigned char>(ops[start - 1]))) {
+                --start;
+            }
+            if (start < hpos) {
+                try {
+                    return Address(std::stoull(ops.substr(start, hpos - start), nullptr, 16));
+                } catch (...) {}
+            }
+        }
+    }
+
+    // 2. Indirect or computed branch: check inspector if session available
+    if (session) {
+        auto details = session->inspectInstruction(insn.address);
+        if (details.isBranch && !details.branchTarget.isNull()) {
+            return details.branchTarget;
+        }
+        if (details.hasMemoryOperand && !details.effectiveAddress.isNull()) {
+            if (details.memoryReadSuccess && details.memoryValue != 0) {
+                return Address(details.memoryValue);
+            }
+            return details.effectiveAddress;
+        }
+    }
+
+    return std::nullopt;
 }
 
 class InstructionHighlightDelegate : public QStyledItemDelegate {
@@ -263,7 +326,7 @@ void DisassemblyView::setupUi() {
     setItemDelegateForColumn(3, new InstructionHighlightDelegate(this, this));
 
     horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-    setColumnWidth(0, 50);
+    setColumnWidth(0, 75);
 
     horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
@@ -291,6 +354,7 @@ void DisassemblyView::setupUi() {
     connect(this, &QTableWidget::customContextMenuRequested, this, &DisassemblyView::handleCustomContextMenu);
     connect(this, &QTableWidget::cellDoubleClicked, this, &DisassemblyView::handleCellDoubleClicked);
     connect(this, &QTableWidget::currentCellChanged, this, &DisassemblyView::onCurrentCellChanged);
+    connect(this, &QTableWidget::itemSelectionChanged, viewport(), qOverload<>(&QWidget::update));
 
     // Shortcuts
     auto* sc_f2 = new QShortcut(QKeySequence("F2"), this);
@@ -415,8 +479,8 @@ void DisassemblyView::refresh() {
         const auto& insn = currentInstructions_[drow.insnIndex];
 
         if (drow.type == RowType::SourceBanner) {
-            auto* item_mark = new QTableWidgetItem("[SRC]");
-            item_mark->setTextAlignment(Qt::AlignCenter);
+            auto* item_mark = new QTableWidgetItem("SRC");
+            item_mark->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
             item_mark->setForeground(QColor(128, 203, 196));
 
             auto* item_addr = new QTableWidgetItem(QString("Line %1").arg(insn.sourceLine));
@@ -465,13 +529,30 @@ void DisassemblyView::refresh() {
         mark = mark.trimmed();
 
         auto* item_mark = new QTableWidgetItem(mark);
-        item_mark->setTextAlignment(Qt::AlignCenter);
+        item_mark->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         if (insn.hasBreakpoint) {
             item_mark->setForeground(QColor(255, 80, 80));
         } else if (insn.isCurrentRip) {
             item_mark->setForeground(QColor(80, 220, 140));
         } else if (isBookmarked) {
             item_mark->setForeground(QColor(255, 215, 0));
+        }
+
+        // Add rich tooltip on mark item for call and jump instructions
+        if (auto target = extractBranchTarget(insn, session)) {
+            QString targetStr = target->toQString(true, ConfigurationManager::instance().appearance().showAddressColon);
+            if (auto sym = session->symbols().findNearestSymbol(*target)) {
+                if (sym->second == 0) {
+                    targetStr += QString(" <%1>").arg(QString::fromStdString(sym->first.displayName()));
+                } else {
+                    targetStr += QString(" <%1+0x%2>").arg(QString::fromStdString(sym->first.displayName())).arg(sym->second, 0, 16);
+                }
+            }
+            if (classifyMnemonic(insn.mnemonic) == MnemonicClass::Call) {
+                item_mark->setToolTip(QString("CALL ➔ %1 (Double-click or Enter to follow)").arg(targetStr));
+            } else {
+                item_mark->setToolTip(QString("JUMP ➔ %1 (Double-click or Enter to follow)").arg(targetStr));
+            }
         }
 
         // Column 1: Address
@@ -616,11 +697,9 @@ void DisassemblyView::followRip() {
 void DisassemblyView::followSelectedBranch() {
     int row = currentRow();
     if (auto* insn = instructionAtRow(row)) {
-        if (auto session = session_.lock()) {
-            auto details = session->inspectInstruction(insn->address);
-            if (details.isBranch && !details.branchTarget.isNull()) {
-                gotoAddress(details.branchTarget);
-            }
+        auto session = session_.lock();
+        if (auto target = extractBranchTarget(*insn, session)) {
+            gotoAddress(*target);
         }
     }
 }
@@ -651,6 +730,9 @@ void DisassemblyView::navigateHistoryForward() {
 
 std::optional<Address> DisassemblyView::addressAtRow(int row) const {
     if (row >= 0 && row < static_cast<int>(displayRows_.size())) {
+        if (displayRows_[row].type != RowType::Instruction) {
+            return std::nullopt;
+        }
         size_t idx = displayRows_[row].insnIndex;
         if (idx < currentInstructions_.size()) {
             return currentInstructions_[idx].address;
@@ -661,6 +743,9 @@ std::optional<Address> DisassemblyView::addressAtRow(int row) const {
 
 const DisassembledInstruction* DisassemblyView::instructionAtRow(int row) const {
     if (row >= 0 && row < static_cast<int>(displayRows_.size())) {
+        if (displayRows_[row].type != RowType::Instruction) {
+            return nullptr;
+        }
         size_t idx = displayRows_[row].insnIndex;
         if (idx < currentInstructions_.size()) {
             return &currentInstructions_[idx];
@@ -670,23 +755,31 @@ const DisassembledInstruction* DisassemblyView::instructionAtRow(int row) const 
 }
 
 void DisassemblyView::handleCellDoubleClicked(int row, int col) {
+    if (col == 0 || col == 3) {
+        // Double clicking mark column or instruction column: follow branch/call if branch/call instruction!
+        if (auto* insn = instructionAtRow(row)) {
+            auto session = session_.lock();
+            if (auto target = extractBranchTarget(*insn, session)) {
+                gotoAddress(*target);
+                return;
+            }
+        }
+        if (col == 0) {
+            if (auto addr = addressAtRow(row)) {
+                if (auto session = session_.lock()) {
+                    session->toggleBreakpoint(*addr);
+                    refresh();
+                    Q_EMIT breakpointToggled(*addr);
+                }
+            }
+        }
+        return;
+    }
+
     if (col == 5) {
         // Double clicking comment column edits the comment!
         editCommentPrompt();
         return;
-    }
-
-    if (col == 3) {
-        // Double clicking instruction column follows branch if it is a branch/call!
-        if (auto* insn = instructionAtRow(row)) {
-            if (auto session = session_.lock()) {
-                auto details = session->inspectInstruction(insn->address);
-                if (details.isBranch && !details.branchTarget.isNull()) {
-                    gotoAddress(details.branchTarget);
-                    return;
-                }
-            }
-        }
     }
 
     if (auto addr = addressAtRow(row)) {
@@ -1094,6 +1187,345 @@ void DisassemblyView::onCurrentCellChanged(int currentRow, int currentColumn, in
 
     auto details = session->inspectInstruction(*addr);
     Q_EMIT instructionInspected(QString::fromStdString(details.richSummary.empty() ? details.summary : details.richSummary));
+
+    viewport()->update();
+}
+
+void DisassemblyView::paintEvent(QPaintEvent* event) {
+    QTableWidget::paintEvent(event);
+    QPainter painter(viewport());
+    drawFlowLines(painter);
+}
+
+void DisassemblyView::scrollContentsBy(int dx, int dy) {
+    QTableWidget::scrollContentsBy(dx, dy);
+    viewport()->update();
+}
+
+struct FlowArrow {
+    int fromRow{-1};
+    int toRow{-1};
+    Address fromAddr{0};
+    Address toAddr{0};
+    bool isCall{false};
+    bool isJump{false};
+    bool isConditional{false};
+    bool isLoop{false};
+    bool isSelected{false};
+    bool isRip{false};
+    bool branchTaken{false};
+    int railIndex{0};
+};
+
+void DisassemblyView::drawFlowLines(QPainter& painter) {
+    if (rowCount() == 0) return;
+
+    int colX = columnViewportPosition(0);
+    int colW = columnWidth(0);
+    if (colW <= 20) return;
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    auto isRowVisible = [this](int r) -> bool {
+        if (r < 0 || r >= rowCount()) return false;
+        int y = rowViewportPosition(r);
+        int h = rowHeight(r);
+        return (y + h > 0 && y < viewport()->height());
+    };
+
+    // Build address-to-row lookup for visible table rows
+    std::unordered_map<uint64_t, int> addrToRow;
+    Address minVisibleAddr(UINT64_MAX);
+    Address maxVisibleAddr(0);
+
+    for (int r = 0; r < rowCount(); ++r) {
+        if (auto addr = addressAtRow(r)) {
+            addrToRow[addr->value()] = r;
+            if (isRowVisible(r)) {
+                if (*addr < minVisibleAddr) minVisibleAddr = *addr;
+                if (*addr > maxVisibleAddr) maxVisibleAddr = *addr;
+            }
+        }
+    }
+
+    auto session = session_.lock();
+    int selRow = currentRow();
+
+    std::vector<FlowArrow> arrows;
+
+    for (int r = 0; r < rowCount(); ++r) {
+        const auto* insn = instructionAtRow(r);
+        if (!insn) continue;
+
+        MnemonicClass mclass = classifyMnemonic(insn->mnemonic);
+        bool isCall = (mclass == MnemonicClass::Call);
+        bool isJump = (mclass == MnemonicClass::Jump || mclass == MnemonicClass::CondJump);
+        if (!isCall && !isJump) continue;
+
+        auto targetAddr = extractBranchTarget(*insn, session);
+        if (!targetAddr || targetAddr->isNull()) continue;
+
+        int toRow = -1;
+        bool isLoop = false;
+        auto it = addrToRow.find(targetAddr->value());
+        if (it != addrToRow.end()) {
+            toRow = it->second;
+            isLoop = (toRow <= r);
+        } else {
+            if (*targetAddr < minVisibleAddr) {
+                toRow = -1; // Above visible range
+                isLoop = true;
+            } else {
+                toRow = INT_MAX; // Below visible range
+                isLoop = false;
+            }
+        }
+
+        bool fromVis = isRowVisible(r);
+        bool toVis = (toRow >= 0 && toRow < rowCount() && isRowVisible(toRow));
+
+        // Only draw lines if at least source or destination is currently visible in the viewport
+        if (!fromVis && !toVis) {
+            continue;
+        }
+
+        FlowArrow fa;
+        fa.fromRow = r;
+        fa.fromAddr = insn->address;
+        fa.toAddr = *targetAddr;
+        fa.toRow = toRow;
+        fa.isCall = isCall;
+        fa.isJump = isJump;
+        fa.isConditional = (mclass == MnemonicClass::CondJump);
+        fa.isLoop = isLoop;
+        fa.isSelected = (selRow >= 0 && (r == selRow || toRow == selRow));
+        fa.isRip = insn->isCurrentRip;
+
+        if (session && (fa.isRip || fa.isSelected)) {
+            auto details = session->inspectInstruction(insn->address);
+            if (details.isBranch && details.isConditional) {
+                fa.branchTaken = details.branchTaken;
+            }
+        }
+
+        arrows.push_back(fa);
+    }
+
+    if (arrows.empty()) {
+        painter.restore();
+        return;
+    }
+
+    // Sort arrows by span length so shorter jumps get inner rails
+    std::sort(arrows.begin(), arrows.end(), [](const FlowArrow& a, const FlowArrow& b) {
+        int spanA = std::abs(a.toRow - a.fromRow);
+        int spanB = std::abs(b.toRow - b.fromRow);
+        return spanA < spanB;
+    });
+
+    // Greedy rail assignment (intervals) for up to 5 concurrent tracks
+    struct RailInterval {
+        int startRow;
+        int endRow;
+    };
+    std::vector<std::vector<RailInterval>> rails;
+
+    for (auto& fa : arrows) {
+        int rStart = fa.fromRow;
+        int rEnd = fa.toRow;
+        if (rEnd == -1) rEnd = 0;
+        else if (rEnd == INT_MAX) rEnd = rowCount() - 1;
+        if (rStart > rEnd) std::swap(rStart, rEnd);
+        rStart = std::clamp(rStart, 0, rowCount() - 1);
+        rEnd = std::clamp(rEnd, 0, rowCount() - 1);
+
+        int assignedRail = -1;
+        for (size_t k = 0; k < rails.size(); ++k) {
+            bool conflict = false;
+            for (const auto& iv : rails[k]) {
+                if (!(rEnd < iv.startRow || rStart > iv.endRow)) {
+                    conflict = true;
+                    break;
+                }
+            }
+            if (!conflict) {
+                assignedRail = static_cast<int>(k);
+                rails[k].push_back({rStart, rEnd});
+                break;
+            }
+        }
+        if (assignedRail == -1) {
+            assignedRail = static_cast<int>(rails.size());
+            rails.push_back({{rStart, rEnd}});
+        }
+        fa.railIndex = std::min(assignedRail, 4); // Max 5 rails (0, 1, 2, 3, 4)
+    }
+
+    // Two-pass rendering: unselected first, selected lines on top
+    for (int pass = 0; pass < 2; ++pass) {
+        for (const auto& fa : arrows) {
+            if ((pass == 0 && fa.isSelected) || (pass == 1 && !fa.isSelected)) {
+                continue;
+            }
+
+            // Color scheme (x64dbg & edb aesthetic)
+            QColor color;
+            if (fa.isCall) {
+                // Call relationship line: Neon Cyan
+                color = fa.isSelected ? QColor(0, 255, 255) : QColor(0, 215, 245, 210);
+            } else if (fa.isConditional) {
+                if (fa.isRip && session) {
+                    if (fa.branchTaken) {
+                        color = fa.isSelected ? QColor(0, 255, 128) : QColor(0, 230, 118, 220); // Emerald Green
+                    } else {
+                        color = fa.isSelected ? QColor(170, 185, 195) : QColor(140, 155, 165, 180); // Slate Gray
+                    }
+                } else if (fa.isLoop) {
+                    // Backward loop conditional jump: Coral Red
+                    color = fa.isSelected ? QColor(255, 60, 60) : QColor(255, 82, 82, 210);
+                } else {
+                    // Forward conditional jump: Amber Orange
+                    color = fa.isSelected ? QColor(255, 175, 0) : QColor(255, 152, 0, 210);
+                }
+            } else {
+                // Unconditional jump: Golden Yellow
+                color = fa.isSelected ? QColor(255, 235, 59) : QColor(255, 215, 0, 210);
+            }
+
+            int arrowRightX = colX + colW - 3;
+            int railX = arrowRightX - 8 - fa.railIndex * 7;
+            if (railX < colX + 28) railX = colX + 28;
+
+            bool fromVis = isRowVisible(fa.fromRow);
+            bool toVis = (fa.toRow >= 0 && fa.toRow < rowCount() && isRowVisible(fa.toRow));
+
+            int fromY = fromVis ? (rowViewportPosition(fa.fromRow) + rowHeight(fa.fromRow) / 2) : 0;
+            int toY = toVis ? (rowViewportPosition(fa.toRow) + rowHeight(fa.toRow) / 2) : 0;
+
+            qreal penWidth = fa.isSelected ? 2.4 : 1.4;
+
+            // Subtle glow under selected lines
+            if (fa.isSelected) {
+                QPen glowPen(QColor(color.red(), color.green(), color.blue(), 65));
+                glowPen.setWidthF(penWidth + 3.8);
+                glowPen.setCapStyle(Qt::RoundCap);
+                glowPen.setJoinStyle(Qt::RoundJoin);
+                painter.setPen(glowPen);
+
+                QPainterPath glowPath;
+                if (fromVis) {
+                    glowPath.moveTo(arrowRightX - 3, fromY);
+                    glowPath.lineTo(railX, fromY);
+                    if (toVis) {
+                        glowPath.lineTo(railX, toY);
+                        glowPath.lineTo(arrowRightX, toY);
+                    } else if (fa.toRow == -1 || fa.toRow < fa.fromRow) {
+                        glowPath.lineTo(railX, 4);
+                    } else {
+                        glowPath.lineTo(railX, viewport()->height() - 4);
+                    }
+                } else if (toVis) {
+                    int startY = (fa.fromRow < fa.toRow) ? 4 : (viewport()->height() - 4);
+                    glowPath.moveTo(railX, startY);
+                    glowPath.lineTo(railX, toY);
+                    glowPath.lineTo(arrowRightX, toY);
+                }
+                painter.drawPath(glowPath);
+            }
+
+            QPen linePen(color, penWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            if (fa.isConditional && !fa.isLoop && !fa.isSelected) {
+                linePen.setStyle(Qt::DashLine);
+            }
+            painter.setPen(linePen);
+            painter.setBrush(Qt::NoBrush);
+
+            QPainterPath path;
+            if (fromVis) {
+                // Source row is visible: draw origin dot and connector
+                path.moveTo(arrowRightX - 3, fromY);
+                path.lineTo(railX, fromY);
+
+                painter.setBrush(color);
+                painter.drawEllipse(QPointF(arrowRightX - 3, fromY), 2.2, 2.2);
+                painter.setBrush(Qt::NoBrush);
+
+                if (toVis) {
+                    // Both visible: connect down/up to target
+                    path.lineTo(railX, toY);
+                    path.lineTo(arrowRightX - 5, toY);
+                    painter.drawPath(path);
+
+                    painter.setBrush(color);
+                    QPolygonF arrowHead;
+                    arrowHead << QPointF(arrowRightX, toY)
+                              << QPointF(arrowRightX - 5.5, toY - 3.8)
+                              << QPointF(arrowRightX - 5.5, toY + 3.8);
+                    painter.drawPolygon(arrowHead);
+                    painter.setBrush(Qt::NoBrush);
+
+                    if (fa.isSelected) {
+                        int rH = rowHeight(fa.toRow);
+                        QRect targetRect(colX + 2, rowViewportPosition(fa.toRow) + 2, colW - 4, rH - 4);
+                        painter.setPen(QPen(QColor(color.red(), color.green(), color.blue(), 140), 1.2, Qt::DashLine));
+                        painter.drawRoundedRect(targetRect, 3, 3);
+                    }
+                } else if (fa.toRow == -1 || fa.toRow < fa.fromRow) {
+                    // Target above visible range -> connect all the way to top border (y = 5)
+                    int topTargetY = 5;
+                    path.lineTo(railX, topTargetY);
+                    painter.drawPath(path);
+
+                    painter.setBrush(color);
+                    QPolygonF upHead;
+                    upHead << QPointF(railX, 2)
+                           << QPointF(railX - 3.8, 7)
+                           << QPointF(railX + 3.8, 7);
+                    painter.drawPolygon(upHead);
+                    painter.setBrush(Qt::NoBrush);
+                } else {
+                    // Target below visible range -> connect all the way to bottom border
+                    int bottomTargetY = viewport()->height() - 5;
+                    path.lineTo(railX, bottomTargetY);
+                    painter.drawPath(path);
+
+                    painter.setBrush(color);
+                    QPolygonF downHead;
+                    downHead << QPointF(railX, viewport()->height() - 2)
+                             << QPointF(railX - 3.8, viewport()->height() - 7)
+                             << QPointF(railX + 3.8, viewport()->height() - 7);
+                    painter.drawPolygon(downHead);
+                    painter.setBrush(Qt::NoBrush);
+                }
+            } else if (toVis) {
+                // Incoming branch from offscreen into a visible instruction
+                int enterY = (fa.fromRow < fa.toRow) ? 5 : (viewport()->height() - 5);
+                path.moveTo(railX, enterY);
+                path.lineTo(railX, toY);
+                path.lineTo(arrowRightX - 5, toY);
+                painter.drawPath(path);
+
+                painter.setBrush(color);
+                QPolygonF arrowHead;
+                arrowHead << QPointF(arrowRightX, toY)
+                          << QPointF(arrowRightX - 5.5, toY - 3.8)
+                          << QPointF(arrowRightX - 5.5, toY + 3.8);
+                painter.drawPolygon(arrowHead);
+                painter.setBrush(Qt::NoBrush);
+
+                if (fa.isSelected) {
+                    int rH = rowHeight(fa.toRow);
+                    QRect targetRect(colX + 2, rowViewportPosition(fa.toRow) + 2, colW - 4, rH - 4);
+                    painter.setPen(QPen(QColor(color.red(), color.green(), color.blue(), 140), 1.2, Qt::DashLine));
+                    painter.drawRoundedRect(targetRect, 3, 3);
+                }
+            }
+        }
+    }
+
+    painter.restore();
 }
 
 } // namespace edb_next
+

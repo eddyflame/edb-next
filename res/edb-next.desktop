@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=EDB Next
+GenericName=Binary Debugger
+Comment=Next-generation Linux Disassembler and Binary Debugger
+Exec=edb_next %F
+Icon=edb-next
+Terminal=false
+Categories=Development;Debugger;Engineering;
+Keywords=debugger;disassembler;binary;reverse-engineering;ptrace;qt6;
+MimeType=application/x-executable;application/x-sharedlib;
+StartupNotify=true
