@@ -28,6 +28,7 @@ public Q_SLOTS:
     void assemblePrompt();
     void findXRefsPrompt();
     void editCommentPrompt();
+    void editLabelPrompt();
     void toggleBookmark();
     void gotoNextBookmark();
     void gotoPrevBookmark();
@@ -44,6 +45,9 @@ Q_SIGNALS:
     void instructionInspected(const QString& summary);
     void jumpToMemoryRequested(Address addr);
     void jumpToStackRequested(Address addr);
+    void labelChanged(Address addr, const QString& label);
+    void searchStringsRequested();
+    void searchIntermodularCallsRequested();
 
 protected:
     void paintEvent(QPaintEvent* event) override;

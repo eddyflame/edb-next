@@ -24,8 +24,10 @@ public:
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr, bool isExec);
 
-private Q_SLOTS:
+public Q_SLOTS:
     void handleScanClicked();
+
+private Q_SLOTS:
     void handleFilterChanged(const QString& text);
     void handleCellDoubleClicked(int row, int col);
 

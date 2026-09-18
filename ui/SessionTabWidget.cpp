@@ -308,6 +308,18 @@ void SessionTabWidget::setupUi() {
         typeViewer_->setInspectAddress(addr);
         typeViewer_->refresh();
     });
+    connect(disasmView_, &DisassemblyView::searchStringsRequested, this, [this]() {
+        if (bottomTabs_ && strRefView_) {
+            bottomTabs_->setCurrentWidget(strRefView_);
+            strRefView_->onScanClicked();
+        }
+    });
+    connect(disasmView_, &DisassemblyView::searchIntermodularCallsRequested, this, [this]() {
+        if (bottomTabs_ && intermodularCallsView_) {
+            bottomTabs_->setCurrentWidget(intermodularCallsView_);
+            intermodularCallsView_->handleScanClicked();
+        }
+    });
 
     bottomSplitter_->addWidget(bottomTabs_);
     bottomSplitter_->addWidget(stackView_);

@@ -139,6 +139,7 @@ private:
     QAction* actStepOverPassSig_{nullptr};
     QAction* actStepOut_{nullptr};
     QAction* actRunUntilReturn_{nullptr};
+    QAction* actOrigin_{nullptr};
     QAction* actPause_{nullptr};
     QAction* actTerminate_{nullptr};
     QAction* actDumpState_{nullptr};
