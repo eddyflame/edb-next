@@ -370,10 +370,24 @@ void StackView::onCustomContextMenuRequested(const QPoint& pos) {
     QMenu menu(this);
 
     auto* act_follow_disasm = menu.addAction("Follow Value in Disassembly");
-    auto* act_follow_dump = menu.addAction("Follow Value in Dump");
+
+    auto* valDumpMenu = menu.addMenu("Follow Value in Dump");
+    for (int d = 0; d < 4; ++d) {
+        valDumpMenu->addAction(QString("Dump %1").arg(d + 1), [this, val_addr, d] {
+            if (!val_addr.isNull()) Q_EMIT jumpToMemoryRequested(val_addr, d);
+        });
+    }
+
     auto* act_follow_stack = menu.addAction("Follow Value in Stack");
     menu.addSeparator();
-    auto* act_follow_saddr_dump = menu.addAction("Follow Stack Address in Dump");
+
+    auto* saddrDumpMenu = menu.addMenu("Follow Stack Address in Dump");
+    for (int d = 0; d < 4; ++d) {
+        saddrDumpMenu->addAction(QString("Dump %1").arg(d + 1), [this, saddr, d] {
+            Q_EMIT jumpToMemoryRequested(saddr, d);
+        });
+    }
+
     auto* act_follow_saddr_disasm = menu.addAction("Follow Stack Address in Disassembly");
     auto* act_modify_val = menu.addAction("Modify Stack Value (Space)...");
     menu.addSeparator();
@@ -406,17 +420,11 @@ void StackView::onCustomContextMenuRequested(const QPoint& pos) {
     connect(act_follow_disasm, &QAction::triggered, this, [this, val_addr] {
         if (!val_addr.isNull()) Q_EMIT jumpToDisassemblyRequested(val_addr);
     });
-    connect(act_follow_dump, &QAction::triggered, this, [this, val_addr] {
-        if (!val_addr.isNull()) Q_EMIT jumpToMemoryRequested(val_addr);
-    });
     connect(act_follow_stack, &QAction::triggered, this, [this, val_addr] {
         if (!val_addr.isNull()) {
             setBaseAddress(val_addr);
             Q_EMIT jumpToStackRequested(val_addr);
         }
-    });
-    connect(act_follow_saddr_dump, &QAction::triggered, this, [this, saddr] {
-        Q_EMIT jumpToMemoryRequested(saddr);
     });
     connect(act_follow_saddr_disasm, &QAction::triggered, this, [this, saddr] {
         Q_EMIT jumpToDisassemblyRequested(saddr);

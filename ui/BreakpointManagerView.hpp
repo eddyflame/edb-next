@@ -21,6 +21,7 @@ public:
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr);
+    void breakpointChanged();
 
 private Q_SLOTS:
     void handleCellDoubleClicked(int row, int col);

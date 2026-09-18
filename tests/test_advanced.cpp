@@ -23,6 +23,7 @@
 #include "ui/AssembleDialog.hpp"
 #include "ui/StackView.hpp"
 #include "ui/RegisterView.hpp"
+#include "ui/MultiDumpWidget.hpp"
 #include <QKeyEvent>
 #include <sys/mman.h>
 #include <QApplication>
@@ -1568,6 +1569,90 @@ void test_x64dbg_p1_ergonomics() {
     sess_ptr->terminate();
 }
 
+void test_x64dbg_p2_ergonomics() {
+    std::cout << "\n[TEST] Starting x64dbg P2 Ergonomics test (Breakpoint Disable/Enable, MultiDump Dump 1~4, HexView edit)..." << std::endl;
+
+    auto sess_ptr = std::make_shared<DebugSession>("test_p2_session", "P2Ergonomics");
+    bool ok = sess_ptr->launch(getTestTargetPath(), {"WorkerP2"});
+    assert(ok && "Launch failed");
+
+    Address rip = sess_ptr->registers().rip();
+    assert(!rip.isNull());
+
+    // 1. Test Breakpoint Enable/Disable
+    sess_ptr->addBreakpoint(rip, "entry_bp");
+    assert(sess_ptr->hasBreakpoint(rip));
+    assert(sess_ptr->isBreakpointEnabled(rip));
+
+    auto disasm = sess_ptr->disassemble(rip, 1);
+    assert(!disasm.empty());
+    assert(disasm[0].hasBreakpoint == true);
+    assert(disasm[0].isBreakpointEnabled == true);
+
+    // Disable breakpoint
+    bool disOk = sess_ptr->disableBreakpoint(rip);
+    assert(disOk && "disableBreakpoint must succeed");
+    assert(sess_ptr->hasBreakpoint(rip));
+    assert(!sess_ptr->isBreakpointEnabled(rip));
+
+    disasm = sess_ptr->disassemble(rip, 1);
+    assert(!disasm.empty());
+    assert(disasm[0].hasBreakpoint == true);
+    assert(disasm[0].isBreakpointEnabled == false);
+
+    // Re-enable breakpoint
+    bool enOk = sess_ptr->enableBreakpoint(rip);
+    assert(enOk && "enableBreakpoint must succeed");
+    assert(sess_ptr->isBreakpointEnabled(rip));
+
+    sess_ptr->removeBreakpoint(rip);
+    assert(!sess_ptr->hasBreakpoint(rip));
+
+    std::cout << "[PASS] Breakpoint temporary disable/enable verified in core & disassemble." << std::endl;
+
+    // 2. Test MultiDumpWidget & Dump 1~4 jumps
+    MultiDumpWidget multiDump;
+    multiDump.setSession(sess_ptr);
+
+    Address targetAddr1(0x401000);
+    Address targetAddr3(0x502000);
+
+    // Jump to Dump 3 (index 2)
+    multiDump.jumpToAddress(targetAddr3, 2);
+    auto* tabWidget = multiDump.findChild<QTabWidget*>();
+    assert(tabWidget != nullptr);
+    assert(tabWidget->currentIndex() == 2);
+    assert(multiDump.activeDump() == multiDump.dumpAt(2));
+    assert(multiDump.dumpAt(2)->baseAddress() == targetAddr3);
+
+    // Jump to Dump 1 (index 0)
+    multiDump.jumpToAddress(targetAddr1, 0);
+    assert(tabWidget->currentIndex() == 0);
+    assert(multiDump.dumpAt(0)->baseAddress() == targetAddr1);
+
+    std::cout << "[PASS] MultiDumpWidget Dump 1~4 direct navigation verified." << std::endl;
+
+    // 3. Test MemoryHexView in-place byte editing
+    auto* hexView = multiDump.dumpAt(0);
+    assert(hexView != nullptr);
+
+    std::vector<uint8_t> origBytes = sess_ptr->readMemory(rip, 2);
+    assert(origBytes.size() == 2);
+
+    uint8_t patchByte[2] = {0x90, 0x90};
+    bool wrote = sess_ptr->writeMemory(rip, patchByte, 2);
+    assert(wrote);
+    auto readBack = sess_ptr->readMemory(rip, 2);
+    assert(readBack[0] == 0x90 && readBack[1] == 0x90);
+
+    // Restore original bytes
+    sess_ptr->writeMemory(rip, origBytes.data(), 2);
+
+    std::cout << "[PASS] HexView memory byte editing verified." << std::endl;
+
+    sess_ptr->terminate();
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1595,6 +1680,7 @@ int main(int argc, char* argv[]) {
     test_type_viewer();
     test_disassembly_flow_lines();
     test_x64dbg_p1_ergonomics();
+    test_x64dbg_p2_ergonomics();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

@@ -551,7 +551,9 @@ void DisassemblyView::refresh() {
 
         // Column 0: Mark (Breakpoint / Current RIP / Bookmark)
         QString mark;
-        if (insn.hasBreakpoint) mark += "● ";
+        if (insn.hasBreakpoint) {
+            mark += (insn.isBreakpointEnabled ? "● " : "○ ");
+        }
         if (insn.isCurrentRip) mark += "➔ ";
         if (isBookmarked) mark += "★";
         mark = mark.trimmed();
@@ -559,7 +561,11 @@ void DisassemblyView::refresh() {
         auto* item_mark = new QTableWidgetItem(mark);
         item_mark->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         if (insn.hasBreakpoint) {
-            item_mark->setForeground(QColor(255, 80, 80));
+            if (insn.isBreakpointEnabled) {
+                item_mark->setForeground(QColor(255, 80, 80));
+            } else {
+                item_mark->setForeground(QColor(144, 164, 174));
+            }
         } else if (insn.isCurrentRip) {
             item_mark->setForeground(QColor(80, 220, 140));
         } else if (isBookmarked) {
@@ -628,7 +634,7 @@ void DisassemblyView::refresh() {
         // High-contrast x64dbg-style line highlight
         if (insn.hasBreakpoint && insn.isCurrentRip) {
             target_scroll_row = r;
-            QColor bp_rip_bg(140, 40, 70, 110);
+            QColor bp_rip_bg = insn.isBreakpointEnabled ? QColor(140, 40, 70, 110) : QColor(80, 60, 100, 90);
             item_mark->setBackground(bp_rip_bg);
             item_addr->setBackground(bp_rip_bg);
             item_bytes->setBackground(bp_rip_bg);
@@ -640,7 +646,7 @@ void DisassemblyView::refresh() {
             bold_font.setBold(true);
             item_asm->setFont(bold_font);
         } else if (insn.hasBreakpoint) {
-            QColor bp_bg(130, 30, 30, 80);
+            QColor bp_bg = insn.isBreakpointEnabled ? QColor(130, 30, 30, 80) : QColor(70, 70, 80, 60);
             item_mark->setBackground(bp_bg);
             item_addr->setBackground(bp_bg);
             item_bytes->setBackground(bp_bg);
@@ -991,6 +997,28 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
 
     if (addr && session) {
         bool has_bp = session->hasBreakpoint(*addr);
+        if (has_bp) {
+            bool is_enabled = session->isBreakpointEnabled(*addr);
+            if (is_enabled) {
+                QAction* act_disable = menu.addAction("Disable Breakpoint");
+                connect(act_disable, &QAction::triggered, this, [this, addr]() {
+                    if (auto session = session_.lock()) {
+                        session->disableBreakpoint(*addr);
+                        refresh();
+                        Q_EMIT breakpointToggled(*addr);
+                    }
+                });
+            } else {
+                QAction* act_enable = menu.addAction("Enable Breakpoint");
+                connect(act_enable, &QAction::triggered, this, [this, addr]() {
+                    if (auto session = session_.lock()) {
+                        session->enableBreakpoint(*addr);
+                        refresh();
+                        Q_EMIT breakpointToggled(*addr);
+                    }
+                });
+            }
+        }
         QAction* act_toggle = menu.addAction(has_bp ? "Remove Breakpoint (F2)" : "Set Breakpoint (F2)");
         connect(act_toggle, &QAction::triggered, this, [this, addr]() {
             if (auto session = session_.lock()) {
@@ -1030,16 +1058,25 @@ void DisassemblyView::handleCustomContextMenu(const QPoint& pos) {
         connect(act_origin, &QAction::triggered, this, &DisassemblyView::setOriginToSelection);
 
         auto* dumpSub = menu.addMenu("Follow in Dump");
-        dumpSub->addAction(QString("Follow Selection (%1) in Dump").arg(QString::fromStdString(addr->toHex())), [this, addr]() {
-            Q_EMIT jumpToMemoryRequested(*addr);
+        auto* selDumpMenu = dumpSub->addMenu(QString("Follow Selection (%1)").arg(QString::fromStdString(addr->toHex())));
+        for (int d = 0; d < 4; ++d) {
+            selDumpMenu->addAction(QString("Dump %1").arg(d + 1), [this, addr, d]() {
+                Q_EMIT jumpToMemoryRequested(*addr, d);
+            });
+        }
+        dumpSub->addAction("Follow Selection in Current Dump", [this, addr]() {
+            Q_EMIT jumpToMemoryRequested(*addr, -1);
         });
 
         auto details = session->inspectInstruction(*addr);
         if (details.hasMemoryOperand && !details.effectiveAddress.isNull()) {
             Address memAddr = details.effectiveAddress;
-            dumpSub->addAction(QString("Follow Memory Address (%1) in Dump").arg(QString::fromStdString(memAddr.toHex())), [this, memAddr]() {
-                Q_EMIT jumpToMemoryRequested(memAddr);
-            });
+            auto* memDumpMenu = dumpSub->addMenu(QString("Follow Memory Address (%1)").arg(QString::fromStdString(memAddr.toHex())));
+            for (int d = 0; d < 4; ++d) {
+                memDumpMenu->addAction(QString("Dump %1").arg(d + 1), [this, memAddr, d]() {
+                    Q_EMIT jumpToMemoryRequested(memAddr, d);
+                });
+            }
         }
 
         auto* stackSub = menu.addMenu("Follow in Stack");
