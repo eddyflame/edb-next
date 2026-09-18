@@ -52,6 +52,7 @@ Q_SIGNALS:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private Q_SLOTS:
     void handleCellDoubleClicked(int row, int col);

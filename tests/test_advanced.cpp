@@ -28,6 +28,7 @@
 #include "ui/MultiDumpWidget.hpp"
 #include "ui/SessionTabWidget.hpp"
 #include "ui/IRefreshable.hpp"
+#include "ui/IUIPlugin.hpp"
 #include <QKeyEvent>
 #include <sys/mman.h>
 #include <QApplication>
@@ -49,7 +50,6 @@ public:
 
     SessionManager& sessionManager() override { return mgr_; }
     std::shared_ptr<DebugSession> activeSession() override { return mgr_.activeSession(); }
-    void addDockWidget(QDockWidget*, Qt::DockWidgetArea) override {}
     void logMessage(const QString& msg) override {
         std::cout << "[PluginLog] " << msg.toStdString() << std::endl;
     }
@@ -140,6 +140,10 @@ void test_patch_manager() {
     std::ifstream patchFile(outBinary, std::ios::binary | std::ios::ate);
     assert(origFile.tellg() == patchFile.tellg() && "Patched binary size should match original");
 
+    // Test with explicit runtime base
+    bool patchedWithBase = pm.patchFileToDisk(inBinary, outBinary, errMsg, Address(0x555555554000));
+    assert(patchedWithBase && "patchFileToDisk with explicit runtimeBase should succeed");
+
     std::cout << "[PASS] PatchManager recorded patch and successfully exported patched ELF to disk: " << outBinary << std::endl;
 }
 
@@ -158,6 +162,9 @@ void test_plugin_manager() {
     bool loaded = pm.loadPlugin(absPath);
     assert(loaded && "sample_plugin.so should load successfully");
     assert(pm.loadedPlugins().size() == 1 && "Loaded plugin count should be 1");
+
+    auto* uiPlugin = dynamic_cast<IUIPlugin*>(pm.loadedPlugins()[0].instance);
+    assert(uiPlugin != nullptr && "SamplePlugin should implement IUIPlugin interface");
 
     const auto& meta = pm.loadedPlugins()[0].metadata;
     assert(meta.id == "sample_logger" && "Plugin ID mismatch");
@@ -183,6 +190,17 @@ void test_plugin_manager() {
     ctx.commands_.clear();
     pm.unloadAll();
     assert(pm.loadedPlugins().empty() && "All plugins should be unloaded");
+
+    // Test BreakpointManager addBreakpointWithOriginalByte
+    BreakpointManager bpMgr(
+        [](Address, void* buf, size_t sz) { std::memset(buf, 0xCC, sz); return true; },
+        [](Address, const void*, size_t) { return true; }
+    );
+    bool bpOk = bpMgr.addBreakpointWithOriginalByte(Address(0x401000), 0x55, false, "test_sym");
+    assert(bpOk && "addBreakpointWithOriginalByte should succeed");
+    const auto* bp = bpMgr.getBreakpoint(Address(0x401000));
+    assert(bp != nullptr && bp->originalByte == 0x55 && "Original byte 0x55 must be preserved");
+
     std::cout << "[PASS] PluginManager loaded, executed, and unloaded plugin cleanly." << std::endl;
 }
 

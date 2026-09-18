@@ -10,7 +10,7 @@ Mandatory instructions for AI agents and developers. Follow by default without u
 On feature, bug fix, or code update:
 1. **Implement & Test**: Write code and unit tests.
 2. **Synchronize Docs**: Update [README.md](file:///home/eddy/myplace/project/edb-next/README.md), [README_zh.md](file:///home/eddy/myplace/project/edb-next/README_zh.md), and `doc/` to document the new feature/fix.
-3. **Build & Verify (Code Changes Only)**: When C++ code or build scripts are modified, compile (`make -C build -j`) and run relevant/all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`). **Skip compilation and tests for documentation-only (`docs:`) or non-code updates.**
+3. **Build & Verify (Code Changes Only)**: When C++ code or build scripts are modified, compile (`make -C build -j8`) and run relevant/all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`). **Skip compilation and tests for documentation-only (`docs:`) or non-code updates.**
 4. **Commit Together**: Stage and commit code, tests, and documentation together in a single logical commit. Never ask user permission to commit or update docs.
 
 ### 1.2 Atomic Conventional Commits (Code + Docs Bundled)
@@ -52,6 +52,6 @@ On feature, bug fix, or code update:
 ## 4. Verification Protocol
 
 Before committing code changes (**skip for docs-only / non-code changes**):
-1. `make -C build -j`
+1. `make -C build -j8`
 2. Run relevant tests, or full suite before major code commits:
    `QT_QPA_PLATFORM=offscreen ./build/test_core && ./build/test_dwarf && ./build/test_exit && ./build/test_scripting && ./build/test_advanced`

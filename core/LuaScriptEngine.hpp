@@ -25,6 +25,7 @@ public:
     bool executeHook(const std::string& code) override;
 
     static DebugSession* activeSession() noexcept;
+    [[nodiscard]] DebugSession* session() const noexcept { return session_; }
     void appendOutput(const std::string& text);
 
 private:

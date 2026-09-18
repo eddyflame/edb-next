@@ -16,9 +16,33 @@ extern "C" {
 
 namespace edb_next {
 
-static LuaScriptEngine* s_currentLuaEngine = nullptr;
+static const char* kLuaEngineRegistryKey = "__edb_lua_engine__";
+static thread_local LuaScriptEngine* t_activeLuaEngine = nullptr;
+
+struct LuaEngineScope {
+    LuaScriptEngine* prev_;
+    explicit LuaEngineScope(LuaScriptEngine* eng) : prev_(t_activeLuaEngine) {
+        t_activeLuaEngine = eng;
+    }
+    ~LuaEngineScope() {
+        t_activeLuaEngine = prev_;
+    }
+};
 
 namespace {
+
+inline LuaScriptEngine* getEngine(lua_State* L) noexcept {
+    if (!L) return t_activeLuaEngine;
+    lua_getfield(L, LUA_REGISTRYINDEX, kLuaEngineRegistryKey);
+    void* ptr = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return ptr ? static_cast<LuaScriptEngine*>(ptr) : t_activeLuaEngine;
+}
+
+inline DebugSession* getSession(lua_State* L) noexcept {
+    auto* eng = getEngine(L);
+    return eng ? eng->session() : nullptr;
+}
 
 std::string trim(const std::string& str) {
     auto start = str.find_first_not_of(" \t\r\n");
@@ -89,7 +113,7 @@ int lua_read_memory(lua_State* L) {
     lua_Integer addr = luaL_checkinteger(L, 1);
     lua_Integer size = luaL_checkinteger(L, 2);
 
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session || size <= 0) {
         lua_pushlstring(L, "", 0);
         return 1;
@@ -105,7 +129,7 @@ int lua_write_memory(lua_State* L) {
     size_t len = 0;
     const char* data = luaL_checklstring(L, 2, &len);
 
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session || len == 0 || !data) {
         lua_pushboolean(L, 0);
         return 1;
@@ -118,7 +142,7 @@ int lua_write_memory(lua_State* L) {
 
 int lua_get_reg(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushnil(L);
         return 1;
@@ -137,7 +161,7 @@ int lua_set_reg(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
     lua_Integer val = luaL_checkinteger(L, 2);
 
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushboolean(L, 0);
         return 1;
@@ -154,7 +178,7 @@ int lua_set_reg(lua_State* L) {
 }
 
 int lua_get_regs(lua_State* L) {
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     lua_newtable(L);
     if (!session) {
         return 1;
@@ -175,7 +199,7 @@ int lua_set_breakpoint(lua_State* L) {
     lua_Integer addr = luaL_checkinteger(L, 1);
     const char* symbol = lua_isstring(L, 2) ? lua_tostring(L, 2) : "";
 
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushboolean(L, 0);
         return 1;
@@ -189,7 +213,7 @@ int lua_set_breakpoint(lua_State* L) {
 int lua_remove_breakpoint(lua_State* L) {
     lua_Integer addr = luaL_checkinteger(L, 1);
 
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushboolean(L, 0);
         return 1;
@@ -200,40 +224,40 @@ int lua_remove_breakpoint(lua_State* L) {
     return 1;
 }
 
-int lua_step_into(lua_State* /*L*/) {
-    auto* session = LuaScriptEngine::activeSession();
+int lua_step_into(lua_State* L) {
+    auto* session = getSession(L);
     if (session) {
         session->stepInto();
     }
     return 0;
 }
 
-int lua_step_over(lua_State* /*L*/) {
-    auto* session = LuaScriptEngine::activeSession();
+int lua_step_over(lua_State* L) {
+    auto* session = getSession(L);
     if (session) {
         session->stepOver();
     }
     return 0;
 }
 
-int lua_step_source(lua_State* /*L*/) {
-    auto* session = LuaScriptEngine::activeSession();
+int lua_step_source(lua_State* L) {
+    auto* session = getSession(L);
     if (session) {
         session->stepSourceOver();
     }
     return 0;
 }
 
-int lua_resume(lua_State* /*L*/) {
-    auto* session = LuaScriptEngine::activeSession();
+int lua_resume(lua_State* L) {
+    auto* session = getSession(L);
     if (session) {
         session->resume();
     }
     return 0;
 }
 
-int lua_pause(lua_State* /*L*/) {
-    auto* session = LuaScriptEngine::activeSession();
+int lua_pause(lua_State* L) {
+    auto* session = getSession(L);
     if (session) {
         session->pause();
     }
@@ -242,7 +266,7 @@ int lua_pause(lua_State* /*L*/) {
 
 int lua_resolve_symbol(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushnil(L);
         return 1;
@@ -259,7 +283,7 @@ int lua_resolve_symbol(lua_State* L) {
 
 int lua_eval(lua_State* L) {
     const char* expr = luaL_checkstring(L, 1);
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushnil(L);
         return 1;
@@ -275,7 +299,7 @@ int lua_eval(lua_State* L) {
 }
 
 int lua_pid(lua_State* L) {
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (session) {
         lua_pushinteger(L, session->pid());
     } else {
@@ -285,7 +309,7 @@ int lua_pid(lua_State* L) {
 }
 
 int lua_tid(lua_State* L) {
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (session) {
         lua_pushinteger(L, session->activeTid());
     } else {
@@ -295,7 +319,7 @@ int lua_tid(lua_State* L) {
 }
 
 int lua_state(lua_State* L) {
-    auto* session = LuaScriptEngine::activeSession();
+    auto* session = getSession(L);
     if (!session) {
         lua_pushstring(L, "None");
         return 1;
@@ -327,8 +351,9 @@ int lua_custom_print(lua_State* L) {
         lua_pop(L, 1); // pop string created by luaL_tolstring
     }
     oss << "\n";
-    if (s_currentLuaEngine) {
-        s_currentLuaEngine->appendOutput(oss.str());
+    auto* eng = getEngine(L);
+    if (eng) {
+        eng->appendOutput(oss.str());
     }
     return 0;
 }
@@ -342,8 +367,8 @@ LuaScriptEngine::~LuaScriptEngine() {
 }
 
 DebugSession* LuaScriptEngine::activeSession() noexcept {
-    if (s_currentLuaEngine) {
-        return s_currentLuaEngine->session_;
+    if (t_activeLuaEngine) {
+        return t_activeLuaEngine->session_;
     }
     return nullptr;
 }
@@ -405,14 +430,18 @@ bool LuaScriptEngine::initialize(DebugSession* session) {
         return false;
     }
 
+    // Associate this LuaScriptEngine instance with L_ via registry
+    lua_pushlightuserdata(L_, this);
+    lua_setfield(L_, LUA_REGISTRYINDEX, kLuaEngineRegistryKey);
+
     luaL_openlibs(L_);
     registerEdbModule();
     return true;
 }
 
 void LuaScriptEngine::shutdown() {
-    if (s_currentLuaEngine == this) {
-        s_currentLuaEngine = nullptr;
+    if (t_activeLuaEngine == this) {
+        t_activeLuaEngine = nullptr;
     }
     if (L_) {
         lua_close(L_);
@@ -427,7 +456,7 @@ ScriptResult LuaScriptEngine::executeString(const std::string& code) {
         }
     }
 
-    s_currentLuaEngine = this;
+    LuaEngineScope scope(this);
     capturedOutput_.clear();
 
     // luaL_dostring is a macro: luaL_loadstring(L, s) || lua_pcall(L, 0, LUA_MULTRET, 0)
@@ -457,7 +486,7 @@ ScriptResult LuaScriptEngine::executeFile(const std::string& filepath) {
         }
     }
 
-    s_currentLuaEngine = this;
+    LuaEngineScope scope(this);
     capturedOutput_.clear();
 
     int loadStatus = luaL_loadfile(L_, filepath.c_str());
@@ -486,7 +515,7 @@ bool LuaScriptEngine::executeHook(const std::string& code) {
         }
     }
 
-    s_currentLuaEngine = this;
+    LuaEngineScope scope(this);
     capturedOutput_.clear();
 
     std::string wrapped = "local function __edb_bp_hook__()\n" + code + "\nend\nreturn __edb_bp_hook__()";

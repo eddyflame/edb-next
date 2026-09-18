@@ -36,6 +36,7 @@ bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProj
     root["version"] = 1;
     root["binary_path"] = QString::fromStdString(project.binaryPath);
     root["notes"] = QString::fromStdString(project.notes);
+    root["base_address"] = QString("0x%1").arg(project.baseAddress, 0, 16);
 
     // Comments
     QJsonArray comments_arr;
@@ -153,6 +154,7 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
     QJsonObject root = doc.object();
     project.binaryPath = root["binary_path"].toString().toStdString();
     project.notes = root["notes"].toString().toStdString();
+    project.baseAddress = root["base_address"].toString().toULongLong(nullptr, 16);
 
     // Comments
     project.comments.clear();
@@ -248,6 +250,7 @@ bool DatabaseManager::exportSession(std::shared_ptr<DebugSession> session,
     DatabaseProject proj;
     proj.binaryPath = session->targetPath();
     proj.notes = notes;
+    proj.baseAddress = session->baseAddress().value();
     proj.watches = watches;
 
     // Comments, Labels & Bookmarks
@@ -328,20 +331,30 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
     outNotes = proj.notes;
     outWatches = proj.watches;
 
+    uint64_t savedBase = proj.baseAddress;
+    uint64_t currentBase = session->baseAddress().value();
+
+    auto remapAddr = [&](uint64_t raw) -> Address {
+        if (savedBase != 0 && currentBase != 0 && raw >= savedBase) {
+            return Address(currentBase + (raw - savedBase));
+        }
+        return Address(raw);
+    };
+
     // Restore comments, labels & bookmarks
     for (const auto& [addr, text] : proj.comments) {
-        session->annotationManager().setComment(Address(addr), text);
+        session->annotationManager().setComment(remapAddr(addr), text);
     }
     for (const auto& [addr, text] : proj.labels) {
-        session->annotationManager().setLabel(Address(addr), text);
+        session->annotationManager().setLabel(remapAddr(addr), text);
     }
     for (uint64_t addr : proj.bookmarks) {
-        session->annotationManager().setBookmark(Address(addr), true);
+        session->annotationManager().setBookmark(remapAddr(addr), true);
     }
 
     // Restore breakpoints
     for (const auto& bp : proj.breakpoints) {
-        Address addr(bp.address);
+        Address addr = remapAddr(bp.address);
         if (bp.type == "HwExecute") {
             session->addHardwareBreakpoint(addr, HardwareBpType::Execute);
         } else if (bp.type == "HwWrite") {
@@ -368,7 +381,7 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
 
     // Restore page guards
     for (const auto& pg : proj.pageGuards) {
-        Address addr(pg.address);
+        Address addr = remapAddr(pg.address);
         session->addPageGuard(addr, pg.size, pageGuardAccessFromString(pg.access), pg.comment);
         auto* g = session->pageGuardManager().getGuardMutable(addr);
         if (g) {
@@ -381,7 +394,7 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
     // Restore patches
     if (patchMgr) {
         for (const auto& p : proj.patches) {
-            Address patch_addr(p.address);
+            Address patch_addr = remapAddr(p.address);
             QByteArray orig = QByteArray::fromHex(QByteArray::fromStdString(p.originalHex));
             QByteArray patched = QByteArray::fromHex(QByteArray::fromStdString(p.patchedHex));
             std::vector<uint8_t> obytes(orig.begin(), orig.end());

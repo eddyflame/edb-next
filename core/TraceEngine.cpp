@@ -65,7 +65,7 @@ void TraceEngine::recordFrame(Address addr, const std::string& mnemonic, const s
     };
 
     if (traceHistory_.size() >= kMaxTraceFrames) {
-        traceHistory_.erase(traceHistory_.begin());
+        traceHistory_.pop_front();
     }
     traceHistory_.push_back(std::move(frame));
     currentFrameIndex_ = traceHistory_.size() - 1;

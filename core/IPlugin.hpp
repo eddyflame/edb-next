@@ -2,10 +2,6 @@
 
 #include <string>
 #include <vector>
-#include <memory>
-#include <QWidget>
-#include <QMenu>
-#include <QAction>
 #include <QtPlugin>
 
 namespace edb_next {
@@ -37,17 +33,6 @@ public:
     // Lifecycle
     virtual bool initialize(IPluginContext* context) = 0;
     virtual void shutdown() = 0;
-
-    // Main Menu Integration (added to [Plugins] menu)
-    virtual QMenu* createMenu(QWidget* parent = nullptr) { return nullptr; }
-
-    // Context Menu Extensions for Views
-    virtual std::vector<QAction*> contextMenuItems(ContextMenuTarget target, QWidget* parent = nullptr) {
-        return {};
-    }
-
-    // Options Page for Preferences Dialog
-    virtual QWidget* createOptionsPage(QWidget* parent = nullptr) { return nullptr; }
 };
 
 } // namespace edb_next

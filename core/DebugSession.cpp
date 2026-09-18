@@ -13,6 +13,7 @@
 #include <thread>
 #include <chrono>
 #include <unistd.h>
+#include <sys/uio.h>
 
 namespace edb_next {
 
@@ -101,6 +102,7 @@ bool DebugSession::launch(const std::string& path, const std::vector<std::string
             }
         }
     }
+    baseAddress_ = base_addr;
     symbols_.loadBinary(path, base_addr);
     dwarfParser_.load(path, base_addr);
     if (slash_pos != std::string::npos) {
@@ -161,6 +163,7 @@ bool DebugSession::attach(Pid pid) {
                 break;
             }
         }
+        baseAddress_ = base_addr;
         symbols_.loadBinary(exe_path, base_addr);
         dwarfParser_.load(exe_path, base_addr);
         auto exe_slash = exe_path.find_last_of('/');
@@ -291,19 +294,29 @@ void DebugSession::stepInto(bool passSignal) {
 void DebugSession::stepOver(bool passSignal) {
     if (state_ != SessionState::Paused) return;
 
-    // Check if current instruction is a CALL
+    // Check if current instruction is a CALL or REP-prefixed instruction
     csh cs_handle;
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle) == CS_ERR_OK) {
         uint8_t code[16] = {0};
         Address rip = currentRegs_.rip();
         if (engine_.readMemory(rip, code, sizeof(code))) {
+            // Restore any breakpoint byte at rip..rip+15 so Capstone sees the real instruction
+            for (size_t i = 0; i < sizeof(code); ++i) {
+                if (const auto* bp = bpMgr_.getBreakpoint(rip + i)) {
+                    if (bp->enabled) {
+                        code[i] = bp->originalByte;
+                    }
+                }
+            }
             cs_insn* insn = nullptr;
             size_t count = cs_disasm(cs_handle, code, sizeof(code), rip.value(), 1, &insn);
             if (count > 0) {
                 std::string mnemonic = insn[0].mnemonic;
-                if (mnemonic == "call") {
+                bool isCall = (mnemonic == "call");
+                bool isRep = (mnemonic.rfind("rep", 0) == 0);
+                if (isCall || isRep) {
                     Address next_addr = rip + insn[0].size;
-                    // Temporary internal breakpoint on the instruction after CALL
+                    // Temporary internal breakpoint on the instruction after CALL or REP loop
                     bpMgr_.addBreakpoint(next_addr, true);
                     cs_free(insn, count);
                     cs_close(&cs_handle);
@@ -518,6 +531,15 @@ void DebugSession::handleForkEvent(const DebugEvent& event) {
     if (followForkMode_ == FollowForkMode::Parent) {
         // Detach child immediately so child runs freely
         if (child_pid > 0) {
+            // Restore original bytes for software breakpoints in child memory before detaching it
+            for (const auto& bp : bpMgr_.allBreakpoints()) {
+                if (bp.enabled && bp.type == BreakpointType::Software) {
+                    struct iovec local_iov{const_cast<uint8_t*>(&bp.originalByte), 1};
+                    struct iovec remote_iov{reinterpret_cast<void*>(bp.address.value()), 1};
+                    ::process_vm_writev(child_pid, &local_iov, 1, &remote_iov, 1, 0);
+                }
+            }
+            eventLoop_.addDetachedChild(child_pid);
             engine_.detachProcess(child_pid);
         }
         if (stopOnForkEvents_) {
@@ -1262,7 +1284,6 @@ bool DebugSession::dumpMemoryToFile(Address start, size_t size, const std::strin
 bool DebugSession::changeMemoryProtection(Address addr, size_t size, int prot) {
     if (!engine_.isAttached()) return false;
     eventLoop_.setSuspended(true);
-    usleep(5000);
     bool ok = engine_.remoteMprotect(addr, size, prot);
     eventLoop_.setSuspended(false);
     if (ok) {
@@ -1277,7 +1298,6 @@ bool DebugSession::changeMemoryProtection(Address addr, size_t size, int prot) {
 std::optional<Address> DebugSession::allocateMemory(size_t size, int prot) {
     if (!engine_.isAttached() || size == 0) return std::nullopt;
     eventLoop_.setSuspended(true);
-    usleep(5000);
     auto res = engine_.remoteMmap(Address(0), size, prot, 0);
     eventLoop_.setSuspended(false);
     if (!res) {
@@ -1293,7 +1313,6 @@ std::optional<Address> DebugSession::allocateMemory(size_t size, int prot) {
 bool DebugSession::freeMemory(Address addr, size_t size) {
     if (!engine_.isAttached() || addr.isNull() || size == 0) return false;
     eventLoop_.setSuspended(true);
-    usleep(5000);
     bool ok = engine_.remoteMunmap(addr, size);
     eventLoop_.setSuspended(false);
     if (ok) {
@@ -1585,6 +1604,7 @@ bool DebugSession::initAsChild(std::shared_ptr<DebugSession> parent, Pid child_p
     }
 
     if (!targetPath_.empty()) {
+        baseAddress_ = base_addr;
         symbols_.loadBinary(targetPath_, base_addr);
         dwarfParser_.load(targetPath_, base_addr);
         setupRendezvousHook(targetPath_, base_addr);
@@ -1600,7 +1620,7 @@ bool DebugSession::initAsChild(std::shared_ptr<DebugSession> parent, Pid child_p
         } else if (bp.type == BreakpointType::HardwareReadWrite) {
             bpMgr_.addHardwareBreakpoint(bp.address, HardwareBpType::ReadWrite, HardwareBpSize::Byte1, bp.symbol);
         } else {
-            bpMgr_.addBreakpoint(bp.address, false, bp.symbol);
+            bpMgr_.addBreakpointWithOriginalByte(bp.address, bp.originalByte, false, bp.symbol);
         }
         if (!bp.condition.empty()) bpMgr_.setBreakpointCondition(bp.address, bp.condition);
         if (bp.ignoreCount > 0) bpMgr_.setBreakpointIgnoreCount(bp.address, bp.ignoreCount);

@@ -37,6 +37,7 @@ public Q_SLOTS:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private Q_SLOTS:
     void handleCustomContextMenu(const QPoint& pos);

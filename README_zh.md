@@ -67,6 +67,12 @@
 - 🔌 **可插拔调试引擎抽象接口（`IDebugBackend`）**：将 `DebugSession`、`EventLoopThread` 与 `TypeManager` 等核心模块基于纯虚接口 `IDebugBackend` 与底层 Linux 内核实现完全解耦，支持零真实进程依赖的 `MockDebugBackend` 离线单元测试，并为后续适配 GDB/LLDB RSP 远程调试协议确立清晰的架构契约。
 - 🚌 **中心化多视图跨界路由总线（`NavigationBus`）**：彻底消除 22+ 个视图组件间繁复且脆弱的点对点 Qt 信号插槽网状强耦合；统一由 `NavigationBus` 集中分发反汇编跳转、内存转储、调用栈帧、结构体查看器、字符串交叉引用与模块间调用的导航请求。
 - 🗂️ **模块化命令注册与分发引擎（`CommandRegistry`）**：彻底重构解耦 1100+ 行的单体 `CommandBarView`，将命令按职责域模块化分区注册（`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`）；支持前缀命令补全、别名解析（`g` -> `run`, `libs` -> `modules`）、分类帮助与插件动态命令注入。
+- 🏛️ **纯粹无 UI 核心架构与插件分层解耦（`IUIPlugin`）**：严格捍卫核心模块隔离边界（AGENTS.md 准则 3.1）。静态库 `edb_core` 彻底剥离对 `QtWidgets` 的编译链接，确保核心层 100% 独立且支持纯命令行/无头单元测试。GUI 扩展接口（`createMenu`、`contextMenuItems`、`createOptionsPage`、`addDockWidget`）统一收敛至 `ui/IUIPlugin.hpp`。
+- 🛡️ **StepOver 软断点指令掩膜与 Fork 孤儿进程字节清洗**：单步步过反汇编实时叠加内存覆盖原始字节，杜绝软断点 `0xCC` 污染对 `CALL` 与 `REP` 重复前缀指令的判定退化；Follow-Fork 模式下父进程在脱离跟踪子进程前自动将注入的软断点字节无损写回子进程物理内存，避免子进程因 `0xCC` 非法指令崩溃。
+- 🔒 **无死锁动态系统调用握手机制**：重构 `EventLoopThread` 挂起与恢复流程，采用双向条件变量握手（Condition Variable Handshake），彻底消除前台远程系统调用内存申请/保护与后台事件循环收集时的竞态死锁。
+- 🗺️ **ASLR/PIE 项目数据动态重定位与二进制离线打补丁**：`.edb_db` 工程数据库引入基址动态重构，在多次运行或跨 ASLR 启动时自适应重映射注释、标签、书签与断点；`PatchManager::patchFileToDisk` 引入运行时基址与动态基地址推导算法，全面支持 PIE/ASLR 二进制物理文件补丁导出。
+- ⚡ **高频单步控件单元格对象池复用与无缝滚轮滚动**：在 `DisassemblyView` 与 `MemoryHexView` 中以 `getOrCreateItem` 惰性对象池复用替代每帧全量 `new QTableWidgetItem`，根治单步与跟踪时的内存抖动；重载 `wheelEvent` 实现向前向后无缝反汇编与内存浏览。
+- 🧵 **线程局部脚本引擎并发隔离**：消除 Python 与 Lua 脚本引擎对全局单一静态实例指针的依赖，引入 `thread_local`、RAII 生命周期守卫（`PythonEngineScope`、`GilStateScope`）与 Lua Registry 映射（`kLuaEngineRegistryKey`），实现纯净的多会话并发脚本调试。
 
 ---
 

@@ -11,6 +11,7 @@
 #include <QClipboard>
 #include <QApplication>
 #include <QKeyEvent>
+#include <QWheelEvent>
 #include <iomanip>
 #include <sstream>
 #include <cctype>
@@ -94,6 +95,24 @@ void MemoryHexView::keyPressEvent(QKeyEvent* event) {
     QTableWidget::keyPressEvent(event);
 }
 
+void MemoryHexView::wheelEvent(QWheelEvent* event) {
+    int numDegrees = event->angleDelta().y() / 8;
+    int numSteps = numDegrees / 15;
+    if (numSteps == 0) {
+        numSteps = (event->angleDelta().y() > 0) ? 1 : -1;
+    }
+
+    // Each scroll step shifts baseAddress_ by 16 bytes (1 row)
+    int64_t byteDelta = -numSteps * 16;
+    if (byteDelta < 0 && baseAddress_.value() < static_cast<uint64_t>(-byteDelta)) {
+        baseAddress_ = Address(0);
+    } else {
+        baseAddress_ = baseAddress_ + byteDelta;
+    }
+    refresh();
+    event->accept();
+}
+
 void MemoryHexView::setSession(std::shared_ptr<DebugSession> session) {
     session_ = session;
     refresh();
@@ -148,25 +167,38 @@ void MemoryHexView::refresh() {
 
     setRowCount(static_cast<int>(rowCount_));
 
+    auto getOrCreateItem = [this](int r, int c) -> QTableWidgetItem* {
+        auto* it = item(r, c);
+        if (!it) {
+            it = new QTableWidgetItem();
+            setItem(r, c, it);
+        }
+        return it;
+    };
+
     for (size_t r = 0; r < rowCount_; ++r) {
         Address row_addr = baseAddress_ + (r * 16);
 
         // Address
-        auto* item_addr = new QTableWidgetItem(row_addr.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
+        auto* item_addr = getOrCreateItem(static_cast<int>(r), 0);
+        item_addr->setText(row_addr.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
         item_addr->setForeground(QColor(100, 150, 200));
-        setItem(static_cast<int>(r), 0, item_addr);
+        item_addr->setBackground(Qt::transparent);
+        item_addr->setToolTip("");
 
         // 16 Hex Bytes & ASCII buffer
         QString ascii_str;
         for (size_t c = 0; c < 16; ++c) {
             size_t idx = r * 16 + c;
+            auto* item_byte = getOrCreateItem(static_cast<int>(r), static_cast<int>(c + 1));
+            item_byte->setTextAlignment(Qt::AlignCenter);
+
             if (idx < mem_data.size()) {
                 uint8_t byte_val = mem_data[idx];
 
-                std::ostringstream oss;
-                oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte_val);
-                auto* item_byte = new QTableWidgetItem(QString::fromStdString(oss.str()));
-                item_byte->setTextAlignment(Qt::AlignCenter);
+                char hexBuf[4];
+                std::snprintf(hexBuf, sizeof(hexBuf), "%02x", byte_val);
+                item_byte->setText(hexBuf);
 
                 Address cell_addr = row_addr + c;
                 if (session->hasBreakpoint(cell_addr)) {
@@ -181,15 +213,17 @@ void MemoryHexView::refresh() {
                     item_byte->setBackground(QColor(140, 90, 20, 90));
                     item_byte->setForeground(QColor(240, 220, 160));
                     item_byte->setToolTip(QString("Guarded Page at %1").arg(QString::fromStdString(cell_addr.toHex())));
-                } else if (byte_val == 0) {
-                    item_byte->setForeground(QColor(100, 100, 100));
-                } else if (std::isprint(byte_val)) {
-                    item_byte->setForeground(QColor(220, 220, 220));
                 } else {
-                    item_byte->setForeground(QColor(180, 150, 90));
+                    item_byte->setBackground(Qt::transparent);
+                    item_byte->setToolTip("");
+                    if (byte_val == 0) {
+                        item_byte->setForeground(QColor(100, 100, 100));
+                    } else if (std::isprint(byte_val)) {
+                        item_byte->setForeground(QColor(220, 220, 220));
+                    } else {
+                        item_byte->setForeground(QColor(180, 150, 90));
+                    }
                 }
-
-                setItem(static_cast<int>(r), static_cast<int>(c + 1), item_byte);
 
                 if (std::isprint(byte_val)) {
                     ascii_str.append(static_cast<char>(byte_val));
@@ -197,17 +231,19 @@ void MemoryHexView::refresh() {
                     ascii_str.append('.');
                 }
             } else {
-                auto* item_byte = new QTableWidgetItem("??");
-                item_byte->setTextAlignment(Qt::AlignCenter);
+                item_byte->setText("??");
                 item_byte->setForeground(QColor(180, 70, 70));
-                setItem(static_cast<int>(r), static_cast<int>(c + 1), item_byte);
+                item_byte->setBackground(Qt::transparent);
+                item_byte->setToolTip("");
                 ascii_str.append('?');
             }
         }
 
-        auto* item_ascii = new QTableWidgetItem(ascii_str);
+        auto* item_ascii = getOrCreateItem(static_cast<int>(r), 17);
+        item_ascii->setText(ascii_str);
         item_ascii->setForeground(QColor(140, 180, 140));
-        setItem(static_cast<int>(r), 17, item_ascii);
+        item_ascii->setBackground(Qt::transparent);
+        item_ascii->setToolTip("");
     }
 }
 
