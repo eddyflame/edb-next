@@ -1,5 +1,5 @@
 #include "EventLoopThread.hpp"
-#include "LinuxDebugEngine.hpp"
+#include "IDebugBackend.hpp"
 #include "BreakpointManager.hpp"
 #include <sys/wait.h>
 #include <sys/ptrace.h>
@@ -8,7 +8,7 @@
 
 namespace edb_next {
 
-EventLoopThread::EventLoopThread(LinuxDebugEngine& engine, BreakpointManager& bp_mgr, QObject* parent)
+EventLoopThread::EventLoopThread(IDebugBackend& engine, BreakpointManager& bp_mgr, QObject* parent)
     : QThread(parent), engine_(engine), bpMgr_(bp_mgr)
 {
     qRegisterMetaType<edb_next::DebugEvent>("edb_next::DebugEvent");

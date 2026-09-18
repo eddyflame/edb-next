@@ -10,6 +10,8 @@
 #include "core/StateDumper.hpp"
 #include "core/PageGuardManager.hpp"
 #include "core/RendezvousManager.hpp"
+#include "core/IDebugBackend.hpp"
+#include "tests/MockDebugBackend.hpp"
 #include "ui/CFGGraphView.hpp"
 #include "ui/CommandBarView.hpp"
 #include "ui/MemoryHexView.hpp"
@@ -1708,6 +1710,51 @@ void test_lazy_refresh_irefreshable() {
     session->terminate();
 }
 
+// ============================================================
+// P1-C: IDebugBackend abstraction (MockDebugBackend)
+// ============================================================
+void test_idebug_backend_interface() {
+    std::cout << "\n[TEST] Starting P1-C IDebugBackend abstraction (MockDebugBackend) test..." << std::endl;
+
+    // Verify that IDebugBackend is truly abstract (compile-time verified by the mock header)
+    // and that MockDebugBackend implements all pure virtuals.
+    MockDebugBackend mock;
+    assert(!mock.isAttached() && "Mock should start detached");
+    assert(mock.pid() == 0 && "Mock pid should start at 0");
+
+    auto launchRes = mock.launch("fake_binary", {});
+    assert(launchRes && "Mock launch should succeed");
+    assert(mock.isAttached() && "Mock should be attached after launch");
+    assert(mock.pid() == 9999);
+    assert(mock.enumerateTids().size() == 1);
+
+    // Read/write memory via interface
+    IDebugBackend& backend = mock;
+    std::vector<uint8_t> data = {0x90, 0x48, 0x31, 0xC0};
+    mock.fakeMemory_ = data;
+    uint8_t readBuf[4] = {};
+    assert(backend.readMemory(Address(0), readBuf, 4));
+    assert(readBuf[0] == 0x90 && readBuf[1] == 0x48);
+
+    // Hardware breakpoint slot tracking
+    assert(backend.setHardwareBreakpoint(9999, 0, Address(0x401000), HardwareBpType::Execute, HardwareBpSize::Byte1));
+    assert(mock.hwBpSet_[0] && "Slot 0 should be marked set");
+    assert(backend.clearHardwareBreakpoint(9999, 0));
+    assert(!mock.hwBpSet_[0] && "Slot 0 should be cleared");
+
+    // Verify BreakpointManager accepts callbacks wrapping IDebugBackend
+    BreakpointManager bpMgr(
+        [&](Address a, void* b, size_t s) { return backend.readMemory(a, b, s); },
+        [&](Address a, const void* b, size_t s) { return backend.writeMemory(a, b, s); }
+    );
+    assert(!bpMgr.hasBreakpoint(Address(0x401000)));
+
+    mock.kill();
+    assert(!mock.isAttached() && "Mock should be detached after kill");
+
+    std::cout << "[PASS] P1-C IDebugBackend abstraction and MockDebugBackend verified." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1737,6 +1784,7 @@ int main(int argc, char* argv[]) {
     test_x64dbg_p1_ergonomics();
     test_x64dbg_p2_ergonomics();
     test_lazy_refresh_irefreshable();
+    test_idebug_backend_interface();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

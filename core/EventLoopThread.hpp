@@ -10,7 +10,7 @@
 
 namespace edb_next {
 
-class LinuxDebugEngine;
+class IDebugBackend;
 class BreakpointManager;
 
 class EventLoopThread : public QThread {
@@ -19,7 +19,7 @@ class EventLoopThread : public QThread {
 public:
     using EventFilter = std::function<DebugEvent(int status, Pid pid)>;
 
-    explicit EventLoopThread(LinuxDebugEngine& engine, BreakpointManager& bp_mgr, QObject* parent = nullptr);
+    explicit EventLoopThread(IDebugBackend& engine, BreakpointManager& bp_mgr, QObject* parent = nullptr);
     ~EventLoopThread() override;
 
     void startLoop();
@@ -39,7 +39,7 @@ protected:
 private:
     DebugEvent processWaitStatus(int status, Pid pid);
 
-    LinuxDebugEngine& engine_;
+    IDebugBackend& engine_;
     BreakpointManager& bpMgr_;
     std::atomic<bool> running_{false};
     std::atomic<bool> suspended_{false};
