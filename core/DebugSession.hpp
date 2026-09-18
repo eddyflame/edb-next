@@ -38,6 +38,7 @@ struct DisassembledInstruction {
     std::string symbol;
     bool isCurrentRip{false};
     bool hasBreakpoint{false};
+    bool isBreakpointEnabled{true};
     std::string sourceFile;
     std::string sourceFullPath;
     int sourceLine{0};
@@ -91,6 +92,7 @@ public:
     bool enableBreakpoint(Address addr);
     bool disableBreakpoint(Address addr);
     [[nodiscard]] bool hasBreakpoint(Address addr) const;
+    [[nodiscard]] bool isBreakpointEnabled(Address addr) const;
     [[nodiscard]] std::vector<Breakpoint> breakpoints() const;
 
     // Thread control & Freeze/Thaw
