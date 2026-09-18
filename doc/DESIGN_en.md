@@ -339,6 +339,22 @@ High information density, semantic color differentiation, and fluid keyboard/mou
     - **Immediates & Constants** (hex `0x...` and numerical literals): Coral orange (`#D19A66`).
   - High-performance tokenized rendering: Pre-fills active selection highlights using `QPainter` (retaining native Qt selection styling), followed by tokenized character offset measurements for zero-flicker 60 FPS scrolling across multi-megabyte binaries.
 
+- **Disassembly Mark Column Flow Lines & Multi-Rail Routing (`DisassemblyView`)**:
+  - **Mark Column Architecture (Col 0, Width: 75px)**:
+    - **Status Area (`0 ~ 26px`)**: Dedicated to breakpoint indicators (`●`), RIP execution pointer (`➔`), and bookmark stars (`★`).
+    - **Flow Rail Routing Area (`28 ~ 72px`)**: 5 collision-free vertical rails for concurrent branch and call relationship lines.
+  - **Color & Semantic Hierarchy**:
+    - **Sub-routine Calls (`call`, `callq`)**: Neon Cyan (`#00e5ff`) along full vertical rails.
+    - **Unconditional Jumps (`jmp`, `jmpq`)**: Golden Yellow (`#ffd54f`).
+    - **Forward Conditional Jumps (`jcc`)**: Amber Orange (`#ff9800`).
+    - **Backward Loops & Branches (`loop`, backward `jcc`)**: Coral Red (`#ff5252`).
+    - **Dynamic RIP Branch Status**: Emerald Green (`#00e676`) if branch condition is satisfied; Slate Gray (`#90a4ae`) if not taken.
+  - **Rendering & Viewport Optimization**:
+    - **Viewport Visibility Filtering**: Render only when source or destination is visible within the active table viewport, eliminating offscreen phantom lines.
+    - **Out-of-Viewport Indicators**: Routes extend seamlessly to top border (`y = 5`, `▲`) or bottom border (`y = height - 5`, `▼`).
+    - **Selection Highlighting**: Selected line renders on top (Pass 2) with a 2.4px pen, 5.5px semi-transparent glow aura, and a dashed focus box at the destination cell.
+    - **Interactive Navigation**: Rich tooltip with target resolution, double-click or `Enter` to follow branch, and `Esc` / `Backspace` / `Alt+Left` to return.
+
 - **Rich HTML Dynamic Branch Prediction & Memory Operand Preview**:
   - Live status bar located beneath the disassembly listing, fusing Capstone operand analysis with real-time target CPU registers:
   - **Dynamic Branch Prediction**: Evaluates `EFLAGS` (`ZF`, `SF`, `OF`, `CF`, `PF`) in real-time to compute whether a conditional branch will be taken:
