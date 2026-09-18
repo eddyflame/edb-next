@@ -79,9 +79,44 @@ std::optional<Address> AnnotationManager::prevBookmark(Address current) const {
     return Address(*bookmarks_.rbegin());
 }
 
+void AnnotationManager::setLabel(Address addr, const std::string& label) {
+    if (label.empty()) {
+        labels_.erase(addr.value());
+    } else {
+        labels_[addr.value()] = label;
+    }
+}
+
+std::string AnnotationManager::getLabel(Address addr) const {
+    auto it = labels_.find(addr.value());
+    if (it != labels_.end()) {
+        return it->second;
+    }
+    return "";
+}
+
+void AnnotationManager::removeLabel(Address addr) {
+    labels_.erase(addr.value());
+}
+
+bool AnnotationManager::hasLabel(Address addr) const {
+    return labels_.find(addr.value()) != labels_.end();
+}
+
+std::optional<Address> AnnotationManager::findAddressByLabel(const std::string& label) const {
+    if (label.empty()) return std::nullopt;
+    for (const auto& [addr, lbl] : labels_) {
+        if (lbl == label) {
+            return Address(addr);
+        }
+    }
+    return std::nullopt;
+}
+
 void AnnotationManager::clear() {
     comments_.clear();
     bookmarks_.clear();
+    labels_.clear();
 }
 
 } // namespace edb_next

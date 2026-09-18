@@ -28,11 +28,20 @@ public:
     [[nodiscard]] std::optional<Address> nextBookmark(Address current) const;
     [[nodiscard]] std::optional<Address> prevBookmark(Address current) const;
 
+    // Labels
+    void setLabel(Address addr, const std::string& label);
+    [[nodiscard]] std::string getLabel(Address addr) const;
+    void removeLabel(Address addr);
+    [[nodiscard]] bool hasLabel(Address addr) const;
+    [[nodiscard]] const std::unordered_map<uint64_t, std::string>& allLabels() const noexcept { return labels_; }
+    [[nodiscard]] std::optional<Address> findAddressByLabel(const std::string& label) const;
+
     void clear();
 
 private:
     std::unordered_map<uint64_t, std::string> comments_;
     std::set<uint64_t> bookmarks_;
+    std::unordered_map<uint64_t, std::string> labels_;
 };
 
 } // namespace edb_next

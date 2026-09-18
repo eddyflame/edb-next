@@ -182,7 +182,13 @@ public:
     std::optional<Address> searchMemory(Address start, size_t max_bytes, const std::vector<uint8_t>& pattern);
     std::vector<MemoryRegion> memoryRegions() const;
     [[nodiscard]] const ElfParser& symbols() const noexcept { return symbols_; }
-    [[nodiscard]] std::optional<Address> resolveSymbol(const std::string& name) const { return symbols_.findSymbolAddress(name); }
+    [[nodiscard]] std::optional<Address> resolveSymbol(const std::string& name) const {
+        auto lbl = annotations_.findAddressByLabel(name);
+        if (lbl.has_value()) {
+            return lbl;
+        }
+        return symbols_.findSymbolAddress(name);
+    }
     std::vector<StackFrame> callStack();
     bool dumpMemoryToFile(Address start, size_t size, const std::string& filepath);
 

@@ -354,6 +354,7 @@ void test_database_persistence_and_memory_dump() {
 
     Address fib_addr = *session->resolveSymbol("calculate_fib");
     session->annotationManager().setComment(fib_addr, "Calculates fibonacci number");
+    session->annotationManager().setLabel(fib_addr, "FibEntryPoint");
     session->annotationManager().setBookmark(fib_addr, true);
     session->addBreakpoint(fib_addr);
     session->breakpointManager().setBreakpointCondition(fib_addr, "rdi == 7");
@@ -395,6 +396,8 @@ void test_database_persistence_and_memory_dump() {
     assert(restored_watches.size() == 3 && "Restored watches count must be 3");
     assert(restored_watches[0] == "rax" && restored_watches[1] == "rdi");
     assert(session2->annotationManager().getComment(fib_addr) == "Calculates fibonacci number");
+    assert(session2->annotationManager().getLabel(fib_addr) == "FibEntryPoint");
+    assert(session2->resolveSymbol("FibEntryPoint").has_value() && *session2->resolveSymbol("FibEntryPoint") == fib_addr);
     assert(session2->annotationManager().isBookmarked(fib_addr) == true);
     assert(session2->hasBreakpoint(fib_addr) == true);
     assert(session2->breakpointManager().getBreakpoint(fib_addr)->condition == "rdi == 7");
@@ -403,7 +406,7 @@ void test_database_persistence_and_memory_dump() {
 
     session2->terminate();
     unlink(db_path.c_str());
-    std::cout << "[PASS] DatabaseManager full project persistence (comments, bookmarks, breakpoints, patches, watches, notes) verified." << std::endl;
+    std::cout << "[PASS] DatabaseManager full project persistence (comments, labels, bookmarks, breakpoints, patches, watches, notes) verified." << std::endl;
 }
 
 void test_opcode_searcher_and_state_dumper() {

@@ -40,6 +40,7 @@ struct DatabaseProject {
     std::string binaryPath;
     std::string notes;
     std::vector<std::pair<uint64_t, std::string>> comments;
+    std::vector<std::pair<uint64_t, std::string>> labels;
     std::vector<uint64_t> bookmarks;
     std::vector<DatabaseBreakpointData> breakpoints;
     std::vector<DatabasePageGuardData> pageGuards;
