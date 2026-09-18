@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MemoryHexView.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTabWidget>
 #include <array>
@@ -8,14 +9,14 @@
 
 namespace edb_next {
 
-class MultiDumpWidget : public QWidget {
+class MultiDumpWidget : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit MultiDumpWidget(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
     void jumpToAddress(Address addr, int tabIndex = -1);
     [[nodiscard]] MemoryHexView* activeDump() const;

@@ -1,4 +1,5 @@
 #include "SessionTabWidget.hpp"
+#include "IRefreshable.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFontDatabase>
@@ -47,6 +48,15 @@ void SessionTabWidget::setupUi() {
     codeTabs_->addTab(disasmView_, "Disassembly (Alt+C)");
     codeTabs_->addTab(sourceView_, "Source Code (Alt+S)");
 
+    connect(codeTabs_, &QTabWidget::currentChanged, this, [this](int index) {
+        QWidget* w = codeTabs_->widget(index);
+        if (auto* ref = dynamic_cast<IRefreshable*>(w)) {
+            if (ref->isDirty()) {
+                ref->refresh();
+            }
+        }
+    });
+
     regView_ = new RegisterView(h_splitter);
     regView_->setMinimumWidth(150);
     regView_->setSession(session_);
@@ -68,14 +78,14 @@ void SessionTabWidget::setupUi() {
 
     connect(disasmView_, &DisassemblyView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
         multiDumpWidget_->jumpToAddress(addr, tabIndex);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     connect(disasmView_, &DisassemblyView::breakpointToggled, this, [this](Address) {
         bpView_->refresh();
     });
     connect(regView_, &RegisterView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
         multiDumpWidget_->jumpToAddress(addr, tabIndex);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     connect(regView_, &RegisterView::jumpToDisassemblyRequested, this, [this](Address addr) {
         showDisassemblyView();
@@ -100,6 +110,15 @@ void SessionTabWidget::setupUi() {
     bottomTabs_ = new QTabWidget(bottomSplitter_);
     bottomTabs_->setUsesScrollButtons(true);
     bottomTabs_->setMinimumWidth(200);
+
+    connect(bottomTabs_, &QTabWidget::currentChanged, this, [this](int index) {
+        QWidget* w = bottomTabs_->widget(index);
+        if (auto* ref = dynamic_cast<IRefreshable*>(w)) {
+            if (ref->isDirty()) {
+                ref->refresh();
+            }
+        }
+    });
 
     // Tab 1: Multi-Tab Memory Dump (Dump 1 ~ 4)
     multiDumpWidget_ = new MultiDumpWidget(bottomTabs_);
@@ -137,7 +156,7 @@ void SessionTabWidget::setupUi() {
             disasmView_->gotoAddress(addr);
         } else {
             multiDumpWidget_->jumpToAddress(addr);
-            bottomTabs_->setCurrentWidget(multiDumpWidget_);
+            switchToBottomTab(multiDumpWidget_);
         }
     });
     bottomTabs_->addTab(regionsView_, "Memory Regions");
@@ -150,7 +169,7 @@ void SessionTabWidget::setupUi() {
     });
     connect(strRefView_, &StringReferencesView::jumpToMemoryRequested, this, [this](Address addr) {
         multiDumpWidget_->jumpToAddress(addr);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     bottomTabs_->addTab(strRefView_, "Strings");
 
@@ -167,7 +186,7 @@ void SessionTabWidget::setupUi() {
     heapView_->setSession(session_);
     connect(heapView_, &HeapView::jumpToMemoryRequested, this, [this](Address addr) {
         multiDumpWidget_->jumpToAddress(addr);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     bottomTabs_->addTab(heapView_, "Heap Analysis");
 
@@ -236,7 +255,7 @@ void SessionTabWidget::setupUi() {
             disasmView_->gotoAddress(addr);
         } else {
             multiDumpWidget_->jumpToAddress(addr);
-            bottomTabs_->setCurrentWidget(multiDumpWidget_);
+            switchToBottomTab(multiDumpWidget_);
         }
     });
     bottomTabs_->addTab(binaryInfoView_, "Binary Info");
@@ -270,7 +289,7 @@ void SessionTabWidget::setupUi() {
     });
     connect(memScannerView_, &MemoryScannerView::jumpToMemoryRequested, this, [this](Address addr) {
         multiDumpWidget_->jumpToAddress(addr);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     bottomTabs_->addTab(memScannerView_, "Memory Scanner");
 
@@ -282,7 +301,7 @@ void SessionTabWidget::setupUi() {
     });
     connect(typeViewer_, &TypeViewer::jumpToMemoryRequested, this, [this](Address addr) {
         multiDumpWidget_->jumpToAddress(addr);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     bottomTabs_->addTab(typeViewer_, "Type Viewer");
 
@@ -295,7 +314,7 @@ void SessionTabWidget::setupUi() {
     });
     connect(stackView_, &StackView::jumpToMemoryRequested, this, [this](Address addr, int tabIndex) {
         multiDumpWidget_->jumpToAddress(addr, tabIndex);
-        bottomTabs_->setCurrentWidget(multiDumpWidget_);
+        switchToBottomTab(multiDumpWidget_);
     });
     connect(stackView_, &StackView::jumpToStackRequested, this, [this](Address addr) {
         stackView_->setBaseAddress(addr);
@@ -310,19 +329,19 @@ void SessionTabWidget::setupUi() {
         stackView_->setBaseAddress(addr);
     });
     connect(multiDumpWidget_, &MultiDumpWidget::inspectWithTypeViewerRequested, this, [this](Address addr) {
-        bottomTabs_->setCurrentWidget(typeViewer_);
+        switchToBottomTab(typeViewer_);
         typeViewer_->setInspectAddress(addr);
         typeViewer_->refresh();
     });
     connect(disasmView_, &DisassemblyView::searchStringsRequested, this, [this]() {
         if (bottomTabs_ && strRefView_) {
-            bottomTabs_->setCurrentWidget(strRefView_);
+            switchToBottomTab(strRefView_);
             strRefView_->onScanClicked();
         }
     });
     connect(disasmView_, &DisassemblyView::searchIntermodularCallsRequested, this, [this]() {
         if (bottomTabs_ && intermodularCallsView_) {
-            bottomTabs_->setCurrentWidget(intermodularCallsView_);
+            switchToBottomTab(intermodularCallsView_);
             intermodularCallsView_->handleScanClicked();
         }
     });
@@ -347,7 +366,11 @@ void SessionTabWidget::toggleStackView() {
 
 void SessionTabWidget::showSourceView() {
     if (codeTabs_ && sourceView_) {
+        bool changed = (codeTabs_->currentWidget() != sourceView_);
         codeTabs_->setCurrentWidget(sourceView_);
+        if (!changed && sourceView_->isDirty()) {
+            sourceView_->refresh();
+        }
     }
 }
 
@@ -358,9 +381,18 @@ void SessionTabWidget::showDisassemblyView() {
 }
 
 void SessionTabWidget::refreshAll() {
+    // 1. Core quadrant views (always visible or main execution views)
     disasmView_->refresh();
-    if (sourceView_) sourceView_->refresh();
     regView_->refresh();
+    stackView_->refresh();
+
+    if (sourceView_) {
+        if (codeTabs_ && codeTabs_->currentWidget() == sourceView_) {
+            sourceView_->refresh();
+        } else {
+            sourceView_->markDirty();
+        }
+    }
 
     if (session_ && session_->state() != SessionState::Stopped) {
         // Record execution trace
@@ -371,21 +403,27 @@ void SessionTabWidget::refreshAll() {
             traceEngine_.recordFrame(cur_rip, insns[0].mnemonic, insns[0].operands, session_->registers());
         }
     }
-    multiDumpWidget_->refresh();
+
+    // 2. Active bottom tab: refresh immediately
+    QWidget* activeTab = bottomTabs_ ? bottomTabs_->currentWidget() : nullptr;
+    if (auto* ref = dynamic_cast<IRefreshable*>(activeTab)) {
+        ref->refresh();
+    }
+
+    // 3. Inactive bottom tabs: mark dirty (lazy refresh on tab activation)
+    if (bottomTabs_) {
+        for (int i = 0; i < bottomTabs_->count(); ++i) {
+            QWidget* w = bottomTabs_->widget(i);
+            if (w != activeTab) {
+                if (auto* ref = dynamic_cast<IRefreshable*>(w)) {
+                    ref->markDirty();
+                }
+            }
+        }
+    }
+
     memDumpView_ = multiDumpWidget_->activeDump();
-    stackView_->refresh();
-    callStackView_->refresh();
-    bpView_->refresh();
-    regionsView_->refresh();
-    symView_->refresh();
-    procPropView_->refresh();
-    threadsView_->refresh();
-    watchView_->refresh();
-    binaryInfoView_->refresh();
-    intermodularCallsView_->refresh();
     if (scriptConsoleView_) scriptConsoleView_->setSession(session_.get());
-    if (memScannerView_) memScannerView_->refreshResults();
-    if (typeViewer_) typeViewer_->refresh();
 }
 
 void SessionTabWidget::onSessionStateChanged(SessionState state) {
@@ -399,29 +437,105 @@ void SessionTabWidget::onSessionStateChanged(SessionState state) {
 void SessionTabWidget::onRegistersUpdated() {
     regView_->refresh();
     disasmView_->refresh();
-    if (sourceView_) sourceView_->refresh();
+    if (sourceView_) {
+        if (codeTabs_ && codeTabs_->currentWidget() == sourceView_) {
+            sourceView_->refresh();
+        } else {
+            sourceView_->markDirty();
+        }
+    }
     stackView_->refresh();
-    callStackView_->refresh();
-    if (typeViewer_) typeViewer_->refresh();
+
+    QWidget* activeTab = bottomTabs_ ? bottomTabs_->currentWidget() : nullptr;
+    if (callStackView_) {
+        if (activeTab == callStackView_) {
+            callStackView_->refresh();
+        } else {
+            callStackView_->markDirty();
+        }
+    }
+    if (typeViewer_) {
+        if (activeTab == typeViewer_) {
+            typeViewer_->refresh();
+        } else {
+            typeViewer_->markDirty();
+        }
+    }
 }
 
 void SessionTabWidget::onMemoryUpdated() {
-    multiDumpWidget_->refresh();
+    QWidget* activeTab = bottomTabs_ ? bottomTabs_->currentWidget() : nullptr;
+    if (multiDumpWidget_) {
+        if (activeTab == multiDumpWidget_) {
+            multiDumpWidget_->refresh();
+        } else {
+            multiDumpWidget_->markDirty();
+        }
+    }
     memDumpView_ = multiDumpWidget_->activeDump();
     stackView_->refresh();
     disasmView_->refresh();
-    if (typeViewer_) typeViewer_->refresh();
+
+    if (sourceView_) {
+        if (codeTabs_ && codeTabs_->currentWidget() == sourceView_) {
+            sourceView_->refresh();
+        } else {
+            sourceView_->markDirty();
+        }
+    }
+    if (typeViewer_) {
+        if (activeTab == typeViewer_) {
+            typeViewer_->refresh();
+        } else {
+            typeViewer_->markDirty();
+        }
+    }
 }
 
 void SessionTabWidget::onBreakpointsUpdated() {
     disasmView_->refresh();
-    if (sourceView_) sourceView_->refresh();
-    bpView_->refresh();
+    if (sourceView_) {
+        if (codeTabs_ && codeTabs_->currentWidget() == sourceView_) {
+            sourceView_->refresh();
+        } else {
+            sourceView_->markDirty();
+        }
+    }
+    if (bpView_) {
+        QWidget* activeTab = bottomTabs_ ? bottomTabs_->currentWidget() : nullptr;
+        if (activeTab == bpView_) {
+            bpView_->refresh();
+        } else {
+            bpView_->markDirty();
+        }
+    }
 }
 
 void SessionTabWidget::selectBottomTab(int index) {
     if (bottomTabs_ && index >= 0 && index < bottomTabs_->count()) {
+        bool changed = (bottomTabs_->currentIndex() != index);
         bottomTabs_->setCurrentIndex(index);
+        if (!changed) {
+            QWidget* w = bottomTabs_->widget(index);
+            if (auto* ref = dynamic_cast<IRefreshable*>(w)) {
+                if (ref->isDirty()) {
+                    ref->refresh();
+                }
+            }
+        }
+    }
+}
+
+void SessionTabWidget::switchToBottomTab(QWidget* widget) {
+    if (!bottomTabs_ || !widget) return;
+    bool changed = (bottomTabs_->currentWidget() != widget);
+    bottomTabs_->setCurrentWidget(widget);
+    if (!changed) {
+        if (auto* ref = dynamic_cast<IRefreshable*>(widget)) {
+            if (ref->isDirty()) {
+                ref->refresh();
+            }
+        }
     }
 }
 

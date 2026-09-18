@@ -88,6 +88,7 @@ void MemoryRegionsView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void MemoryRegionsView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     if (!session || session->state() == SessionState::Stopped) {
         allRegions_.clear();

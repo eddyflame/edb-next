@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/DebugSession.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -10,14 +11,14 @@
 
 namespace edb_next {
 
-class BinaryInfoView : public QWidget {
+class BinaryInfoView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit BinaryInfoView(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr, bool isExec);

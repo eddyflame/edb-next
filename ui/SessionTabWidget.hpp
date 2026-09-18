@@ -81,6 +81,7 @@ public:
     QTabWidget* bottomTabs() const noexcept { return bottomTabs_; }
     QSplitter* bottomSplitter() const noexcept { return bottomSplitter_; }
     void selectBottomTab(int index);
+    void switchToBottomTab(QWidget* widget);
     void toggleStackView();
 
 Q_SIGNALS:

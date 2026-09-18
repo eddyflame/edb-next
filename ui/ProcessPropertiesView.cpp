@@ -119,6 +119,7 @@ void ProcessPropertiesView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void ProcessPropertiesView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     if (!session || session->state() == SessionState::Stopped || session->pid() <= 0) {
         infoTable_->setRowCount(0);

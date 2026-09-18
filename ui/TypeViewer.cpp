@@ -181,6 +181,7 @@ void TypeViewer::onInspectClicked() {
 }
 
 void TypeViewer::refresh() {
+    dirty_ = false;
     fieldTable_->setRowCount(0);
     if (!session_ || !currentEvaluation_.has_value()) return;
 

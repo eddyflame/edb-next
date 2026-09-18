@@ -126,6 +126,7 @@ void BinaryInfoView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void BinaryInfoView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     if (!session || session->state() == SessionState::Stopped) {
         lblPath_->setText("-");

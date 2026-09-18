@@ -2,6 +2,7 @@
 
 #include "Types.hpp"
 #include "DebugSession.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QLineEdit>
@@ -10,14 +11,14 @@
 
 namespace edb_next {
 
-class MemoryRegionsView : public QWidget {
+class MemoryRegionsView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit MemoryRegionsView(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr, bool isExecutable);

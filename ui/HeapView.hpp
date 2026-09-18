@@ -2,6 +2,7 @@
 
 #include "Types.hpp"
 #include "HeapAnalyzer.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QPushButton>
@@ -14,14 +15,14 @@ namespace edb_next {
 
 class DebugSession;
 
-class HeapView : public QWidget {
+class HeapView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit HeapView(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToMemoryRequested(Address addr);

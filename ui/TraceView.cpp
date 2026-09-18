@@ -91,6 +91,7 @@ void TraceView::setupUi() {
 }
 
 void TraceView::refresh() {
+    dirty_ = false;
     onRefreshTable();
 }
 

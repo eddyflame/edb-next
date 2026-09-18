@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/TraceEngine.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QPushButton>
@@ -12,7 +13,7 @@ namespace edb_next {
 
 class DebugSession;
 
-class TraceView : public QWidget {
+class TraceView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
@@ -20,7 +21,7 @@ public:
     ~TraceView() override = default;
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);

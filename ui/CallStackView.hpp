@@ -3,20 +3,21 @@
 #include "Types.hpp"
 #include "CallStackUnwinder.hpp"
 #include "DebugSession.hpp"
+#include "IRefreshable.hpp"
 #include <QTableWidget>
 #include <memory>
 #include <vector>
 
 namespace edb_next {
 
-class CallStackView : public QTableWidget {
+class CallStackView : public QTableWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit CallStackView(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr);

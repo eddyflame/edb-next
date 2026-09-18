@@ -90,6 +90,7 @@ void BreakpointManagerView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void BreakpointManagerView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     if (!session) {
         currentBreakpoints_.clear();

@@ -2,6 +2,7 @@
 
 #include "core/Types.hpp"
 #include "core/OpcodeSearcher.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QComboBox>
@@ -14,7 +15,7 @@ namespace edb_next {
 
 class DebugSession;
 
-class OpcodeSearcherView : public QWidget {
+class OpcodeSearcherView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
@@ -22,7 +23,7 @@ public:
     ~OpcodeSearcherView() override = default;
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToDisassemblyRequested(Address addr);
