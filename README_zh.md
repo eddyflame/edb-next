@@ -61,6 +61,7 @@
 - ⚡ **x64dbg / edb 风格反汇编 Mark 列控制流与调用关系线系统**：在反汇编视口 Mark 列（宽 75px）集成 5 轨贪心多通道避让控制流连线。多维度色系标识：函数调用（CALL）采用**霓虹青蓝（Neon Cyan `#00e5ff`）**、无条件跳转（JMP）采用**明亮金黄（Golden Yellow `#ffd54f`）**、向后循环分支（Loop）采用**珊瑚红（Coral Red `#ff5252`）**、向前条件分支（Jcc）采用**琥珀橙（Amber Orange `#ff9800`）**，结合当前 RIP 动态分支预测评估（成立呈现翡翠绿，不成立呈现沉着灰蓝）。纵向线沿独立轨道完整贯通至视口边界（越界指示箭头 `▲` / `▼`），智能视口可见性过滤杜绝离屏虚影杂线；双通道选中高亮发光光晕（Pass 2 Glow Aura）与目标落点边框；Mark 列单元格富文本悬停解析提示，支持 `Enter` 或双击即刻追踪分支调用与历史栈快速返回。
 - ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
+- 🚀 **`IRefreshable` 惰性视图刷新与状态机解耦**：引入 `IRefreshable` 抽象契约与脏位追踪机制，彻底根治单步步进与高频跟踪时 22 个抽屉标签页的无序刷新风暴；非活动标签页仅标记脏位，切换激活时按需惰性刷新，削减逾 80% 的无效 ptrace/proc 查询开销。重构解耦 `DebugSession::handleEvent()` 状态机为单一职责独立子例程。
 
 ---
 

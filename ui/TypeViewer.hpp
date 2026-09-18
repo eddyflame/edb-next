@@ -2,6 +2,7 @@
 
 #include "core/Types.hpp"
 #include "core/TypeManager.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QLineEdit>
@@ -14,7 +15,7 @@ namespace edb_next {
 
 class DebugSession;
 
-class TypeViewer : public QWidget {
+class TypeViewer : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
@@ -23,7 +24,7 @@ public:
 
     void setSession(std::shared_ptr<DebugSession> session);
     void setInspectAddress(Address addr);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToMemoryRequested(edb_next::Address addr);

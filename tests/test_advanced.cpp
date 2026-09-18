@@ -24,6 +24,8 @@
 #include "ui/StackView.hpp"
 #include "ui/RegisterView.hpp"
 #include "ui/MultiDumpWidget.hpp"
+#include "ui/SessionTabWidget.hpp"
+#include "ui/IRefreshable.hpp"
 #include <QKeyEvent>
 #include <sys/mman.h>
 #include <QApplication>
@@ -1653,6 +1655,59 @@ void test_x64dbg_p2_ergonomics() {
     sess_ptr->terminate();
 }
 
+void test_lazy_refresh_irefreshable() {
+    std::cout << "\n[TEST] Starting IRefreshable & Lazy Tab Refresh (P0) test..." << std::endl;
+
+    auto session = std::make_shared<DebugSession>("lazy_refresh_sess", "LazyRefresh");
+    bool launched = session->launch(getTestTargetPath(), {"WorkerLazyRefresh"});
+    assert(launched && "Failed to launch test target");
+
+    SessionTabWidget sessionWidget(session);
+
+    // Initial state: Dump (1-4) is tab 0 and is the active bottom tab
+    QWidget* currentTab = sessionWidget.bottomTabs()->currentWidget();
+    assert(currentTab != nullptr);
+
+    // Trigger refreshAll()
+    sessionWidget.refreshAll();
+
+    // 1. Current active tab should be refreshed and NOT dirty
+    auto* activeRef = dynamic_cast<IRefreshable*>(currentTab);
+    assert(activeRef != nullptr && "Active bottom tab should implement IRefreshable");
+    assert(!activeRef->isDirty() && "Active tab must not be dirty after refreshAll");
+
+    // 2. Inactive tabs should be marked dirty
+    int count = sessionWidget.bottomTabs()->count();
+    assert(count > 1);
+
+    int dirtyCount = 0;
+    int refreshableCount = 0;
+    for (int i = 0; i < count; ++i) {
+        QWidget* tab = sessionWidget.bottomTabs()->widget(i);
+        if (auto* ref = dynamic_cast<IRefreshable*>(tab)) {
+            refreshableCount++;
+            if (tab != currentTab) {
+                assert(ref->isDirty() && "Inactive bottom tab must be marked dirty after refreshAll");
+                dirtyCount++;
+            }
+        }
+    }
+    assert(refreshableCount >= 10 && "Most bottom tabs should implement IRefreshable");
+    assert(dirtyCount > 0 && "Inactive tabs should be marked dirty");
+
+    // 3. Switch to an inactive tab (e.g. index 1: CallStackView)
+    sessionWidget.selectBottomTab(1);
+    QWidget* newActiveTab = sessionWidget.bottomTabs()->widget(1);
+    auto* newActiveRef = dynamic_cast<IRefreshable*>(newActiveTab);
+    assert(newActiveRef != nullptr);
+    assert(!newActiveRef->isDirty() && "Newly activated tab must clear its dirty flag upon activation");
+
+    std::cout << "[PASS] IRefreshable lazy refresh and dirty flag tracking verified ("
+              << refreshableCount << " refreshable tabs tested)." << std::endl;
+
+    session->terminate();
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1681,6 +1736,7 @@ int main(int argc, char* argv[]) {
     test_disassembly_flow_lines();
     test_x64dbg_p1_ergonomics();
     test_x64dbg_p2_ergonomics();
+    test_lazy_refresh_irefreshable();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

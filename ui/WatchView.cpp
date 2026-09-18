@@ -89,6 +89,7 @@ void WatchView::onClearClicked() {
 }
 
 void WatchView::refresh() {
+    dirty_ = false;
     tableWatches_->setRowCount(0);
     if (!session_) return;
 

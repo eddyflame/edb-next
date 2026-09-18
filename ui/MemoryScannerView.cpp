@@ -250,7 +250,12 @@ void MemoryScannerView::onCompareTypeChanged(int) {
     if (parentWidget()) parentWidget()->layout()->activate();
 }
 
+void MemoryScannerView::refresh() {
+    refreshResults();
+}
+
 void MemoryScannerView::refreshResults() {
+    dirty_ = false;
     resultsTable_->setRowCount(0);
     if (!session_) return;
 

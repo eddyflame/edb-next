@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -13,14 +14,14 @@ namespace edb_next {
 
 class DebugSession;
 
-class ProcessPropertiesView : public QWidget {
+class ProcessPropertiesView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit ProcessPropertiesView(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 private Q_SLOTS:
     void onEnvFilterChanged(const QString& filter);

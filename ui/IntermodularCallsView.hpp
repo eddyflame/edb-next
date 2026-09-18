@@ -2,6 +2,7 @@
 
 #include "core/DebugSession.hpp"
 #include "core/IntermodularCallsFinder.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QLineEdit>
@@ -12,14 +13,14 @@
 
 namespace edb_next {
 
-class IntermodularCallsView : public QWidget {
+class IntermodularCallsView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit IntermodularCallsView(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr, bool isExec);

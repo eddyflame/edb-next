@@ -62,6 +62,7 @@ void ThreadsView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void ThreadsView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     if (!session || session->state() == SessionState::Stopped) {
         table_->setRowCount(0);

@@ -72,6 +72,7 @@ void HeapView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void HeapView::refresh() {
+    dirty_ = false;
     onAnalyzeClicked();
 }
 

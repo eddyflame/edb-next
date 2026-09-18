@@ -2,6 +2,7 @@
 
 #include "Types.hpp"
 #include "ElfParser.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QLineEdit>
@@ -14,14 +15,14 @@ namespace edb_next {
 
 class DebugSession;
 
-class SymbolViewer : public QWidget {
+class SymbolViewer : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
     explicit SymbolViewer(QWidget* parent = nullptr);
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr);

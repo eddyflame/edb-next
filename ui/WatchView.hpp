@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Types.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QPushButton>
@@ -20,7 +21,7 @@ struct WatchItem {
     bool hasChanged{false};
 };
 
-class WatchView : public QWidget {
+class WatchView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
@@ -29,7 +30,7 @@ public:
 
     void setSession(std::shared_ptr<DebugSession> session);
     void addWatch(const std::string& expr);
-    void refresh();
+    void refresh() override;
 
     [[nodiscard]] std::vector<std::string> watchExpressions() const {
         std::vector<std::string> res;

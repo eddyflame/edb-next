@@ -2,6 +2,7 @@
 
 #include "Types.hpp"
 #include "DebugSession.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QComboBox>
@@ -14,7 +15,7 @@
 
 namespace edb_next {
 
-class SourceView : public QWidget {
+class SourceView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
@@ -22,7 +23,7 @@ public:
     ~SourceView() override = default;
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
     void loadFile(const std::string& filePath);
     void scrollToLine(int line);
 

@@ -41,6 +41,7 @@ void CallStackView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void CallStackView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     if (!session || session->state() == SessionState::Stopped) {
         currentFrames_.clear();

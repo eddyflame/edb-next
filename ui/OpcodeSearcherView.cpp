@@ -94,6 +94,7 @@ void OpcodeSearcherView::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void OpcodeSearcherView::refresh() {
+    dirty_ = false;
     // Retain existing results
 }
 

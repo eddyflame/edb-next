@@ -39,6 +39,7 @@ void MultiDumpWidget::setSession(std::shared_ptr<DebugSession> session) {
 }
 
 void MultiDumpWidget::refresh() {
+    dirty_ = false;
     for (auto* dump : dumps_) {
         if (dump) dump->refresh();
     }

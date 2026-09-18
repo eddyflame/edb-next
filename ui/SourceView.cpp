@@ -133,6 +133,7 @@ void SourceView::onRegistersUpdated() {
 }
 
 void SourceView::refresh() {
+    dirty_ = false;
     auto session = session_.lock();
     fileCombo_->blockSignals(true);
     fileCombo_->clear();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DebugSession.hpp"
+#include "IRefreshable.hpp"
 #include <QWidget>
 #include <QTableWidget>
 #include <QPushButton>
@@ -9,7 +10,7 @@
 
 namespace edb_next {
 
-class ThreadsView : public QWidget {
+class ThreadsView : public QWidget, public IRefreshable {
     Q_OBJECT
 
 public:
@@ -17,7 +18,7 @@ public:
     ~ThreadsView() override = default;
 
     void setSession(std::shared_ptr<DebugSession> session);
-    void refresh();
+    void refresh() override;
 
 Q_SIGNALS:
     void jumpToAddressRequested(Address addr);
