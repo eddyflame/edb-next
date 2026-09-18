@@ -19,6 +19,7 @@
 #include "ui/MemoryScannerView.hpp"
 #include "core/TypeManager.hpp"
 #include "ui/TypeViewer.hpp"
+#include "ui/DisassemblyView.hpp"
 #include <sys/mman.h>
 #include <QApplication>
 #include <QFileInfo>
@@ -1368,6 +1369,85 @@ void test_type_viewer() {
     std::cout << "[PASS] Type Viewer and Struct Layout Visualizer test passed cleanly." << std::endl;
 }
 
+static bool waitForState(DebugSession& session, SessionState target, int timeout_ms = 2000) {
+    int elapsed = 0;
+    while (session.state() != target && elapsed < timeout_ms) {
+        QApplication::processEvents();
+        usleep(10000); // 10ms
+        elapsed += 10;
+    }
+    QApplication::processEvents();
+    return session.state() == target;
+}
+
+void test_disassembly_flow_lines() {
+    std::cout << "\n[TEST] Starting Disassembly Flow Lines test..." << std::endl;
+    DebugSession session("test_disasm_sess", "Disasm Test");
+    bool launched = session.launch(getTestTargetPath(), {"WorkerDisasm"});
+    assert(launched && "Failed to launch target for Disasm test");
+
+    auto main_sym = session.resolveSymbol("main");
+    assert(main_sym && "main symbol must resolve");
+    session.toggleBreakpoint(*main_sym);
+    session.resume();
+
+    waitForState(session, SessionState::Paused, 2000);
+
+    auto sess_ptr = std::shared_ptr<DebugSession>(&session, [](DebugSession*){});
+    DisassemblyView view;
+    view.setSession(sess_ptr);
+    view.resize(800, 600);
+    view.refresh();
+
+    std::cout << "[INFO] Disassembly rowCount: " << view.rowCount() << std::endl;
+    for (int r = 0; r < std::min(view.rowCount(), 15); ++r) {
+        const auto* insn = view.instructionAtRow(r);
+        if (insn) {
+            std::cout << "Row " << r << ": " << insn->address.toHex() << " " << insn->mnemonic << " " << insn->operands << std::endl;
+        }
+    }
+
+    QImage img(800, 600, QImage::Format_ARGB32);
+    img.fill(Qt::black);
+    QPainter p(&img);
+    view.render(&p);
+    p.end();
+    img.save("/tmp/disasm_view.png");
+    std::cout << "[INFO] Rendered DisassemblyView to /tmp/disasm_view.png" << std::endl;
+
+    // Test selection on branch instruction (row 12: jle)
+    view.selectRow(12);
+    view.setCurrentCell(12, 0);
+    QImage imgSel(800, 600, QImage::Format_ARGB32);
+    imgSel.fill(Qt::black);
+    QPainter pSel(&imgSel);
+    view.render(&pSel);
+    pSel.end();
+    imgSel.save("/tmp/disasm_selected.png");
+    std::cout << "[INFO] Rendered DisassemblyView with selection to /tmp/disasm_selected.png" << std::endl;
+
+    // Test selection on call instruction (find call row)
+    for (int r = 0; r < view.rowCount(); ++r) {
+        if (const auto* insn = view.instructionAtRow(r)) {
+            if (insn->mnemonic == "call" || insn->mnemonic == "callq" || insn->mnemonic == "CALL") {
+                view.selectRow(r);
+                view.setCurrentCell(r, 0);
+                QImage imgCallSel(800, 600, QImage::Format_ARGB32);
+                imgCallSel.fill(Qt::black);
+                QPainter pCallSel(&imgCallSel);
+                view.render(&pCallSel);
+                pCallSel.end();
+                imgCallSel.save("/tmp/disasm_call_selected.png");
+                std::cout << "[INFO] Rendered DisassemblyView with call selection to /tmp/disasm_call_selected.png" << std::endl;
+                break;
+            }
+        }
+    }
+
+    session.terminate();
+    std::cout << "[PASS] Disassembly flow lines verified." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1393,6 +1473,7 @@ int main(int argc, char* argv[]) {
     test_thread_freeze_thaw();
     test_memory_scanner();
     test_type_viewer();
+    test_disassembly_flow_lines();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

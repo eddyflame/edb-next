@@ -164,6 +164,10 @@ void applyDarkTheme(QApplication& app) {
     app.setStyleSheet(qss);
 }
 
+#include <QCommandLineParser>
+#include <QCommandLineOption>
+#include <iostream>
+
 int main(int argc, char* argv[]) {
     // Suppress Wayland non-critical window activation warnings
     QLoggingCategory::setFilterRules("qt.qpa.wayland.warning=false");
@@ -171,11 +175,23 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("edb-next");
     app.setApplicationVersion("1.0.0");
+    app.setOrganizationName("edb-next");
+
+    QCommandLineParser parser;
+    parser.setApplicationDescription("EDB Next: Next-Generation Linux x86-64 Binary Debugger");
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.process(app);
+
+    std::cout << "[edb-next] Starting EDB Next v1.0.0 (Linux x86-64 Debugger)..." << std::endl;
 
     applyDarkTheme(app);
 
     edb_next::MainWindow w;
     w.show();
 
+    std::cout << "[edb-next] Main window displayed successfully." << std::endl;
+
     return app.exec();
 }
+

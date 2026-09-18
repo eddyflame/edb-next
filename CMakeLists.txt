@@ -229,3 +229,34 @@ target_link_libraries(test_scripting
     pthread
 )
 add_dependencies(test_scripting build_test_target)
+
+# ==============================================================================
+# Installation Rules (Standard FHS & AppImage Packaging Support)
+# ==============================================================================
+include(GNUInstallDirs)
+
+# Main Executable
+install(TARGETS edb_next
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# Built-in Plugins
+install(TARGETS sample_plugin
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/edb-next/plugins
+)
+
+# Desktop Entry
+install(FILES res/edb-next.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+)
+
+# Icons (SVG & PNG)
+install(FILES res/edb-next.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+)
+
+install(FILES res/edb-next.png
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+    OPTIONAL
+)
+

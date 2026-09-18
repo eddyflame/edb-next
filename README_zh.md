@@ -58,6 +58,7 @@
 - 🔍 **CheatEngine 级动态内存特征差分扫描器 (Differential Memory Scanner)**：专为动态密钥定位与外挂变量收敛打造，在底部抽屉提供专属 **Memory Scanner** 面板（Tab 21）；原生支持 8 种数据类型（Int8~64、Float、Double、String、Hex 通配符）；支持多轮差分收敛（增大、减小、变动、未变、增减指定 Delta）；聚焦可读写段流式扫描，单轮耗时仅数十毫秒；候选列表支持增绿减红变动指示、双击联动 Hex Dump 以及原位直接修改目标内存；CLI 全面支持 `scan`, `nextscan`, `scanresults`, `scanreset`。
 - 🧬 **复合数据类型重构与结构体布局可视化 (Type Viewer & Struct Layout)**：专为复杂对象反向解析与网络协议还原设计，在底部抽屉提供专属 **Type Viewer** 工作台（Tab 22）；原生支持 C 语言标准语法解析与 System V AMD64 ABI 自然对齐/填充计算；覆盖 14 种基础数据类型与定长数组；预置 `timespec`、`timeval`、`sockaddr_in`、`list_head`、`io_vec` 等 Linux 核心结构体；支持字段相对偏移与原始 Hex 呈现，青色高亮指针字段并支持双击直接解引用追踪（Jump to Hex Dump / Disassembly），支持右键原位修改内存；CLI 支持 `structs`、`struct <name> <addr>`、`defstruct <c_code...>`。
 - 🎨 **x64dbg 风格现代化逆向工效与语法着色系统**：定制指令重绘委托 `InstructionHighlightDelegate`，提供 CALL/JMP/Jcc/RET/SYSCALL/PUSH/POP/CMP/TEST/NOP/寄存器/寻址括号/立即数细粒度语义高亮；富文本动态分支预测（`Branch Taken: YES / NO`）与内存操作数链式求值预览（`[rbp - 0x14] => 0x... => val`）；专有栈视图函数返回地址智能识别与亮琥珀金标签（`[Return Address] <symbol>`）；寄存器极速 `+1`/`-1` 微调、`Follow in Stack` 与多格式复制子菜单；Hex Dump 历史导航栈（`Alt+Left` / `Backspace` / `Alt+Right`）、多维 QWORD 穿梭与一键直达结构体解析（`View as Struct...`）；`Ctrl+*` Set Origin (Set RIP)。
+- ⚡ **x64dbg / edb 风格反汇编 Mark 列控制流与调用关系线系统**：在反汇编视口 Mark 列（宽 75px）集成 5 轨贪心多通道避让控制流连线。多维度色系标识：函数调用（CALL）采用**霓虹青蓝（Neon Cyan `#00e5ff`）**、无条件跳转（JMP）采用**明亮金黄（Golden Yellow `#ffd54f`）**、向后循环分支（Loop）采用**珊瑚红（Coral Red `#ff5252`）**、向前条件分支（Jcc）采用**琥珀橙（Amber Orange `#ff9800`）**，结合当前 RIP 动态分支预测评估（成立呈现翡翠绿，不成立呈现沉着灰蓝）。纵向线沿独立轨道完整贯通至视口边界（越界指示箭头 `▲` / `▼`），智能视口可见性过滤杜绝离屏虚影杂线；双通道选中高亮发光光晕（Pass 2 Glow Aura）与目标落点边框；Mark 列单元格富文本悬停解析提示，支持 `Enter` 或双击即刻追踪分支调用与历史栈快速返回。
 - ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 
@@ -70,7 +71,7 @@
 | **语言规范** | C++11 | C++14/17 | **现代 C++20 标准** |
 | **事件循环并发** | 0ms QTimer 轮询 (易死锁假死) | 复杂同步事件 | **非阻塞 EventLoopThread (0% 界面冻结)** |
 | **工作台布局** | 单一底部抽屉 (反复切Tab) | 经典四象限布局 | **4-Quadrant 黄金工作流** |
-| **反汇编与工效着色** | 纯等宽黑白文本 | 丰富色彩与调用/返回高亮 | **x64dbg 风格语法委托 + 动态分支预测/解引用预览 + Ctrl+* Set Origin** |
+| **反汇编与工效着色** | 纯等宽黑白文本 | 丰富色彩与调用/返回高亮 | **x64dbg 风格语法委托 + 5轨调用与跳转控制流关系线 (霓虹青蓝调用 / 金黄跳转 / 珊瑚红循环) + 动态分支预测/解引用预览 + Ctrl+* Set Origin** |
 | **转储与调用栈工效** | 基础线性转储 | 历史栈与返回地址识别 | **转储历史前进/后退 (Alt+Left/Right) + [Return Address] 识别 + 结构体直达** |
 | **寄存器快捷微调** | 弹窗手工输十六进制 | 快捷增减 | **GPR 快捷 +1/-1 + Follow in Stack + 多格式复制子菜单** |
 | **内存转储能力** | 单一 Hex Dump | 标配 Dump 1~5 | **4路独立 MultiDumpWidget (Dump 1~4)** |
@@ -130,8 +131,30 @@ cmake --build build -j$(nproc)
 ```
 
 ### 4. 启动调试器
+
+#### 方式 A：直接运行本地构建产物
 ```bash
 ./build/edb_next
+```
+
+#### 方式 B：使用独立便携 AppImage（推荐，免安装）
+下载发布版或本地构建生成的单文件 AppImage，赋予执行权限后即可在各大主流 Linux 发行版（Ubuntu、Debian、Fedora、Arch Linux 等）直接运行：
+```bash
+chmod +x edb-next-x86_64.AppImage
+./edb-next-x86_64.AppImage
+```
+
+> **提示 (ptrace 调试权限)**：
+> - 启动新程序调试（Spawn / Open Binary）完全免 root，开箱即用。
+> - 若需附加（Attach）到已存在的非子进程，受 Linux Yama LSM 安全策略影响，建议使用 `sudo ./edb-next-x86_64.AppImage` 启动，或临时设置宿主机内核参数：`sudo sysctl -w kernel.yama.ptrace_scope=0`。
+
+#### 本地一键构建 AppImage
+```bash
+# 宿主机直接构建并打包
+./scripts/build_appimage.sh
+
+# 或在 Ubuntu 22.04 LTS (glibc 2.35) Docker 容器中打包（获得最高的跨发行版兼容性）
+./scripts/docker_build_appimage.sh
 ```
 
 ---

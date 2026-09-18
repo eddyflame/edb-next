@@ -1,0 +1,50 @@
+# ==============================================================================
+# Dockerfile for building edb-next AppImage on Ubuntu 22.04 LTS (glibc 2.35)
+# ==============================================================================
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# Install prerequisites & toolchain PPA
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    ca-certificates \
+    wget \
+    curl \
+    git \
+    gnupg \
+    && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+    && apt-get update
+
+# Install build dependencies
+RUN apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc-13 \
+    g++-13 \
+    cmake \
+    pkg-config \
+    qt6-base-dev \
+    qt6-tools-dev \
+    libgl1-mesa-dev \
+    libegl1-mesa-dev \
+    libcapstone-dev \
+    libelf-dev \
+    libdw-dev \
+    python3-dev \
+    liblua5.4-dev \
+    file \
+    fuse \
+    libfuse2 \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set default compiler to GCC 13
+ENV CC=gcc-13
+ENV CXX=g++-13
+ENV APPIMAGE_EXTRACT_AND_RUN=1
+
+WORKDIR /workspace
+
+# Default command: execute AppImage packaging script
+CMD ["/bin/bash", "scripts/build_appimage.sh"]

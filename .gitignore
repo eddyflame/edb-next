@@ -41,3 +41,9 @@ test_target_patched
 core.*
 vgcore.*
 *.log
+
+# AppImage packaging tools and outputs
+tools/
+*.AppImage
+AppDir/
+squashfs-root/
