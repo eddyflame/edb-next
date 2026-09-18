@@ -25,8 +25,8 @@ public:
     void startLoop();
     void stopLoop();
     [[nodiscard]] bool isRunningLoop() const noexcept { return running_.load(); }
-    void setSuspended(bool s) noexcept { suspended_.store(s); }
-    [[nodiscard]] bool isSuspended() const noexcept { return suspended_.load(); }
+    void setSuspended(bool s);
+    [[nodiscard]] bool isSuspended() const noexcept { return isSuspended_.load(); }
 
     void addDetachedChild(Pid pid);
 
@@ -42,7 +42,10 @@ private:
     IDebugBackend& engine_;
     BreakpointManager& bpMgr_;
     std::atomic<bool> running_{false};
-    std::atomic<bool> suspended_{false};
+    std::atomic<bool> suspendRequested_{false};
+    std::atomic<bool> isSuspended_{false};
+    std::mutex suspendMutex_;
+    std::condition_variable suspendCv_;
 
     std::mutex childMutex_;
     std::unordered_set<Pid> pendingForkChildren_;

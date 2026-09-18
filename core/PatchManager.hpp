@@ -35,7 +35,7 @@ public:
     [[nodiscard]] size_t patchCount() const noexcept { return patches_.size(); }
 
     // Export all active patches to a patched ELF binary file on disk
-    bool patchFileToDisk(const std::string& inputBinaryPath, const std::string& outputBinaryPath, std::string& errorMsg);
+    bool patchFileToDisk(const std::string& inputBinaryPath, const std::string& outputBinaryPath, std::string& errorMsg, Address runtimeBase = Address(0));
 
 Q_SIGNALS:
     void patchesUpdated();

@@ -92,18 +92,21 @@ public:
     // Introspection
     [[nodiscard]] std::vector<MemoryRegion> getMemoryRegions() const override;
     [[nodiscard]] std::vector<ThreadInfo> getThreads() const override;
-    [[nodiscard]] Pid pid() const noexcept override { return pid_; }
-    [[nodiscard]] Tid mainTid() const noexcept override { return mainTid_; }
-    [[nodiscard]] Tid activeTid() const noexcept override { return activeTid_ > 0 ? activeTid_ : mainTid_; }
-    void setActiveTid(Tid tid) override { activeTid_ = tid; }
-    [[nodiscard]] bool isAttached() const noexcept override { return pid_ > 0; }
+    [[nodiscard]] Pid pid() const noexcept override { return pid_.load(); }
+    [[nodiscard]] Tid mainTid() const noexcept override { return mainTid_.load(); }
+    [[nodiscard]] Tid activeTid() const noexcept override {
+        Tid act = activeTid_.load();
+        return act > 0 ? act : mainTid_.load();
+    }
+    void setActiveTid(Tid tid) override { activeTid_.store(tid); }
+    [[nodiscard]] bool isAttached() const noexcept override { return pid_.load() > 0; }
 
 private:
     bool openProcMem();
 
-    Pid pid_{0};
-    Tid mainTid_{0};
-    Tid activeTid_{0};
+    std::atomic<Pid> pid_{0};
+    std::atomic<Tid> mainTid_{0};
+    std::atomic<Tid> activeTid_{0};
     UniqueFd memFd_;
 };
 

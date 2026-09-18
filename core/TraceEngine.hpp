@@ -2,7 +2,7 @@
 
 #include "Types.hpp"
 #include "RegisterContext.hpp"
-#include <vector>
+#include <deque>
 #include <set>
 #include <string>
 #include <memory>
@@ -39,7 +39,7 @@ public:
     // Run Trace (Execution History Record)
     void recordFrame(Address addr, const std::string& mnemonic, const std::string& operands, const RegisterContext& regs);
     void clearRunTrace();
-    [[nodiscard]] const std::vector<TraceFrame>& traceFrames() const noexcept { return traceHistory_; }
+    [[nodiscard]] const std::deque<TraceFrame>& traceFrames() const noexcept { return traceHistory_; }
     [[nodiscard]] size_t frameCount() const noexcept { return traceHistory_.size(); }
     [[nodiscard]] size_t currentFrameIndex() const noexcept { return currentFrameIndex_; }
     void setCurrentFrameIndex(size_t idx);
@@ -62,7 +62,7 @@ private:
     bool runTraceEnabled_{true};
 
     std::set<Address> hitAddresses_;
-    std::vector<TraceFrame> traceHistory_;
+    std::deque<TraceFrame> traceHistory_;
     size_t currentFrameIndex_{0};
     std::optional<RegisterContext> lastRegs_;
     uint64_t stepCounter_{0};

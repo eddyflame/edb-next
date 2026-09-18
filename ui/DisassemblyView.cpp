@@ -15,6 +15,7 @@
 #include <QStyledItemDelegate>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWheelEvent>
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -500,6 +501,15 @@ void DisassemblyView::refresh() {
 
     setRowCount(static_cast<int>(displayRows_.size()));
 
+    auto getOrCreateItem = [this](int r, int c) -> QTableWidgetItem* {
+        auto* it = item(r, c);
+        if (!it) {
+            it = new QTableWidgetItem();
+            setItem(r, c, it);
+        }
+        return it;
+    };
+
     int target_scroll_row = -1;
 
     for (int r = 0; r < static_cast<int>(displayRows_.size()); ++r) {
@@ -507,28 +517,45 @@ void DisassemblyView::refresh() {
         const auto& insn = currentInstructions_[drow.insnIndex];
 
         if (drow.type == RowType::SourceBanner) {
-            auto* item_mark = new QTableWidgetItem("SRC");
+            auto* item_mark = getOrCreateItem(r, 0);
+            item_mark->setText("SRC");
             item_mark->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
             item_mark->setForeground(QColor(128, 203, 196));
+            item_mark->setToolTip("");
+            item_mark->setFont(font());
 
-            auto* item_addr = new QTableWidgetItem(QString("Line %1").arg(insn.sourceLine));
+            auto* item_addr = getOrCreateItem(r, 1);
+            item_addr->setText(QString("Line %1").arg(insn.sourceLine));
             item_addr->setTextAlignment(Qt::AlignCenter);
             item_addr->setForeground(QColor(130, 210, 245));
+            item_addr->setToolTip("");
+            item_addr->setFont(font());
 
-            auto* item_bytes = new QTableWidgetItem("");
+            auto* item_bytes = getOrCreateItem(r, 2);
+            item_bytes->setText("");
+            item_bytes->setToolTip("");
+            item_bytes->setFont(font());
 
             QString src_str = QString("/* %1 */").arg(QString::fromStdString(insn.sourceText).trimmed());
-            auto* item_asm = new QTableWidgetItem(src_str);
+            auto* item_asm = getOrCreateItem(r, 3);
+            item_asm->setText(src_str);
             item_asm->setForeground(QColor(130, 210, 245));
+            item_asm->setToolTip("");
             QFont srcFont = font();
             srcFont.setItalic(true);
             srcFont.setBold(true);
             item_asm->setFont(srcFont);
 
-            auto* item_sym = new QTableWidgetItem(QString::fromStdString(insn.sourceFile));
+            auto* item_sym = getOrCreateItem(r, 4);
+            item_sym->setText(QString::fromStdString(insn.sourceFile));
             item_sym->setForeground(QColor(100, 160, 210));
+            item_sym->setToolTip("");
+            item_sym->setFont(font());
 
-            auto* item_comment = new QTableWidgetItem("");
+            auto* item_comment = getOrCreateItem(r, 5);
+            item_comment->setText("");
+            item_comment->setToolTip("");
+            item_comment->setFont(font());
 
             QColor banner_bg(22, 38, 54, 230);
             item_mark->setBackground(banner_bg);
@@ -537,13 +564,6 @@ void DisassemblyView::refresh() {
             item_asm->setBackground(banner_bg);
             item_sym->setBackground(banner_bg);
             item_comment->setBackground(banner_bg);
-
-            setItem(r, 0, item_mark);
-            setItem(r, 1, item_addr);
-            setItem(r, 2, item_bytes);
-            setItem(r, 3, item_asm);
-            setItem(r, 4, item_sym);
-            setItem(r, 5, item_comment);
             continue;
         }
 
@@ -558,8 +578,11 @@ void DisassemblyView::refresh() {
         if (isBookmarked) mark += "★";
         mark = mark.trimmed();
 
-        auto* item_mark = new QTableWidgetItem(mark);
+        auto* item_mark = getOrCreateItem(r, 0);
+        item_mark->setText(mark);
         item_mark->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item_mark->setToolTip("");
+        item_mark->setFont(font());
         if (insn.hasBreakpoint) {
             if (insn.isBreakpointEnabled) {
                 item_mark->setForeground(QColor(255, 80, 80));
@@ -570,6 +593,8 @@ void DisassemblyView::refresh() {
             item_mark->setForeground(QColor(80, 220, 140));
         } else if (isBookmarked) {
             item_mark->setForeground(QColor(255, 215, 0));
+        } else {
+            item_mark->setForeground(QColor(200, 200, 200));
         }
 
         // Add rich tooltip on mark item for call and jump instructions
@@ -590,7 +615,12 @@ void DisassemblyView::refresh() {
         }
 
         // Column 1: Address
-        auto* item_addr = new QTableWidgetItem(insn.address.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
+        auto* item_addr = getOrCreateItem(r, 1);
+        item_addr->setText(insn.address.toQString(true, ConfigurationManager::instance().appearance().showAddressColon));
+        item_addr->setForeground(QColor(200, 200, 200));
+        item_addr->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item_addr->setToolTip("");
+        item_addr->setFont(font());
 
         // Column 2: Bytes
         QString bytes_str;
@@ -598,38 +628,61 @@ void DisassemblyView::refresh() {
         for (uint8_t b : insn.bytes) {
             bytes_str += QString::asprintf("%02x ", b);
         }
-        auto* item_bytes = new QTableWidgetItem(bytes_str);
+        auto* item_bytes = getOrCreateItem(r, 2);
+        item_bytes->setText(bytes_str);
         item_bytes->setForeground(QColor(130, 130, 130));
+        item_bytes->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item_bytes->setToolTip("");
+        item_bytes->setFont(font());
 
         // Column 3: Instruction Mnemonic & Operands
         QString asm_text = QString::fromStdString(insn.mnemonic + " " + insn.operands);
-        auto* item_asm = new QTableWidgetItem(asm_text);
+        auto* item_asm = getOrCreateItem(r, 3);
+        item_asm->setText(asm_text);
+        item_asm->setForeground(QColor(220, 220, 220));
+        item_asm->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item_asm->setToolTip("");
+        item_asm->setFont(font());
 
         // Column 4: Symbol / Label (User Label takes precedence and is highlighted)
         std::string userLabel = session->annotations().getLabel(insn.address);
-        QTableWidgetItem* item_sym = nullptr;
+        auto* item_sym = getOrCreateItem(r, 4);
+        item_sym->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item_sym->setToolTip("");
         if (!userLabel.empty()) {
             QString labelText = QString("🏷 %1").arg(QString::fromStdString(userLabel));
             if (!insn.symbol.empty()) {
                 labelText += QString(" (%1)").arg(QString::fromStdString(insn.symbol));
             }
-            item_sym = new QTableWidgetItem(labelText);
+            item_sym->setText(labelText);
             item_sym->setForeground(QColor(80, 220, 160));
             QFont boldFont = font();
             boldFont.setBold(true);
             item_sym->setFont(boldFont);
         } else {
-            item_sym = new QTableWidgetItem(QString::fromStdString(insn.symbol));
+            item_sym->setText(QString::fromStdString(insn.symbol));
             item_sym->setForeground(QColor(70, 190, 220));
+            item_sym->setFont(font());
         }
 
         // Column 5: User Comment
         std::string commentStr = session->annotations().getComment(insn.address);
-        auto* item_comment = new QTableWidgetItem(QString::fromStdString(commentStr));
+        auto* item_comment = getOrCreateItem(r, 5);
+        item_comment->setText(QString::fromStdString(commentStr));
         item_comment->setForeground(QColor(152, 195, 121));
+        item_comment->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item_comment->setToolTip("");
         QFont commentFont = font();
         commentFont.setItalic(true);
         item_comment->setFont(commentFont);
+
+        // Reset default transparent background before applying highlights
+        item_mark->setBackground(Qt::transparent);
+        item_addr->setBackground(Qt::transparent);
+        item_bytes->setBackground(Qt::transparent);
+        item_asm->setBackground(Qt::transparent);
+        item_sym->setBackground(Qt::transparent);
+        item_comment->setBackground(Qt::transparent);
 
         // High-contrast x64dbg-style line highlight
         if (insn.hasBreakpoint && insn.isCurrentRip) {
@@ -667,13 +720,6 @@ void DisassemblyView::refresh() {
             bold_font.setBold(true);
             item_asm->setFont(bold_font);
         }
-
-        setItem(r, 0, item_mark);
-        setItem(r, 1, item_addr);
-        setItem(r, 2, item_bytes);
-        setItem(r, 3, item_asm);
-        setItem(r, 4, item_sym);
-        setItem(r, 5, item_comment);
     }
 
     if (target_scroll_row >= 0) {
@@ -1307,6 +1353,57 @@ void DisassemblyView::paintEvent(QPaintEvent* event) {
 void DisassemblyView::scrollContentsBy(int dx, int dy) {
     QTableWidget::scrollContentsBy(dx, dy);
     viewport()->update();
+}
+
+void DisassemblyView::wheelEvent(QWheelEvent* event) {
+    int numDegrees = event->angleDelta().y() / 8;
+    int numSteps = numDegrees / 15;
+    if (numSteps == 0) {
+        numSteps = (event->angleDelta().y() > 0) ? 1 : -1;
+    }
+
+    auto session = session_.lock();
+    if (!session || currentInstructions_.empty()) {
+        QTableWidget::wheelEvent(event);
+        return;
+    }
+
+    Address cur = (followRip_ || viewAddress_.isNull()) ? session->registers().rip() : viewAddress_;
+    followRip_ = false;
+
+    if (numSteps < 0) {
+        // Scroll down: advance viewAddress_ by 1 to 3 instructions
+        size_t steps = static_cast<size_t>(-numSteps);
+        if (steps >= currentInstructions_.size()) steps = currentInstructions_.size() - 1;
+        if (steps > 0) {
+            viewAddress_ = currentInstructions_[steps].address;
+            refresh();
+            event->accept();
+            return;
+        }
+    } else if (numSteps > 0) {
+        // Scroll up: disassemble backward
+        size_t steps = static_cast<size_t>(numSteps);
+        size_t backBytes = std::min<size_t>(steps * 5, 64);
+        if (cur.value() > backBytes) {
+            Address testStart = cur - backBytes;
+            auto insns = session->disassemble(testStart, backBytes + 16);
+            Address newAddr = testStart;
+            for (const auto& in : insns) {
+                if (in.address < cur) {
+                    newAddr = in.address;
+                } else {
+                    break;
+                }
+            }
+            viewAddress_ = newAddr;
+            refresh();
+            event->accept();
+            return;
+        }
+    }
+
+    QTableWidget::wheelEvent(event);
 }
 
 struct FlowArrow {

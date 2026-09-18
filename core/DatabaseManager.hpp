@@ -39,6 +39,7 @@ struct DatabasePageGuardData {
 struct DatabaseProject {
     std::string binaryPath;
     std::string notes;
+    uint64_t baseAddress{0};
     std::vector<std::pair<uint64_t, std::string>> comments;
     std::vector<std::pair<uint64_t, std::string>> labels;
     std::vector<uint64_t> bookmarks;

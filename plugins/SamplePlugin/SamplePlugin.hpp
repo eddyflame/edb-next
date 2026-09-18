@@ -2,16 +2,17 @@
 
 #include "core/IPlugin.hpp"
 #include "core/IPluginContext.hpp"
+#include "ui/IUIPlugin.hpp"
 #include <QObject>
 #include <QMenu>
 #include <QWidget>
 
 namespace edb_next {
 
-class SamplePlugin : public QObject, public IPlugin {
+class SamplePlugin : public QObject, public IUIPlugin {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID EDB_NEXT_PLUGIN_IID)
-    Q_INTERFACES(edb_next::IPlugin)
+    Q_INTERFACES(edb_next::IPlugin edb_next::IUIPlugin)
 
 public:
     SamplePlugin() = default;

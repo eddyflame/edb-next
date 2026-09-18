@@ -3,7 +3,7 @@
 #include "SessionManager.hpp"
 #include "SessionTabWidget.hpp"
 #include "CommandBarView.hpp"
-#include "core/IPluginContext.hpp"
+#include "IUIPlugin.hpp"
 #include "core/PluginManager.hpp"
 #include "core/PatchManager.hpp"
 #include <QMainWindow>
@@ -18,7 +18,7 @@
 
 namespace edb_next {
 
-class MainWindow : public QMainWindow, public IPluginContext {
+class MainWindow : public QMainWindow, public IUIPluginContext {
     Q_OBJECT
 
 public:

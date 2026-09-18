@@ -59,6 +59,9 @@ public:
     [[nodiscard]] SessionState state() const noexcept { return state_; }
     [[nodiscard]] Pid pid() const noexcept { return engine_.pid(); }
     [[nodiscard]] Tid tid() const noexcept { return engine_.mainTid(); }
+    [[nodiscard]] Address baseAddress() const noexcept {
+        return baseAddress_ != Address(0) ? baseAddress_ : symbols_.baseAddress();
+    }
     // P1-C: expose via abstract interface so callers need not depend on LinuxDebugEngine
     [[nodiscard]] IDebugBackend& engine() noexcept { return engine_; }
     [[nodiscard]] const IDebugBackend& engine() const noexcept { return engine_; }
@@ -326,6 +329,7 @@ private:
 
     std::string targetPath_;
     std::vector<std::string> targetArgs_;
+    Address baseAddress_{0};
     std::optional<Address> tempRunToBp_;
     int lastSignal_{0};
 };

@@ -22,6 +22,7 @@ public:
                       SetHwBpFunc set_hw_bp = nullptr, ClearHwBpFunc clear_hw_bp = nullptr);
 
     bool addBreakpoint(Address addr, bool is_internal = false, const std::string& symbol = "");
+    bool addBreakpointWithOriginalByte(Address addr, uint8_t origByte, bool is_internal = false, const std::string& symbol = "");
     bool addHardwareBreakpoint(Address addr, HardwareBpType type = HardwareBpType::Execute, HardwareBpSize size = HardwareBpSize::Byte1, const std::string& symbol = "");
     bool removeBreakpoint(Address addr);
     bool enableBreakpoint(Address addr);

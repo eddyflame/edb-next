@@ -1,5 +1,5 @@
 #include "MemoryScanner.hpp"
-#include "LinuxDebugEngine.hpp"
+#include "IDebugBackend.hpp"
 #include "PatternSearcher.hpp"
 #include <sstream>
 #include <iomanip>
@@ -250,7 +250,7 @@ std::string ScanResult::formatDelta(ScanDataType type) const {
     return oss.str();
 }
 
-size_t MemoryScanner::firstScan(LinuxDebugEngine& engine, const ScanOptions& options) {
+size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& options) {
     results_.clear();
     scanPass_ = 0;
     activeOptions_ = options;
@@ -400,7 +400,7 @@ size_t MemoryScanner::firstScan(LinuxDebugEngine& engine, const ScanOptions& opt
     return results_.size();
 }
 
-size_t MemoryScanner::nextScan(LinuxDebugEngine& engine, const ScanOptions& options) {
+size_t MemoryScanner::nextScan(IDebugBackend& engine, const ScanOptions& options) {
     if (results_.empty() || !engine.isAttached()) {
         return 0;
     }
@@ -614,7 +614,7 @@ size_t MemoryScanner::nextScan(LinuxDebugEngine& engine, const ScanOptions& opti
     return results_.size();
 }
 
-void MemoryScanner::refreshCurrentValues(LinuxDebugEngine& engine) {
+void MemoryScanner::refreshCurrentValues(IDebugBackend& engine) {
     if (results_.empty() || !engine.isAttached()) return;
     size_t dataSize = getDataTypeSize(activeOptions_.dataType, activeOptions_.valueStr);
     if (dataSize == 0) dataSize = 1;

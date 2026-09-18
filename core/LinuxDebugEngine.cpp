@@ -164,7 +164,7 @@ Result<void> LinuxDebugEngine::attach(Pid pid) {
 void LinuxDebugEngine::detach() {
     if (pid_ > 0) {
         memFd_.reset();
-        ::ptrace(PTRACE_DETACH, pid_, nullptr, nullptr);
+        ::ptrace(PTRACE_DETACH, pid_.load(), nullptr, nullptr);
         pid_ = 0;
         mainTid_ = 0;
     }
@@ -173,15 +173,15 @@ void LinuxDebugEngine::detach() {
 void LinuxDebugEngine::kill() {
     if (pid_ > 0) {
         memFd_.reset();
-        ::kill(pid_, SIGKILL);
+        ::kill(pid_.load(), SIGKILL);
         int status = 0;
         int ret = 0;
         int retries = 0;
-        while ((ret = ::waitpid(pid_, &status, __WALL | WNOHANG)) == 0 && retries++ < 50) {
+        while ((ret = ::waitpid(pid_.load(), &status, __WALL | WNOHANG)) == 0 && retries++ < 50) {
             usleep(2000); // 2ms
         }
         if (ret == 0) {
-            ::waitpid(pid_, &status, __WALL);
+            ::waitpid(pid_.load(), &status, __WALL);
         }
         // Drain any leftover child threads
         while (::waitpid(-1, &status, __WALL | WNOHANG) > 0) {}
@@ -191,23 +191,23 @@ void LinuxDebugEngine::kill() {
 }
 
 bool LinuxDebugEngine::singleStep(Tid tid, int signal) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     return ::ptrace(PTRACE_SINGLESTEP, tid, nullptr, reinterpret_cast<void*>(static_cast<intptr_t>(signal))) == 0;
 }
 
 bool LinuxDebugEngine::continueExecution(Tid tid, int signal) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     return ::ptrace(PTRACE_CONT, tid, nullptr, reinterpret_cast<void*>(static_cast<intptr_t>(signal))) == 0;
 }
 
 bool LinuxDebugEngine::pause(Tid tid) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     return ::kill(tid, SIGSTOP) == 0;
 }
 
 bool LinuxDebugEngine::pauseThread(Tid tid) {
     if (pid_ <= 0 || tid <= 0) return false;
-    return ::syscall(SYS_tgkill, pid_, tid, SIGSTOP) == 0;
+    return ::syscall(SYS_tgkill, pid_.load(), tid, SIGSTOP) == 0;
 }
 
 bool LinuxDebugEngine::resumeThread(Tid tid, int signal) {
@@ -256,7 +256,7 @@ bool LinuxDebugEngine::readMemory(Address addr, void* buffer, size_t size) {
     // 2. Try process_vm_readv
     struct iovec local_iov{buffer, size};
     struct iovec remote_iov{reinterpret_cast<void*>(addr.value()), size};
-    ssize_t vm_ret = ::process_vm_readv(pid_, &local_iov, 1, &remote_iov, 1, 0);
+    ssize_t vm_ret = ::process_vm_readv(pid_.load(), &local_iov, 1, &remote_iov, 1, 0);
     if (vm_ret == static_cast<ssize_t>(size)) {
         return true;
     }
@@ -269,7 +269,7 @@ bool LinuxDebugEngine::readMemory(Address addr, void* buffer, size_t size) {
     for (size_t i = 0; i < words; ++i) {
         uint64_t target = addr.value() + i * sizeof(long);
         errno = 0;
-        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_, reinterpret_cast<void*>(target), nullptr);
+        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_.load(), reinterpret_cast<void*>(target), nullptr);
         if (errno != 0) return false;
         std::memcpy(dst + i * sizeof(long), &data, sizeof(long));
     }
@@ -277,7 +277,7 @@ bool LinuxDebugEngine::readMemory(Address addr, void* buffer, size_t size) {
     if (remainder > 0) {
         uint64_t target = addr.value() + words * sizeof(long);
         errno = 0;
-        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_, reinterpret_cast<void*>(target), nullptr);
+        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_.load(), reinterpret_cast<void*>(target), nullptr);
         if (errno != 0) return false;
         std::memcpy(dst + words * sizeof(long), &data, remainder);
     }
@@ -299,7 +299,7 @@ bool LinuxDebugEngine::writeMemory(Address addr, const void* buffer, size_t size
     // 2. Try process_vm_writev
     struct iovec local_iov{const_cast<void*>(buffer), size};
     struct iovec remote_iov{reinterpret_cast<void*>(addr.value()), size};
-    ssize_t vm_ret = ::process_vm_writev(pid_, &local_iov, 1, &remote_iov, 1, 0);
+    ssize_t vm_ret = ::process_vm_writev(pid_.load(), &local_iov, 1, &remote_iov, 1, 0);
     if (vm_ret == static_cast<ssize_t>(size)) {
         return true;
     }
@@ -313,7 +313,7 @@ bool LinuxDebugEngine::writeMemory(Address addr, const void* buffer, size_t size
         uint64_t target = addr.value() + i * sizeof(long);
         long data = 0;
         std::memcpy(&data, src + i * sizeof(long), sizeof(long));
-        if (::ptrace(PTRACE_POKEDATA, mainTid_, reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
+        if (::ptrace(PTRACE_POKEDATA, mainTid_.load(), reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
             return false;
         }
     }
@@ -321,10 +321,10 @@ bool LinuxDebugEngine::writeMemory(Address addr, const void* buffer, size_t size
     if (remainder > 0) {
         uint64_t target = addr.value() + words * sizeof(long);
         errno = 0;
-        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_, reinterpret_cast<void*>(target), nullptr);
+        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_.load(), reinterpret_cast<void*>(target), nullptr);
         if (errno != 0) return false;
         std::memcpy(&data, src + words * sizeof(long), remainder);
-        if (::ptrace(PTRACE_POKEDATA, mainTid_, reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
+        if (::ptrace(PTRACE_POKEDATA, mainTid_.load(), reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
             return false;
         }
     }
@@ -333,7 +333,7 @@ bool LinuxDebugEngine::writeMemory(Address addr, const void* buffer, size_t size
 }
 
 bool LinuxDebugEngine::getRegisters(Tid tid, RegisterContext& regs) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (::ptrace(PTRACE_GETREGS, tid, nullptr, &regs.raw()) == 0) {
         return true;
     }
@@ -345,7 +345,7 @@ bool LinuxDebugEngine::getRegisters(Tid tid, RegisterContext& regs) {
 }
 
 bool LinuxDebugEngine::setRegisters(Tid tid, const RegisterContext& regs) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (::ptrace(PTRACE_SETREGS, tid, nullptr, &regs.raw()) == 0) {
         return true;
     }
@@ -357,7 +357,7 @@ bool LinuxDebugEngine::setRegisters(Tid tid, const RegisterContext& regs) {
 }
 
 bool LinuxDebugEngine::getFpRegisters(Tid tid, user_fpregs_struct& fpregs) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (::ptrace(PTRACE_GETFPREGS, tid, nullptr, &fpregs) == 0) {
         return true;
     }
@@ -369,7 +369,7 @@ bool LinuxDebugEngine::getFpRegisters(Tid tid, user_fpregs_struct& fpregs) {
 }
 
 bool LinuxDebugEngine::setFpRegisters(Tid tid, const user_fpregs_struct& fpregs) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (::ptrace(PTRACE_SETFPREGS, tid, nullptr, &fpregs) == 0) {
         return true;
     }
@@ -385,7 +385,7 @@ static inline size_t debugRegOffset(int index) {
 }
 
 bool LinuxDebugEngine::setHardwareBreakpoint(Tid tid, int slot, Address addr, HardwareBpType type, HardwareBpSize size) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (slot < 0 || slot > 3) return false;
 
     // 1. Set DR[slot] = addr
@@ -411,7 +411,7 @@ bool LinuxDebugEngine::setHardwareBreakpoint(Tid tid, int slot, Address addr, Ha
 }
 
 bool LinuxDebugEngine::clearHardwareBreakpoint(Tid tid, int slot) {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (slot < 0 || slot > 3) return false;
 
     ::ptrace(PTRACE_POKEUSER, tid, debugRegOffset(slot), 0);
@@ -424,7 +424,7 @@ bool LinuxDebugEngine::clearHardwareBreakpoint(Tid tid, int slot) {
 }
 
 uint64_t LinuxDebugEngine::getDebugRegister(Tid tid, int reg_index) const {
-    if (tid <= 0) tid = mainTid_;
+    if (tid <= 0) tid = mainTid_.load();
     if (reg_index < 0 || reg_index > 7) return 0;
 
     errno = 0;
@@ -492,7 +492,7 @@ std::vector<ThreadInfo> LinuxDebugEngine::getThreads() const {
         if (comm_file.is_open()) {
             std::getline(comm_file, info.name);
         } else {
-            info.name = (tid == mainTid_) ? "Main Thread" : "Worker Thread";
+            info.name = (tid == mainTid_.load()) ? "Main Thread" : "Worker Thread";
         }
 
         // Read thread state from /proc/<pid>/task/<tid>/stat
@@ -528,8 +528,8 @@ std::vector<ThreadInfo> LinuxDebugEngine::getThreads() const {
     ::closedir(dir);
 
     std::sort(threads.begin(), threads.end(), [this](const ThreadInfo& a, const ThreadInfo& b) {
-        if (a.tid == mainTid_) return true;
-        if (b.tid == mainTid_) return false;
+        if (a.tid == mainTid_.load()) return true;
+        if (b.tid == mainTid_.load()) return false;
         return a.tid < b.tid;
     });
 

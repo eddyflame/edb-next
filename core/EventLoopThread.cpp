@@ -25,9 +25,24 @@ void EventLoopThread::startLoop() {
     }
 }
 
+void EventLoopThread::setSuspended(bool s) {
+    if (s) {
+        if (!isRunning() || !running_.load()) return;
+        suspendRequested_.store(true);
+        while (!isSuspended_.load() && running_.load()) {
+            usleep(200); // 0.2ms polling for suspension handshake
+        }
+    } else {
+        suspendRequested_.store(false);
+        suspendCv_.notify_all();
+    }
+}
+
 void EventLoopThread::stopLoop() {
     if (running_.load()) {
         running_.store(false);
+        suspendRequested_.store(false);
+        suspendCv_.notify_all();
         disconnect();
         wait(500);
         if (isRunning()) {
@@ -44,7 +59,17 @@ void EventLoopThread::addDetachedChild(Pid pid) {
 
 void EventLoopThread::run() {
     while (running_.load()) {
-        if (!engine_.isAttached() || suspended_.load()) {
+        if (suspendRequested_.load()) {
+            isSuspended_.store(true);
+            std::unique_lock<std::mutex> lock(suspendMutex_);
+            suspendCv_.wait(lock, [this] {
+                return !suspendRequested_.load() || !running_.load();
+            });
+            isSuspended_.store(false);
+            continue;
+        }
+
+        if (!engine_.isAttached()) {
             msleep(5);
             continue;
         }
@@ -57,11 +82,6 @@ void EventLoopThread::run() {
 
         if (!running_.load()) {
             break;
-        }
-
-        if (suspended_.load()) {
-            msleep(2);
-            continue;
         }
 
         if (waited_pid == 0) {
@@ -88,6 +108,16 @@ void EventLoopThread::run() {
         }
 
         if (waited_pid != engine_.pid()) {
+            {
+                std::lock_guard<std::mutex> lock(childMutex_);
+                if (detachedChildren_.contains(waited_pid)) {
+                    // Detached child event; ignore and clean up on exit
+                    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                        detachedChildren_.erase(waited_pid);
+                    }
+                    continue;
+                }
+            }
             std::string task_path = "/proc/" + std::to_string(engine_.pid()) + "/task/" + std::to_string(waited_pid);
             if (::access(task_path.c_str(), F_OK) != 0) {
                 // Not a thread of our engine's main target. Could be child process initial stop or exit.

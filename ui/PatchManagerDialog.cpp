@@ -142,7 +142,8 @@ void PatchManagerDialog::onPatchFileClicked() {
     if (output_binary.isEmpty()) return;
 
     std::string err;
-    bool ok = patchMgr_.patchFileToDisk(original_binary.toStdString(), output_binary.toStdString(), err);
+    Address baseAddr = session_ ? session_->baseAddress() : Address(0);
+    bool ok = patchMgr_.patchFileToDisk(original_binary.toStdString(), output_binary.toStdString(), err, baseAddr);
     if (!ok) {
         QMessageBox::critical(this, "Patching Error", QString("Failed to create patched binary:\n%1").arg(QString::fromStdString(err)));
     } else {

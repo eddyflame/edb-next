@@ -26,6 +26,14 @@ std::vector<FunctionInfo> FunctionFinder::findFunctions(DebugSession& session, A
 
     FunctionInfo currentFunc;
     bool inFunction = false;
+    uint64_t maxForwardJumpTarget = 0;
+
+    auto parseTarget = [](const std::string& op_str) -> uint64_t {
+        if (op_str.empty()) return 0;
+        char* end = nullptr;
+        uint64_t target = std::strtoull(op_str.c_str(), &end, 0);
+        return (end != op_str.c_str()) ? target : 0;
+    };
 
     for (size_t i = 0; i < count; ++i) {
         const auto& in = insns[i];
@@ -44,6 +52,7 @@ std::vector<FunctionInfo> FunctionFinder::findFunctions(DebugSession& session, A
         if (!inFunction) {
             if (isPrologue) {
                 inFunction = true;
+                maxForwardJumpTarget = 0;
                 currentFunc = FunctionInfo{};
                 currentFunc.startAddress = inAddr;
                 currentFunc.hasPrologue = (mnem == "push" && op == "rbp") || (mnem == "endbr64");
@@ -64,16 +73,29 @@ std::vector<FunctionInfo> FunctionFinder::findFunctions(DebugSession& session, A
                 currentFunc.startAddress = inAddr;
                 currentFunc.name = symOpt->name;
                 currentFunc.hasPrologue = true;
+                maxForwardJumpTarget = 0;
             }
         }
 
         if (inFunction) {
+            // Track forward jump targets to handle early returns
+            if (!mnem.empty() && mnem[0] == 'j') {
+                uint64_t target = parseTarget(op);
+                if (target > inAddr.value() && (target - inAddr.value() <= 65536)) {
+                    maxForwardJumpTarget = std::max(maxForwardJumpTarget, target);
+                }
+            }
+
             if (mnem == "ret") {
-                currentFunc.endAddress = inAddr + in.size;
-                currentFunc.size = currentFunc.endAddress.value() - currentFunc.startAddress.value();
                 currentFunc.hasEpilogue = true;
-                functions.push_back(currentFunc);
-                inFunction = false;
+                // If no remaining forward jump crosses past this return, terminate function
+                if (inAddr.value() >= maxForwardJumpTarget) {
+                    currentFunc.endAddress = inAddr + in.size;
+                    currentFunc.size = currentFunc.endAddress.value() - currentFunc.startAddress.value();
+                    functions.push_back(currentFunc);
+                    inFunction = false;
+                    maxForwardJumpTarget = 0;
+                }
             }
         }
     }

@@ -72,7 +72,10 @@ void PatchManager::clearAll(DebugSession* session) {
     Q_EMIT patchesUpdated();
 }
 
-bool PatchManager::patchFileToDisk(const std::string& inputBinaryPath, const std::string& outputBinaryPath, std::string& errorMsg) {
+bool PatchManager::patchFileToDisk(const std::string& inputBinaryPath,
+                                   const std::string& outputBinaryPath,
+                                   std::string& errorMsg,
+                                   Address runtimeBase) {
     // 1. Read input binary
     std::ifstream in(inputBinaryPath, std::ios::binary);
     if (!in) {
@@ -103,13 +106,42 @@ bool PatchManager::patchFileToDisk(const std::string& inputBinaryPath, const std
 
     // 2. Identify base load address from lowest PT_LOAD segment
     uint64_t min_vaddr = UINT64_MAX;
+    uint64_t max_vaddr = 0;
     for (int i = 0; i < ehdr->e_phnum; ++i) {
         if (phdrs[i].p_type == PT_LOAD) {
             if (phdrs[i].p_vaddr < min_vaddr) {
                 min_vaddr = phdrs[i].p_vaddr;
             }
+            if (phdrs[i].p_vaddr + phdrs[i].p_memsz > max_vaddr) {
+                max_vaddr = phdrs[i].p_vaddr + phdrs[i].p_memsz;
+            }
         }
     }
+    if (min_vaddr == UINT64_MAX) {
+        errorMsg = "No PT_LOAD segments found in ELF binary.";
+        return false;
+    }
+
+    uint64_t effectiveBase = runtimeBase.value();
+
+    // Helper: try to match given vaddr against PT_LOAD segments and apply
+    auto tryApply = [&](uint64_t vaddr, const MemoryPatch& p) -> bool {
+        for (int i = 0; i < ehdr->e_phnum; ++i) {
+            if (phdrs[i].p_type == PT_LOAD) {
+                uint64_t seg_start = phdrs[i].p_vaddr;
+                uint64_t seg_end = seg_start + phdrs[i].p_filesz;
+
+                if (vaddr >= seg_start && (vaddr + p.patchedBytes.size()) <= seg_end) {
+                    uint64_t file_offset = phdrs[i].p_offset + (vaddr - seg_start);
+                    if (file_offset + p.patchedBytes.size() <= file_bytes.size()) {
+                        std::memcpy(file_bytes.data() + file_offset, p.patchedBytes.data(), p.patchedBytes.size());
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
 
     // 3. Apply each active patch
     size_t applied_count = 0;
@@ -119,39 +151,63 @@ bool PatchManager::patchFileToDisk(const std::string& inputBinaryPath, const std
         uint64_t target_vaddr = p.address.value();
         bool found_segment = false;
 
-        for (int i = 0; i < ehdr->e_phnum; ++i) {
-            if (phdrs[i].p_type == PT_LOAD) {
-                uint64_t seg_start = phdrs[i].p_vaddr;
-                uint64_t seg_end = seg_start + phdrs[i].p_filesz;
+        // 3a. Direct virtual address match (non-PIE ET_EXEC or already RVA-relative)
+        if (tryApply(target_vaddr, p)) {
+            applied_count++;
+            found_segment = true;
+        }
 
-                // Adjust for PIE if target_vaddr was runtime relocated
-                uint64_t check_addr = target_vaddr;
-                if (ehdr->e_type == ET_DYN && target_vaddr >= 0x555500000000ULL) {
-                    // Normalize PIE virtual address to ELF file offset basis
-                    // Find PIE load base from caller or segment start
-                    check_addr = (target_vaddr & 0x000000ffffffULL);
-                }
+        // 3b. Runtime base provided
+        if (!found_segment && effectiveBase != 0 && target_vaddr >= effectiveBase) {
+            uint64_t vaddr = (target_vaddr - effectiveBase) + min_vaddr;
+            if (tryApply(vaddr, p)) {
+                applied_count++;
+                found_segment = true;
+            }
+        }
 
-                if (check_addr >= seg_start && (check_addr + p.patchedBytes.size()) <= seg_end) {
-                    uint64_t file_offset = phdrs[i].p_offset + (check_addr - seg_start);
-                    if (file_offset + p.patchedBytes.size() <= file_bytes.size()) {
-                        std::memcpy(file_bytes.data() + file_offset, p.patchedBytes.data(), p.patchedBytes.size());
+        // 3c. Fallback for PIE / ET_DYN when runtimeBase is not provided
+        if (!found_segment && ehdr->e_type == ET_DYN) {
+            static constexpr uint64_t kDefaultPieBases[] = {
+                0x555555554000ULL, // Linux default non-ASLR PIE base
+                0x400000ULL
+            };
+            for (uint64_t cand_base : kDefaultPieBases) {
+                if (target_vaddr >= cand_base) {
+                    uint64_t vaddr = (target_vaddr - cand_base) + min_vaddr;
+                    if (tryApply(vaddr, p)) {
                         applied_count++;
                         found_segment = true;
                         break;
                     }
                 }
             }
-        }
 
-        if (!found_segment) {
-            // Try direct offset fallback for ET_DYN
-            uint64_t offset_candidate = target_vaddr & 0x000000ffffffULL;
-            if (offset_candidate + p.patchedBytes.size() <= file_bytes.size()) {
-                std::memcpy(file_bytes.data() + offset_candidate, p.patchedBytes.data(), p.patchedBytes.size());
-                applied_count++;
+            // 3d. Dynamic base deduction using page alignment
+            if (!found_segment) {
+                for (int i = 0; i < ehdr->e_phnum; ++i) {
+                    if (phdrs[i].p_type == PT_LOAD) {
+                        uint64_t seg_start = phdrs[i].p_vaddr;
+                        if (target_vaddr > seg_start) {
+                            uint64_t deduced_base = (target_vaddr - seg_start) & ~0xfffULL;
+                            if (deduced_base > 0 && target_vaddr >= deduced_base) {
+                                uint64_t vaddr = (target_vaddr - deduced_base) + min_vaddr;
+                                if (tryApply(vaddr, p)) {
+                                    applied_count++;
+                                    found_segment = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    if (patches_.size() > 0 && applied_count == 0) {
+        errorMsg = "No patches could be mapped to ELF file offsets.";
+        return false;
     }
 
     // 4. Write output binary

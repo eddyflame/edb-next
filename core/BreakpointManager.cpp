@@ -46,6 +46,37 @@ bool BreakpointManager::addBreakpoint(Address addr, bool is_internal, const std:
     return true;
 }
 
+bool BreakpointManager::addBreakpointWithOriginalByte(Address addr, uint8_t origByte, bool is_internal, const std::string& symbol) {
+    if (hasBreakpoint(addr)) {
+        return enableBreakpoint(addr);
+    }
+
+    constexpr uint8_t int3_opcode = 0xCC;
+    if (!writeMem_(addr, &int3_opcode, 1)) {
+        return false;
+    }
+
+    Breakpoint bp{
+        .address = addr,
+        .originalByte = origByte,
+        .enabled = true,
+        .isInternal = is_internal,
+        .hitCount = 0,
+        .ignoreCount = 0,
+        .condition = {},
+        .isLogOnly = false,
+        .logFormat = {},
+        .scriptCode = {},
+        .scriptLanguage = "python",
+        .type = BreakpointType::Software,
+        .hardwareSlot = -1,
+        .symbol = symbol
+    };
+
+    breakpoints_[addr.value()] = bp;
+    return true;
+}
+
 bool BreakpointManager::addHardwareBreakpoint(Address addr, HardwareBpType type, HardwareBpSize size, const std::string& symbol) {
     if (!setHwBp_ || hasBreakpoint(addr)) {
         return false;

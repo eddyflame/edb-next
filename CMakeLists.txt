@@ -87,7 +87,7 @@ add_library(edb_core STATIC ${CORE_SOURCES})
 target_link_libraries(edb_core
     PUBLIC
     Qt6::Core
-    Qt6::Widgets
+    Qt6::Gui
     ${CAPSTONE_LIBRARIES}
     ${LIBDW_LIBRARIES}
     ${LIBELF_LIBRARIES}

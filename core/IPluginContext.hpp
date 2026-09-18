@@ -7,7 +7,6 @@
 #include <functional>
 #include <memory>
 #include <QString>
-#include <QDockWidget>
 
 namespace edb_next {
 
@@ -19,8 +18,7 @@ public:
     [[nodiscard]] virtual SessionManager& sessionManager() = 0;
     [[nodiscard]] virtual std::shared_ptr<DebugSession> activeSession() = 0;
 
-    // UI Workspace Extensions
-    virtual void addDockWidget(QDockWidget* dock, Qt::DockWidgetArea area = Qt::BottomDockWidgetArea) = 0;
+    // Output & Log
     virtual void logMessage(const QString& msg) = 0;
 
     // Debug Event Listeners

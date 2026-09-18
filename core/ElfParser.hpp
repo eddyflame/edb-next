@@ -84,6 +84,7 @@ public:
     [[nodiscard]] const std::vector<ElfProgramHeaderInfo>& programHeaders() const noexcept { return programHeaders_; }
     [[nodiscard]] const std::vector<std::string>& dynamicDependencies() const noexcept { return dynamicDependencies_; }
     [[nodiscard]] Address entryPoint() const noexcept { return headerInfo_.entryPoint; }
+    [[nodiscard]] Address baseAddress() const noexcept { return baseAddress_; }
     [[nodiscard]] bool hasDebugInfo() const noexcept;
 
     bool addSharedLibrary(const std::string& filepath, Address base_addr);

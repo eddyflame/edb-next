@@ -13,7 +13,27 @@
 
 namespace edb_next {
 
-static PythonScriptEngine* s_currentEngine = nullptr;
+static thread_local PythonScriptEngine* t_currentEngine = nullptr;
+
+struct PythonEngineScope {
+    PythonScriptEngine* prev_;
+    explicit PythonEngineScope(PythonScriptEngine* eng) : prev_(t_currentEngine) {
+        t_currentEngine = eng;
+    }
+    ~PythonEngineScope() {
+        t_currentEngine = prev_;
+    }
+};
+
+class GilStateScope {
+public:
+    GilStateScope() : state_(PyGILState_Ensure()) {}
+    ~GilStateScope() { PyGILState_Release(state_); }
+    GilStateScope(const GilStateScope&) = delete;
+    GilStateScope& operator=(const GilStateScope&) = delete;
+private:
+    PyGILState_STATE state_;
+};
 
 namespace {
 
@@ -379,8 +399,8 @@ PythonScriptEngine::~PythonScriptEngine() {
 }
 
 DebugSession* PythonScriptEngine::activeSession() noexcept {
-    if (s_currentEngine) {
-        return s_currentEngine->session_;
+    if (t_currentEngine) {
+        return t_currentEngine->session_;
     }
     return nullptr;
 }
@@ -391,7 +411,7 @@ void PythonScriptEngine::setSession(DebugSession* session) {
 
 bool PythonScriptEngine::initialize(DebugSession* session) {
     session_ = session;
-    s_currentEngine = this;
+    PythonEngineScope scope(this);
 
     if (!Py_IsInitialized()) {
         PyImport_AppendInittab("edb", PyInit_edb);
@@ -400,6 +420,7 @@ bool PythonScriptEngine::initialize(DebugSession* session) {
             return false;
         }
     } else {
+        GilStateScope gil;
         // Module might already be in inittab, make sure edb is imported
         PyObject* mod = PyImport_ImportModule("edb");
         if (!mod) {
@@ -414,6 +435,7 @@ bool PythonScriptEngine::initialize(DebugSession* session) {
         }
     }
 
+    GilStateScope gil;
     // Set up stdout & stderr redirector
     const char* redirectCode =
         "import sys, io, edb\n"
@@ -440,8 +462,8 @@ bool PythonScriptEngine::initialize(DebugSession* session) {
 }
 
 void PythonScriptEngine::shutdown() {
-    if (s_currentEngine == this) {
-        s_currentEngine = nullptr;
+    if (t_currentEngine == this) {
+        t_currentEngine = nullptr;
     }
     // Py_Finalize() is typically called only on complete app exit,
     // as re-initializing Python in the same process has known caveats in CPython.
@@ -455,7 +477,8 @@ ScriptResult PythonScriptEngine::executeString(const std::string& code) {
         }
     }
 
-    s_currentEngine = this;
+    PythonEngineScope scope(this);
+    GilStateScope gil;
 
     PyObject* mainMod = PyImport_AddModule("__main__");
     PyObject* mainDict = PyModule_GetDict(mainMod);
@@ -521,7 +544,8 @@ bool PythonScriptEngine::executeHook(const std::string& code) {
         }
     }
 
-    s_currentEngine = this;
+    PythonEngineScope scope(this);
+    GilStateScope gil;
 
     // Wrap user code in a function so "return False" / "return True" is valid syntax
     std::string wrapped = "def __edb_bp_hook__():\n";

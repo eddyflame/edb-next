@@ -61,8 +61,10 @@ MainWindow::MainWindow(QWidget* parent)
     // Mount loaded plugins into Plugins menu
     for (const auto& p : pluginMgr_.loadedPlugins()) {
         if (p.instance) {
-            if (QMenu* m = p.instance->createMenu(this)) {
-                menuPlugins_->addMenu(m);
+            if (auto* uiPlugin = dynamic_cast<IUIPlugin*>(p.instance)) {
+                if (QMenu* m = uiPlugin->createMenu(this)) {
+                    menuPlugins_->addMenu(m);
+                }
             }
         }
     }
@@ -709,8 +711,10 @@ void MainWindow::onPreferencesTriggered() {
     // Mount plugin options pages
     for (const auto& p : pluginMgr_.loadedPlugins()) {
         if (p.instance) {
-            if (QWidget* page = p.instance->createOptionsPage(&dlg)) {
-                dlg.addPluginOptionsPage(page, QString::fromStdString(p.metadata.name));
+            if (auto* uiPlugin = dynamic_cast<IUIPlugin*>(p.instance)) {
+                if (QWidget* page = uiPlugin->createOptionsPage(&dlg)) {
+                    dlg.addPluginOptionsPage(page, QString::fromStdString(p.metadata.name));
+                }
             }
         }
     }

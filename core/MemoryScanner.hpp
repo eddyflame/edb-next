@@ -9,7 +9,7 @@
 
 namespace edb_next {
 
-class LinuxDebugEngine;
+class IDebugBackend;
 
 enum class ScanDataType {
     Int8,
@@ -112,13 +112,13 @@ public:
     ~MemoryScanner() = default;
 
     // First scan: reads process memory and establishes baseline candidates
-    size_t firstScan(LinuxDebugEngine& engine, const ScanOptions& options);
+    size_t firstScan(IDebugBackend& engine, const ScanOptions& options);
 
     // Next scan: performs differential convergence on existing candidate addresses
-    size_t nextScan(LinuxDebugEngine& engine, const ScanOptions& options);
+    size_t nextScan(IDebugBackend& engine, const ScanOptions& options);
 
     // Refresh candidate values from live target memory without filtering
-    void refreshCurrentValues(LinuxDebugEngine& engine);
+    void refreshCurrentValues(IDebugBackend& engine);
 
     // Clear all results and reset pass state
     void reset();
