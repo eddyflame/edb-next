@@ -27,6 +27,14 @@ Commit messages must strictly follow the Conventional Commits format:
   fix(ui): restore call flow lines in disassembly mark column and align with x64dbg aesthetics
   ```
 
+### 1.3 Atomic Commits: One Feature / Fix Per Commit (Single Responsibility)
+* **Single Responsibility Principle (SRP)**: Each commit must represent exactly one discrete logical change (one feature, one bug fix, or one refactoring step). Never bundle multiple unrelated features, fixes, or sweeping style cleanups into a single sprawling commit.
+* **Reviewability & Revertability**: Every commit must be atomic and self-contained to ensure straightforward code review, precise regression tracking via `git bisect`, and clean, risk-free rollbacks (`git revert <hash>`) without cross-feature collateral damage.
+* **Sequential Layered Changes**: When delivering a multi-part feature (e.g., core engine capability + UI presentation), partition the work into distinct, logically ordered atomic commits:
+  1. `feat(core): add kernel tracepoint hook mechanism`
+  2. `feat(ui): integrate tracepoint configuration in session panel`
+  3. `docs: document tracepoint shortcuts and usage in README` (can accompany the feature commit or be staged cleanly).
+
 ---
 
 ## 2. Google C++ Style Guide & Coding Standards
