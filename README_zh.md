@@ -65,6 +65,8 @@
 - 🔄 **全线程硬件断点同步机制**：调试会话硬件断点（DR0~DR7）在配置与清除时全自动同步至所有存活线程，并在子线程创建事件（`handleThreadCreatedEvent`）中由系统无感补齐父线程已激活的硬件断点，彻底根治多线程并发场景下的硬件断点脱靶与漏报。
 - ⚡ **增量反汇编指令缓存（`DisasmCache`）**：引入版本化反汇编指令缓存体系，避免逐指令步进、时间线回溯及追踪循环时高频重复触发 Capstone 重初始化与进程内存跨越；在内存写入与断点切换时按需精确失效，单步步进解码耗时显著下降。
 - 🔌 **可插拔调试引擎抽象接口（`IDebugBackend`）**：将 `DebugSession`、`EventLoopThread` 与 `TypeManager` 等核心模块基于纯虚接口 `IDebugBackend` 与底层 Linux 内核实现完全解耦，支持零真实进程依赖的 `MockDebugBackend` 离线单元测试，并为后续适配 GDB/LLDB RSP 远程调试协议确立清晰的架构契约。
+- 🚌 **中心化多视图跨界路由总线（`NavigationBus`）**：彻底消除 22+ 个视图组件间繁复且脆弱的点对点 Qt 信号插槽网状强耦合；统一由 `NavigationBus` 集中分发反汇编跳转、内存转储、调用栈帧、结构体查看器、字符串交叉引用与模块间调用的导航请求。
+- 🗂️ **模块化命令注册与分发引擎（`CommandRegistry`）**：彻底重构解耦 1100+ 行的单体 `CommandBarView`，将命令按职责域模块化分区注册（`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`）；支持前缀命令补全、别名解析（`g` -> `run`, `libs` -> `modules`）、分类帮助与插件动态命令注入。
 
 ---
 

@@ -1216,6 +1216,17 @@ sequenceDiagram
 - **零依赖离线单元测试**：引入 `MockDebugBackend`，在无需 `root` 特权、不发起真实 `ptrace` 系统调用、不拉起外部进程的环境下，完整验证上层调试会话流转、多线程断点逻辑、结构体内存解析及 GUI 响应逻辑。
 - **未来可扩展性**：为未来接入 GDB / LLDB Remote Serial Protocol (RSP) 远程调试桩（嵌入式、QEMU、跨平台 Windows/macOS）建立规范的后端适配标准。
 
+### 6.11 中心化多视图跨界路由总线 (`NavigationBus`)
+- **架构解耦背景**：在由 22+ 个功能视图构成的复杂工作台中，点对点信号插槽连线在 `SessionTabWidget` 中形成网状高耦合，维护极为脆弱。
+- **路由总线模型**：`NavigationBus` 充当中心化事件中继站，统一分发各类跨视图跳转请求（`requestDisassembly`, `requestDump`, `requestStack`, `requestStruct`, `requestStringReferences`, `requestIntermodularCalls`）。
+- **零视图反向依赖**：各个视图仅需将自身的跳转请求抛送至 `NavigationBus`，无需感知目标视图的存在性、工作区当前激活标签索引或父级布局排版。
+
+### 6.12 模块化命令注册与分发引擎 (`CommandRegistry`)
+- **单一职责重构**：将 1100+ 行的单体 `CommandBarView` 进行深度分解，分离纯 UI 组件与命令调度逻辑。
+- **按域分区注册**：命令按功能领域模块化注册到 `CommandRegistry`（`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`）。
+- **无 UI 上下文交互**：通过 `CommandContext` 注入会话引用、符号解析器、表达式求值器、日志与跳转回调，消除对特定 Qt 小部件的硬编码依赖。
+- **极客工效支持**：内置统一的前缀命令补全（`complete()`）、别名快速映射（`g` -> `run`, `guards` -> `pageguards`）以及分门别类的交互式 `help` 帮助系统。
+
 ---
 
 ## 7. 编译构建、安装与使用全流程指南 (Build, Installation & User Guide)

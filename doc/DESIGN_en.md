@@ -637,6 +637,17 @@ Implements an AST-less recursive descent parser supporting:
 2. **Testability**: `MockDebugBackend` allows offline unit testing of higher-level debugging state machines, session management, and UI logic without requiring root permissions or spawning external processes.
 3. **Future Portability**: Establishes the interface boundary for alternative backends, such as a remote GDB/LLDB Remote Serial Protocol (RSP) engine.
 
+### 6.9 Centralized Cross-View Routing (`NavigationBus`)
+1. **Motivation**: In multi-quadrant workstations with 22+ views, point-to-point signal wiring leads to quadratic coupling complexity in `SessionTabWidget`.
+2. **Bus Architecture**: `NavigationBus` acts as a centralized event broker coordinating navigation requests (`requestDisassembly`, `requestDump`, `requestStack`, `requestStruct`, `requestStringReferences`, `requestIntermodularCalls`).
+3. **Decoupled Presentation**: Individual views emit high-level requests into the bus without knowledge of destination tab indices or parent layout structures.
+
+### 6.10 Modular Command Registry & Dispatcher (`CommandRegistry`)
+1. **Decomposition**: Replaces the monolithic `CommandBarView` implementation with a modular `CommandRegistry`.
+2. **Categorization**: Commands are partitioned into functional domains (`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`).
+3. **Contextual Execution**: `CommandContext` encapsulates invocation state and callbacks (session, symbol resolution, expression evaluation, output logging, view jumps) while preventing tight coupling to Qt widgets.
+4. **Ergonomics**: Provides prefix autocompletion (`QCompleter`), alias resolution (`g` -> `run`, `guards` -> `pageguards`, `libs` -> `modules`), and categorized `help` introspection.
+
 ---
 
 ## 7. Build, Installation & Quality Assurance
