@@ -188,6 +188,7 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 | **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump Formatted CPU State Snapshot |
 | **Shift+S** | Toggle Stack View | **Shift+F7/F8/F9** | Pass Signal Step / Run |
 | **Regs: `+` / `-` / `0`** | Inc / Dec / Zero Register | **Stack: `Space` / `Ctrl+G`** | Modify QWORD / Go to Address |
+| **HexDump: `Enter` / Dbl-Click** | Modify Bytes In-Place | **Follow in Dump 1~4** | Route to Target Dump Tab |
 
 ---
 

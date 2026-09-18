@@ -1439,6 +1439,9 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 | **栈视图: Enter** | 智能跨视图跟入 (代码跳反汇编，数据跳转储) | 栈分析导航 |
 | **栈视图: Space** | 就地修改栈槽 64 位 QWORD 数值 | 栈内存修补 |
 | **栈视图: Ctrl+G** | 跳转指定栈内存虚拟地址 | 栈视图导航 |
+| **转储视图: Enter / 双击** | 就地极速修改内存字节 (预填当前值，支持连续与空格 Hex) | 内存修补 |
+| **各视图右键 -> Follow in Dump 1~4** | 定向分流至指定的独立内存转储标签页 (Dump 1 ~ Dump 4) | 视图联动 |
+| **反汇编右键 -> Disable / Enable Breakpoint** | 临时挂起 / 激活断点，保留条件与脚本设置无需反复创建 | 断点管理 |
 | **右键转储 -> Follow QWORD** | 智能跨视图追踪 QWORD (Dump / Disasm / Stack) | 内存分析 |
 | **右键转储 -> View as Struct** | 一键携带当前地址直达 Tab 22 Type Viewer 解析 | 结构体分析 |
 | **右键栈单元 -> Follow in Disasm** | 追踪函数返回地址 `[Return Address]` 至调用点 | 调用栈分析 |
