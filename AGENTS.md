@@ -50,5 +50,5 @@ On every feature, bug fix, or code update, the agent **MUST autonomously**:
 ## 4. Verification Protocol
 
 Before committing:
-1. `make -C build -j4`
+1. `make -C build -j`
 2. `QT_QPA_PLATFORM=offscreen ./build/test_core && ./build/test_dwarf && ./build/test_exit && ./build/test_scripting && ./build/test_advanced`

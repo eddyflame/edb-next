@@ -62,6 +62,9 @@
 - ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct` 等指令，并向插件全面开放扩展接口。
 - 🧩 **现代 C++20 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
 - 🚀 **`IRefreshable` 惰性视图刷新与状态机解耦**：引入 `IRefreshable` 抽象契约与脏位追踪机制，彻底根治单步步进与高频跟踪时 22 个抽屉标签页的无序刷新风暴；非活动标签页仅标记脏位，切换激活时按需惰性刷新，削减逾 80% 的无效 ptrace/proc 查询开销。重构解耦 `DebugSession::handleEvent()` 状态机为单一职责独立子例程。
+- 🔄 **全线程硬件断点同步机制**：调试会话硬件断点（DR0~DR7）在配置与清除时全自动同步至所有存活线程，并在子线程创建事件（`handleThreadCreatedEvent`）中由系统无感补齐父线程已激活的硬件断点，彻底根治多线程并发场景下的硬件断点脱靶与漏报。
+- ⚡ **增量反汇编指令缓存（`DisasmCache`）**：引入版本化反汇编指令缓存体系，避免逐指令步进、时间线回溯及追踪循环时高频重复触发 Capstone 重初始化与进程内存跨越；在内存写入与断点切换时按需精确失效，单步步进解码耗时显著下降。
+- 🔌 **可插拔调试引擎抽象接口（`IDebugBackend`）**：将 `DebugSession`、`EventLoopThread` 与 `TypeManager` 等核心模块基于纯虚接口 `IDebugBackend` 与底层 Linux 内核实现完全解耦，支持零真实进程依赖的 `MockDebugBackend` 离线单元测试，并为后续适配 GDB/LLDB RSP 远程调试协议确立清晰的架构契约。
 
 ---
 

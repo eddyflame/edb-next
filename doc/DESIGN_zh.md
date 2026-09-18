@@ -1200,6 +1200,22 @@ sequenceDiagram
   ```
 - **自动无感同步**：在 `SessionManager::openSession()` 启动目标二进制时，自动检测是否存在 `<binary_path>.edb_db`，若存在则自动调用 `DatabaseManager::importSession` 将前期逆向工作全量无感注入当前会话。
 
+### 6.8 硬件断点多线程全域同步机制 (`syncHardwareBreakpointsToAllThreads`)
+- **挑战与背景**：在 Linux x86_64 体系下，调试控制寄存器 DR0~DR7 属于线程私有上下文（Per-Thread Context）。传统调试器仅向当前活动线程（`activeTid`）写入硬件断点，导致并发 Worker 线程或随后通过 `clone()` 新创建的子线程根本不具备硬件监视点，导致硬件执行与读写断点严重漏报。
+- **全线程下发与广播**：`DebugSession` 中的 `bpMgr_` 硬件断点设置与清除回调（`SetHwBpFunc` / `ClearHwBpFunc`）不仅向当前触发事件的活动线程配置 DR 寄存器，更主动通过 `engine_.enumerateTids()` 广播写入所有处于存活态的子线程。
+- **子线程捕获钩子无感补齐**：当内核触发线程创建事件（`handleThreadCreatedEvent`）时，系统在释放新线程执行前，调用 `syncHardwareBreakpointsToAllThreads()` 遍历 `BreakpointManager` 中全部已激活的硬件断点，将 DR0~DR3 地址与 DR7 控制掩码全量写入新线程，彻底解决多线程并发下的硬件断点脱靶问题。
+
+### 6.9 增量反汇编指令缓存架构 (`DisasmCache`)
+- **性能瓶颈**：在自动化单步追踪（Auto Trace）、逐指令步进及复杂条件断点循环中，调试器通常在同一代码窗口反复调用 `disassemble()`。此前每次调用皆执行 `process_vm_readv` 跨进程内存读取、Capstone 引擎重新初始化（`cs_open`）与全量指令重解码，形成显著的 CPU 热点。
+- **版本化视口缓存模型**：在 `DebugSession` 中引入轻量级 `DisasmCache`：记录当前反汇编缓存基地址 `baseAddr`、请求指令数 `requestedCount`、缓存版本号 `version` 与解码后的 `DisassembledInstruction` 序列。
+- **极速命中路径 (Fast-Path)**：当反汇编视口基地址与请求数量未发生变动且缓存有效时，直接跳过 Capstone 解码与跨进程内存读取，微秒级就地更新动态易变字段（`isCurrentRip`、`hasBreakpoint`、`isBreakpointEnabled`），单步刷新性能提升数倍。
+- **精确失效机制 (Selective Invalidation)**：在目标内存被覆写（`writeMemory()`）、断点添加/移除/切换/启用/禁用（`addBreakpoint`, `removeBreakpoint`, `toggleBreakpoint`, `enableBreakpoint`, `disableBreakpoint`）时，主动触发 `invalidateDisasmCache()`，确保反汇编与实际机器指令严格一致。
+
+### 6.10 可插拔调试引擎抽象接口 (`IDebugBackend`)
+- **架构解耦**：核心逻辑层（`DebugSession`、`EventLoopThread`、`TypeManager`）全面解除对底层具体 `LinuxDebugEngine` 实现的硬编码绑定，统一面向纯虚契约 `IDebugBackend` 进行交互。
+- **零依赖离线单元测试**：引入 `MockDebugBackend`，在无需 `root` 特权、不发起真实 `ptrace` 系统调用、不拉起外部进程的环境下，完整验证上层调试会话流转、多线程断点逻辑、结构体内存解析及 GUI 响应逻辑。
+- **未来可扩展性**：为未来接入 GDB / LLDB Remote Serial Protocol (RSP) 远程调试桩（嵌入式、QEMU、跨平台 Windows/macOS）建立规范的后端适配标准。
+
 ---
 
 ## 7. 编译构建、安装与使用全流程指南 (Build, Installation & User Guide)
@@ -1244,14 +1260,20 @@ cmake --build build -j$(nproc)
 ### 7.3 全量自动化测试套件运行
 在发布或提交代码前，确保全量测试套件执行通过：
 ```bash
-# 运行基础能力核心测试 (涵盖 Phase 1 ~ 5 全部专题)
+# 运行基础能力核心测试 (涵盖引擎、堆栈回溯与硬件断点)
 ./build/test_core
 
-# 运行进阶特性全量验证 (涵盖 Phase 6 ~ 8 全部 10 大专题)
+# 运行进阶特性全量验证 (涵盖 P0~P2、P1-A/B/C 及所有进阶模块)
 ./build/test_advanced
+
+# 运行 DWARF 源码级调试测试
+./build/test_dwarf
 
 # 运行窗口生命周期压力测试
 ./build/test_exit
+
+# 运行内嵌 Python 3 与 Lua 5.4 脚本引擎测试
+./build/test_scripting
 ```
 
 ---

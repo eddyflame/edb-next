@@ -621,6 +621,22 @@ Implements an AST-less recursive descent parser supporting:
 3. Seeks to $FileOffset$ in target file, writes replacement bytes.
 4. Applies executable mode (`0755`) via `chmod()`.
 
+### 6.6 Multi-Thread Hardware Breakpoint Synchronization (`syncHardwareBreakpointsToAllThreads`)
+1. **Challenge**: In multi-threaded Linux binaries, debug registers DR0~DR7 are thread-local. Adding a hardware breakpoint while secondary threads exist or when new threads are spawned via `clone()` resulted in hardware breakpoint evasion.
+2. **Synchronous Broadcast**: `DebugSession`'s hardware breakpoint setters and clearers write to `activeTid()` and broadcast the DR register updates across all alive threads via `engine_.enumerateTids()`.
+3. **Thread Creation Hook**: When `handleThreadCreatedEvent()` catches a new thread creation event, `syncHardwareBreakpointsToAllThreads()` traverses all registered hardware breakpoints in `BreakpointManager` and configures DR0~DR3 and DR7 in the newly attached child thread before releasing it.
+
+### 6.7 Incremental Disassembly Cache (`DisasmCache`)
+1. **Bottleneck**: In high-frequency single-stepping and automated tracing, `disassemble()` repeatedly invoked `process_vm_readv`, `cs_open()`, Capstone decoding, and symbol resolution over unchanged code windows.
+2. **In-Memory Cache**: `DebugSession::DisasmCache` retains decoded `DisassembledInstruction` entries for the active viewport.
+3. **Cache Validation & Fast-Path**: On each call to `disassemble(addr, count)`, if `addr == baseAddr && count == requestedCount && version != 0`, the cache is reused directly, quickly refreshing only dynamic attributes (`isCurrentRip`, `hasBreakpoint`, `isBreakpointEnabled`).
+4. **Selective Invalidation**: `invalidateDisasmCache()` resets the cache version upon memory writes (`writeMemory()`) or breakpoint modifications (`addBreakpoint()`, `removeBreakpoint()`, `toggleBreakpoint()`, `enableBreakpoint()`, `disableBreakpoint()`).
+
+### 6.8 Pluggable Debug Backend Abstraction (`IDebugBackend`)
+1. **Decoupling**: The headless core modules (`DebugSession`, `EventLoopThread`, `TypeManager`) are abstracted away from direct Linux ptrace calls via the pure virtual `IDebugBackend` contract.
+2. **Testability**: `MockDebugBackend` allows offline unit testing of higher-level debugging state machines, session management, and UI logic without requiring root permissions or spawning external processes.
+3. **Future Portability**: Establishes the interface boundary for alternative backends, such as a remote GDB/LLDB Remote Serial Protocol (RSP) engine.
+
 ---
 
 ## 7. Build, Installation & Quality Assurance
@@ -633,9 +649,11 @@ cmake --build build -j$(nproc)
 
 ### 7.2 Verification Suite
 ```bash
-./build/test_core       # Basic engine & breakpoint verification
-./build/test_advanced   # Advanced reverse engineering suite
+./build/test_core       # Basic engine, call stack & hardware breakpoint verification
+./build/test_advanced   # Advanced reverse engineering suite (P0~P2, P1-A/B/C)
+./build/test_dwarf      # DWARF source-level debugging suite
 ./build/test_exit       # Clean exit and process teardown test
+./build/test_scripting  # Embedded Python 3 & Lua 5.4 scripting suite
 ```
 
 ---
