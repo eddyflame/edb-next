@@ -190,6 +190,7 @@ chmod +x edb-next-x86_64.AppImage
 | **Ctrl+S** | Save Project (.edb_db 项目保存) | **Ctrl+D** | Dump CPU State (导出机器状态快照) |
 | **Shift+S** | Toggle Stack View (折叠/展开栈) | **Shift+F7/F8/F9** | 透传信号执行 (Pass Signal Step/Run) |
 | **寄存器: `+` / `-` / `0`** | GPR 快速增减/清零 | **栈视图: `Space` / `Ctrl+G`** | 就地改写 QWORD / 跳转栈地址 |
+| **转储: `Enter` / 双击** | 就地极速改写内存字节 | **Follow in Dump 1~4** | 多标签定向转储路由 |
 
 ---
 

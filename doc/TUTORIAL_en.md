@@ -967,6 +967,9 @@ target_link_libraries(my_plugin PRIVATE Qt6::Widgets Qt6::Core)
 | **Stack View: Enter** | Smart Follow (Code to Disasm, Data to Dump) | Stack Analysis |
 | **Stack View: Space** | Modify QWORD Value In-Place | Stack Analysis |
 | **Stack View: Ctrl+G** | Go to Stack Virtual Address | Stack Navigation |
+| **Hex Dump: Enter / Dbl-Click** | Modify Bytes In-Place (prefilled current byte, supports spaced/compact hex) | Memory Patching |
+| **Right-Click -> Follow in Dump 1~4** | Route Address / Value to Target Dump Tab (Dump 1 ~ Dump 4) | View Linking |
+| **Right-Click Disasm -> Disable / Enable BP** | Temporarily suspend or resume breakpoint without deletion | Breakpoints |
 | **Right-Click Dump -> Follow QWORD** | Follow QWORD in Dump / Disassembly / Stack | Memory Analysis |
 | **Right-Click Dump -> View as Struct** | Instant Struct Layout Decoding in Tab 22 Type Viewer | Struct Analysis |
 | **Right-Click Stack -> Follow in Disasm** | Follow `[Return Address]` to Call Site | Stack Analysis |

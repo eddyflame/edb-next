@@ -416,6 +416,22 @@ High information density, semantic color differentiation, and fluid keyboard/mou
       - `Enter`: Pops modal dialog to edit the 64-bit hexadecimal register value.
     - Full keyboard traversal and toggling on the `EFLAGS` table via Tab and Space.
 
+  - **HexDump In-Place Byte Editing (`Enter` / Double-Click / `Space`)**:
+    - Double-clicking any memory dump cell or pressing `Enter` / `Space` opens the byte edit modal.
+    - Automatically prefills the current byte at that cell address, preventing manual lookup overhead.
+    - Transparently parses both spaced hex strings (`90 90 90`) and compact hex streams (`4889e5`), writes memory via `session->writeMemory()`, logs a patch entry, and refreshes the view.
+
+  - **Multi-Tab Dedicated Memory Dump Routing (`Follow in Dump 1~4`)**:
+    - Extends all "Follow in Dump" context menus across `DisassemblyView`, `RegisterView`, `StackView`, and `MemoryHexView` with direct routing submenus to `Dump 1`, `Dump 2`, `Dump 3`, or `Dump 4`.
+    - Each dump instance retains its own base address, scroll position, and navigation history for side-by-side memory segment analysis (e.g. Code vs Heap vs Stack vs GOT).
+
+  - **Breakpoint Temporary Suspend & Resume (`Disable / Enable Breakpoint`)**:
+    - Allows temporarily suspending or resuming breakpoints from the Disassembly view and mark column without losing complex conditional expressions, hit ignore counts, or script hooks.
+    - Disabled state: Displays a muted hollow circle `○ ` (`#90a4ae`), dims row background, and restores the original instruction byte in target memory for full-speed execution.
+    - Enabled state: Re-writes `0xCC` and restores the bright red dot `● ` and highlight aura.
+    - Fully synchronized bidirectionally with the `BreakpointManagerView` drawer.
+
+
 
 ---
 
