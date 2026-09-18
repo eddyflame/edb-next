@@ -1917,6 +1917,94 @@ void test_navigation_bus() {
     std::cout << "[PASS] P2-A NavigationBus routing and SessionTabWidget integration verified." << std::endl;
 }
 
+void test_command_registry() {
+    std::cout << "\n[TEST] Starting CommandRegistry Architecture (P2-B) test..." << std::endl;
+
+    CommandRegistry registry;
+
+    // 1. Verify category partitioning
+    auto bpCmds = registry.commandsByCategory(CommandCategory::Breakpoint);
+    auto execCmds = registry.commandsByCategory(CommandCategory::Execution);
+    auto memCmds = registry.commandsByCategory(CommandCategory::Memory);
+    auto analysisCmds = registry.commandsByCategory(CommandCategory::Analysis);
+    auto procCmds = registry.commandsByCategory(CommandCategory::Process);
+    auto sysCmds = registry.commandsByCategory(CommandCategory::System);
+
+    assert(!bpCmds.empty() && "Breakpoint commands must be registered");
+    assert(!execCmds.empty() && "Execution commands must be registered");
+    assert(!memCmds.empty() && "Memory commands must be registered");
+    assert(!analysisCmds.empty() && "Analysis commands must be registered");
+    assert(!procCmds.empty() && "Process commands must be registered");
+    assert(!sysCmds.empty() && "System commands must be registered");
+
+    // 2. Alias resolution
+    auto runOpt = registry.findCommand("g");
+    assert(runOpt.has_value() && runOpt->name == "run");
+
+    auto pageguardOpt = registry.findCommand("guards");
+    assert(pageguardOpt.has_value() && pageguardOpt->name == "pageguards");
+
+    auto libsOpt = registry.findCommand("libs");
+    assert(libsOpt.has_value() && libsOpt->name == "modules");
+
+    // 3. Autocompletion prefix matching
+    auto bpCompletions = registry.complete("bp");
+    assert(std::find(bpCompletions.begin(), bpCompletions.end(), "bp") != bpCompletions.end());
+    assert(std::find(bpCompletions.begin(), bpCompletions.end(), "bph") != bpCompletions.end());
+    assert(std::find(bpCompletions.begin(), bpCompletions.end(), "bpp") != bpCompletions.end());
+
+    auto stCompletions = registry.complete("st");
+    assert(std::find(stCompletions.begin(), stCompletions.end(), "step") != stCompletions.end());
+    assert(std::find(stCompletions.begin(), stCompletions.end(), "sti") != stCompletions.end());
+
+    // 4. Custom plugin command registration & execution
+    bool customRan = false;
+    std::vector<std::string> customArgs;
+    registry.registerCommand("test_plugin_cmd", [&](const std::vector<std::string>& args) {
+        customRan = true;
+        customArgs = args;
+    }, "test_plugin_cmd <arg1> - Plugin test command", CommandCategory::Plugin);
+
+    assert(registry.findCommand("test_plugin_cmd").has_value());
+    assert(registry.findCommand("test_plugin_cmd")->category == CommandCategory::Plugin);
+
+    CommandContext ctx;
+    QString lastLog;
+    bool lastIsError = false;
+    ctx.outputLogger = [&](const QString& msg, bool err) {
+        lastLog = msg;
+        lastIsError = err;
+    };
+
+    bool ok = registry.execute("test_plugin_cmd alpha beta 42", ctx);
+    assert(ok && customRan);
+    assert(customArgs.size() == 3 && customArgs[0] == "alpha" && customArgs[1] == "beta" && customArgs[2] == "42");
+
+    // 5. Help formatting
+    ok = registry.execute("help bp", ctx);
+    assert(ok && !lastIsError);
+    assert(lastLog.contains("Category: Breakpoint"));
+    assert(lastLog.contains("bp <addr/symbol>"));
+
+    // 6. Unknown command handling
+    ok = registry.execute("non_existent_command_xyz", ctx);
+    assert(!ok && lastIsError);
+    assert(lastLog.contains("Unknown command"));
+
+    // 7. CommandBarView UI delegation integration
+    CommandBarView cmdBar;
+    bool barPluginInvoked = false;
+    cmdBar.registerCommand("bar_ping", [&](const std::vector<std::string>&) {
+        barPluginInvoked = true;
+    }, "bar_ping - Ping command for CommandBarView");
+
+    assert(cmdBar.registry().findCommand("bar_ping").has_value());
+    cmdBar.executeCommand("bar_ping");
+    assert(barPluginInvoked && "CommandBarView must execute registered commands through CommandRegistry");
+
+    std::cout << "[PASS] P2-B CommandRegistry architecture and CommandBarView integration verified." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -1950,8 +2038,10 @@ int main(int argc, char* argv[]) {
     test_disasm_cache();
     test_idebug_backend_interface();
     test_navigation_bus();
+    test_command_registry();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;
 }
+
 

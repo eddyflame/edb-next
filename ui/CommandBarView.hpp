@@ -1,12 +1,13 @@
 #pragma once
 
 #include "Types.hpp"
+#include "CommandRegistry.hpp"
 #include <QWidget>
 #include <QLineEdit>
 #include <QLabel>
 #include <QStringList>
+#include <QCompleter>
 #include <functional>
-#include <map>
 #include <memory>
 
 namespace edb_next {
@@ -21,6 +22,9 @@ public:
     ~CommandBarView() override = default;
 
     void setSession(std::shared_ptr<DebugSession> session);
+
+    [[nodiscard]] CommandRegistry& registry() noexcept { return registry_; }
+    [[nodiscard]] const CommandRegistry& registry() const noexcept { return registry_; }
 
     // Register custom commands (e.g. from plugins!)
     void registerCommand(const std::string& cmd,
@@ -43,22 +47,21 @@ private Q_SLOTS:
 
 private:
     void setupUi();
-    void setupDefaultCommands();
+    void updateCompleter();
     Address parseAddress(const std::string& token);
+    [[nodiscard]] CommandContext createCommandContext();
 
     std::shared_ptr<DebugSession> session_;
 
     QLabel* promptLabel_{nullptr};
     QLineEdit* cmdInput_{nullptr};
+    QCompleter* completer_{nullptr};
 
     QStringList history_;
     int historyIndex_{-1};
 
-    struct CommandEntry {
-        std::function<void(const std::vector<std::string>&)> handler;
-        std::string help;
-    };
-    std::map<std::string, CommandEntry> commands_;
+    CommandRegistry registry_;
 };
 
 } // namespace edb_next
+
