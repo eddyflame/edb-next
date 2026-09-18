@@ -916,6 +916,7 @@ defstruct <c_code...>         # 在命令行直接注册新的 C 语言结构体
 
 1. **持久化范畴**：
    - 所有在反汇编行编写的指令注释（快捷键 **;**）；
+   - 所有在反汇编行绑定的自定义用户标签（快捷键 **:**，在反汇编第 4 列渲染醒目翡翠绿 `🏷 label` 徽章，并在符号搜索与表达式求值中全局优先解析）；
    - 所有打下的金黄色五角星书签（快捷键 **Ctrl+B**）；
    - 所有软件与硬件断点配置（含触发条件表达式、命中间隔、仅日志格式串）；
    - 动态监视表达式列表（Watches）；
@@ -944,10 +945,13 @@ defstruct <c_code...>         # 在命令行直接注册新的 C 语言结构体
 | `r <reg> <val>` | `r` | 修改指定寄存器的数值。例：`r rax 0x1337`、`r rdi 0` |
 | `d <addr>` | `d` | 让当前活动 Dump 标签页跳转至指定地址。例：`d 0x7fffffffd7d0` |
 | `u <addr \| symbol>` | `u` | 让反汇编视图跳转至指定地址或函数。例：`u calculate_fib` |
-| `step` | `s` | 单步步入（等同于 F7） |
-| `stepo` | `so` | 单步步过（等同于 F8） |
-| `ret` | `rto` | 单步跳出当前函数（等同于 Shift+F11） |
+| `step` | `s` / `sti` | 单步步入（等同于 F7，支持 x64dbg 常用 `sti` 别名） |
+| `stepo` | `so` / `sto` | 单步步过（等同于 F8，支持 x64dbg 常用 `sto` 别名） |
+| `ret` | `rtr` / `rto` | 单步跳出当前函数（等同于 Shift+F11 / Ctrl+F9，支持 x64dbg `rtr` 别名） |
 | `run` | `g` | 继续运行（等同于 F9） |
+| `origin [addr]` | `rip` | 居中反汇编于当前执行指针 RIP（等同于快捷键 `*`），或重置 RIP 至指定地址 |
+| `setrip <addr>` | `setrip` | 强制重设当前目标进程的 RIP 指令指针寄存器 |
+| `lbl [addr] [name]` | `label` | 查看全部自定义标签、查询或绑定/删除用户标签（删除使用 `-` 或 `del`） |
 | `eval <expression>` | `?` | 动态求值复杂表达式。例：`eval rax + 0x20`、`eval [rbp-8]` |
 | `mprotect <addr> <size> <prot>`| `mprot`| 动态修改目标内存权限（prot: 7=RWX, 5=RX, 3=RW, 1=RO）。例：`mprotect 0x555555555000 4096 7` |
 | `alloc <size> [prot]` | `malloc`| 在目标进程动态分配内存页。例：`alloc 4096 7` |
@@ -1421,6 +1425,7 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 | **Shift+F11** | Step Out (跳出当前函数) | 调试执行 |
 | **F4** | Run to Selection (运行到光标所在行) | 调试执行 |
 | **Ctrl+F2** | Restart (重启会话) | 调试执行 |
+| **\*** *(小键盘 / 键)* | **Origin**: 居中显示当前执行指针 RIP | 反汇编导航 |
 | **Ctrl+\*** | Set New Origin Here (强制重设当前 RIP) | 调试执行 |
 | **F2** | Toggle Breakpoint (切换软件断点) | 断点控制 |
 | **Enter** | Follow Branch (跟随分支跳转/函数跟入) | 反汇编导航 |
@@ -1434,7 +1439,10 @@ cp build/plugins/my_plugin.so ~/.config/edb-next/plugins/
 | **右键栈单元 -> Follow in Disasm** | 追踪函数返回地址 `[Return Address]` 至调用点 | 调用栈分析 |
 | **Space** | Assemble (就地呼出内联汇编框) | 代码修补 |
 | **; (分号)** | Add / Edit Comment (为指令添加/编辑注释) | 逆向分析 |
+| **: (冒号)** | Add / Edit Label (为当前地址设定用户标签 `🏷`) | 逆向分析 |
 | **Ctrl+B** | Toggle Bookmark (打下/清除黄色五角星书签) | 逆向分析 |
+| **Ctrl+Alt+S** | Search for All Referenced Strings (跨模块字符串检索) | 逆向分析 |
+| **Ctrl+Alt+C** | Search for All Intermodular Calls (跨模块函数调用检索) | 逆向分析 |
 | **X** | Show Cross References (呼出代码交叉引用弹窗) | 逆向分析 |
 | **Ctrl+E** | Modify Hex Bytes (就地十六进制编辑内存) | 内存修补 |
 | **Ctrl+P** | Patch Manager (集中补丁管理与文件磁盘落盘) | 补丁与脱壳 |

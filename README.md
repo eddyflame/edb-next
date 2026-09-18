@@ -175,12 +175,14 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 | :--- | :--- | :--- | :--- |
 | **F9** | Continue Execution | **Enter** | Follow Branch (`CALL`/`JMP`) |
 | **F7** | Step Into | **Esc / Backspace** | Go Back in Navigation History |
-| **F8** | Step Over | **Space** | Assemble In-Place (with NOP fill) |
-| **Shift+F11** | Step Out of Function | **; (Semicolon)** | Add / Edit Instruction Comment |
-| **F4** | Run to Selection | **Ctrl+B** | Toggle Bookmark (`★`) |
-| **Ctrl+F2** | Restart Debug Session | **X** | Show Cross References (XREFs) |
-| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+E** | Modify Hex Bytes In-Place |
-| **F2** | Toggle Software Breakpoint | **Ctrl+P** | Patch Manager & Disk File Export |
+| **F8** | Step Over | **\*** *(Numpad / Key)* | **Origin**: Follow / Center on Current RIP |
+| **Shift+F11** | Step Out of Function | **Space** | Assemble In-Place (with NOP fill) |
+| **F4** | Run to Selection | **; (Semicolon)** | Add / Edit Instruction Comment |
+| **Ctrl+F2** | Restart Debug Session | **: (Colon)** | Set / Edit User Label (`🏷`) |
+| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+B** | Toggle Bookmark (`★`) |
+| **F2** | Toggle Software Breakpoint | **X** | Show Cross References (XREFs) |
+| **Ctrl+Alt+S** | Search All Referenced Strings | **Ctrl+E** | Modify Hex Bytes In-Place |
+| **Ctrl+Alt+C** | Search All Intermodular Calls | **Ctrl+P** | Patch Manager & Disk File Export |
 | **Alt+P** | Script Console (Python/Lua) | **Alt+S** | Focus Source View |
 | **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | **Alt+C** | Focus CPU / Disassembly |
 | **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump Formatted CPU State Snapshot |

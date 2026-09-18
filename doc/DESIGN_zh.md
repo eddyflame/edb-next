@@ -130,7 +130,7 @@
 ### 2.4 逆向工程数据库自动持久化 (`.edb_db`)
 逆向工作是一项耗时极大的知识密集型任务。edb-next 设计了标准化 JSON 逆向数据库架构：
 - 记录二进制文件的绝对路径、哈希指纹、用户逆向随笔草稿（Notes）；
-- 完整沉淀全量行注释（Comments）、书签索引（Bookmarks）、断点配置（含触发条件、命中间隔、仅日志格式串）、监视表达式列表（Watches）与内存补丁项（Patches）；
+- 完整沉淀全量行注释（Comments）、自定义用户标签（Labels，醒目徽章 `🏷` 且全局参与符号解析）、书签索引（Bookmarks）、断点配置（含触发条件、命中间隔、仅日志格式串）、监视表达式列表（Watches）与内存补丁项（Patches）；
 - **全自动无感加载**：当用户在主窗口再次打开相同的二进制程序时，系统自动在对应目录下探寻同名 `.edb_db` 文件并瞬间恢复全量逆向成果。
 
 ### 2.5 经典四象限 (4-Quadrant) 黄金调试工作台
@@ -620,8 +620,22 @@
    - **任意单元格多维联动**：右键任意字节提供 `Follow QWORD in Dump`、`Follow QWORD in Disassembly`、`Follow QWORD in Stack`；
    - **结构体可视化工作台无缝直达**：右键提供 `View as Struct (Type Viewer)...`，自动携带当前单元格物理地址切换到底部抽屉 Tab 22（Type Viewer），并自动填充地址输入框，瞬间完成从原始散落字节到结构体字段布局的逆向跃迁。
 
-6. **核心快捷键体验对齐 (`Ctrl+*` Set Origin)**：
-   - 反汇编区提供 `Ctrl+*` 全局快捷键，强制将目标 CPU 当前的 RIP 重定位至光标选中行，支持任意跳过特定校验逻辑或强行进入漏洞代码路径。
+6. **x64dbg 肌肉记忆操作手感与核心工作流全面对齐**：
+   - **Origin 定位双模 (`*` vs `Ctrl+*`)**：
+     - 单按 `*`（主键盘星号或小键盘 `*`）：瞬时让反汇编视图居中寻回当前真实执行指令指针（Follow RIP），完全对齐 x64dbg 核心肌肉记忆；工具栏与 Debug 菜单同步增设 Origin 按钮；
+     - 按 `Ctrl+*`（Set New Origin Here）：强制重设目标 CPU 的真实 RIP 寄存器至选中地址；
+   - **自定义用户标签 (`:` User Labels)**：
+     - 按 `:`（或 `Shift+;`）呼出就地标签输入弹框；在反汇编第 4 列（ColSymbol）优先以鲜明高对比度的翡翠绿徽章呈现 `🏷 <label_name>`（加粗高亮），若该地址同时存在 ELF 符号则紧跟附注（例如 `🏷 DecryptRoutine (main+0x42)`）；
+     - 用户标签全面并入 `AnnotationManager`，并接入 `DebugSession::resolveSymbol()` 全局符号解析管线，支持在 CommandBar CLI（`u MyLabel`、`bp MyLabel`）、表达式求值器（`eval MyLabel + 0x10`）中透明寻址；
+     - 标签数据全自动持久化序列化至 `.edb_db` 工程数据库；
+   - **反汇编右键级联 "Search for" 搜索子菜单**：
+     - `All Referenced Text Strings (Ctrl+Alt+S)`：一键切换到底部 StringReferencesView 并自动触发全模块可打印字符串深度扫描；
+     - `All Intermodular Calls (Ctrl+Alt+C)`：一键切换到底部 IntermodularCallsView 并自动提取所有跨模块 PLT/GOT 导入函数调用树；
+     - `Find References to Address... (X)`：就地检索目标函数/内存地址的代码交叉引用；
+   - **CommandBar CLI 极客命令与别名体系扩充**：
+     - 新增 `lbl [addr] [name]`（别名 `label`）用于列出、查询、设定或删除用户标签；
+     - `origin` 无参调用直接居中 RIP，并提供 `rip` 独立快捷命令；
+     - 拓展 `step` 别名 `sti`、`stepo` 别名 `sto`、`ret` 别名 `rtr`，消除从 x64dbg 迁移至 Linux 逆向环境时的任何输入违和感。
 
 ---
 
@@ -689,7 +703,7 @@ edb-next/
 │   ├── SourceFileManager.hpp/cpp# 源代码物理文件读取与行缓存管理器
 │   ├── CallStackUnwinder.hpp/cpp# 基于 RBP 栈帧链的安全回溯算法
 │   ├── StringScanner.hpp/cpp   # 可读段连续 ASCII 字符串提取与 RIP 相对寻址反向索引
-│   ├── AnnotationManager.hpp/cpp# 用户注释 (Comments) 与书签 (Bookmarks) 内存管理
+│   ├── AnnotationManager.hpp/cpp# 用户注释 (Comments)、自定义标签 (Labels) 与书签 (Bookmarks) 内存管理
 │   ├── FunctionFinder.hpp/cpp  # 基于 Prologue/Epilogue 特征码的函数边界识别引擎
 │   ├── HeapAnalyzer.hpp/cpp    # Glibc ptmalloc 堆内存 malloc_chunk 结构解析器
 │   ├── Assembler.hpp/cpp       # 基于系统 GNU as + objcopy 的原生内联汇编编译器
