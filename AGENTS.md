@@ -8,12 +8,14 @@ Mandatory instructions for AI agents and developers. Follow by default without u
 
 ### 1.1 Autonomous Execution Cycle
 On every feature, bug fix, or code update, the agent **MUST autonomously**:
-1. **Update Docs**: Synchronize [README.md](file:///home/eddy/myplace/project/edb-next/README.md), [README_zh.md](file:///home/eddy/myplace/project/edb-next/README_zh.md), and `doc/` if applicable.
-2. **Build & Test**: Compile (`make -C build -j`) and run all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`).
-3. **Commit**: Stage and commit changes. Never ask user permission to commit or update docs.
+1. **Implement & Test**: Write code and unit tests.
+2. **Synchronize Docs**: Update [README.md](file:///home/eddy/myplace/project/edb-next/README.md), [README_zh.md](file:///home/eddy/myplace/project/edb-next/README_zh.md), and `doc/` to document the new feature/fix.
+3. **Build & Verify**: Compile (`make -C build -j`) and run all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`).
+4. **Commit Together**: Stage and commit code, tests, and documentation together in a single logical commit. Never ask user permission to commit or update docs.
 
-### 1.2 Atomic Conventional Commits (Single Responsibility)
-* **One Feature/Fix Per Commit**: Each commit must represent exactly one logical change for clean review and trivial `git revert`. Split complex tasks into sequential layered commits (e.g. `feat(core): ...`, then `feat(ui): ...`).
+### 1.2 Atomic Conventional Commits (Code + Docs Bundled)
+* **Bundle Code and Documentation**: Every feature or fix commit **MUST include its corresponding code changes, tests, and documentation updates together**. Do not split code and documentation into separate commits; keep git history concise and clean.
+* **One Logical Topic Per Commit**: Each commit must represent exactly one logical unit (feature, fix, or refactor) along with its docs and tests for clean review and trivial `git revert`.
 * **Format**: `<type>(<scope>): <imperative summary>`
   * **Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `chore`.
   * **Scopes**: `ui`, `core`, `disasm`, `dump`, `stack`, `scanner`, `engine`, `dwarf`, `scripting`, `test`.
