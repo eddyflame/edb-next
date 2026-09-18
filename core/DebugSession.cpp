@@ -415,6 +415,11 @@ bool DebugSession::hasBreakpoint(Address addr) const {
     return bpMgr_.hasBreakpoint(addr);
 }
 
+bool DebugSession::isBreakpointEnabled(Address addr) const {
+    const auto* bp = bpMgr_.getBreakpoint(addr);
+    return bp != nullptr && bp->enabled;
+}
+
 std::vector<Breakpoint> DebugSession::breakpoints() const {
     return bpMgr_.allBreakpoints();
 }
@@ -918,6 +923,13 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
                 }
             }
 
+            bool has_bp = bpMgr_.hasBreakpoint(addr);
+            bool is_bp_enabled = true;
+            if (has_bp) {
+                const auto* bp = bpMgr_.getBreakpoint(addr);
+                is_bp_enabled = (bp != nullptr && bp->enabled);
+            }
+
             result.push_back(DisassembledInstruction{
                 .address = addr,
                 .mnemonic = std::move(mnem_str),
@@ -925,7 +937,8 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
                 .bytes = std::move(insn_bytes),
                 .symbol = std::move(sym_str),
                 .isCurrentRip = (addr == currentRegs_.rip()),
-                .hasBreakpoint = bpMgr_.hasBreakpoint(addr),
+                .hasBreakpoint = has_bp,
+                .isBreakpointEnabled = is_bp_enabled,
                 .sourceFile = std::move(src_file),
                 .sourceFullPath = std::move(src_full),
                 .sourceLine = src_line,
