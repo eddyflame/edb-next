@@ -60,6 +60,9 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 - ⌨️ **x64dbg-Style Bottom CommandBar**: Interactive bottom CLI supporting `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct`, and plugin commands.
 - 🧩 **Modern C++20 Decoupled Plugin Gateway**: Pure virtual `IPlugin` and `IPluginContext` contract supporting dynamic `.so` hot-loading, menu injection, CLI registration, and event hooks.
 - 🚀 **`IRefreshable` Lazy View Updates & State Machine Decomposition**: High-performance lazy tab refresh architecture eliminates broadcast storms across 22 drawer tabs during high-frequency stepping or tracing; inactive views are marked dirty and deferred until activated, drastically slashing ptrace traffic. Decomposed `DebugSession::handleEvent()` into clean, single-responsibility event handlers.
+- 🔄 **Multi-Thread Hardware Breakpoint Synchronization**: Synchronizes x86_64 debug registers (DR0~DR7) across all existing threads on breakpoint configuration and automatically replicates them onto newly spawned threads (`handleThreadCreatedEvent`), preventing hardware breakpoint misses in multi-threaded targets.
+- ⚡ **Incremental Disassembly Cache (`DisasmCache`)**: Version-controlled in-memory instruction cache bypasses redundant Capstone re-initialization and memory reads during single-stepping and trace execution, with fine-grained selective invalidation upon memory writes and breakpoint mutations.
+- 🔌 **Pluggable Debug Engine Abstraction (`IDebugBackend`)**: Decoupled `DebugSession`, `EventLoopThread`, and `TypeManager` behind a pure virtual backend interface, allowing headless mock backend unit testing (`MockDebugBackend`) and establishing the architectural gateway for future remote GDB/LLDB RSP servers.
 
 ---
 
