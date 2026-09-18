@@ -363,6 +363,7 @@ bool DebugSession::toggleBreakpoint(Address addr) {
         sym = s->first.displayName();
     }
     bool ret = bpMgr_.hasBreakpoint(addr) ? bpMgr_.removeBreakpoint(addr) : bpMgr_.addBreakpoint(addr, false, sym);
+    invalidateDisasmCache();   // P1-B: INT3 inserted/removed, opcodes changed in cache
     Q_EMIT memoryUpdated();
     Q_EMIT breakpointsUpdated();
     return ret;
@@ -377,6 +378,7 @@ bool DebugSession::addBreakpoint(Address addr, const std::string& symbol) {
     }
     bool ret = bpMgr_.addBreakpoint(addr, false, sym);
     if (ret) {
+        invalidateDisasmCache();   // P1-B
         Q_EMIT memoryUpdated();
         Q_EMIT breakpointsUpdated();
     }
@@ -401,6 +403,7 @@ bool DebugSession::addHardwareBreakpoint(Address addr, HardwareBpType type, Hard
 bool DebugSession::removeBreakpoint(Address addr) {
     bool ret = bpMgr_.removeBreakpoint(addr);
     if (ret) {
+        invalidateDisasmCache();   // P1-B
         Q_EMIT memoryUpdated();
         Q_EMIT breakpointsUpdated();
     }
@@ -410,6 +413,7 @@ bool DebugSession::removeBreakpoint(Address addr) {
 bool DebugSession::enableBreakpoint(Address addr) {
     bool ret = bpMgr_.enableBreakpoint(addr);
     if (ret) {
+        invalidateDisasmCache();   // P1-B
         Q_EMIT memoryUpdated();
         Q_EMIT breakpointsUpdated();
     }
@@ -419,6 +423,7 @@ bool DebugSession::enableBreakpoint(Address addr) {
 bool DebugSession::disableBreakpoint(Address addr) {
     bool ret = bpMgr_.disableBreakpoint(addr);
     if (ret) {
+        invalidateDisasmCache();   // P1-B
         Q_EMIT memoryUpdated();
         Q_EMIT breakpointsUpdated();
     }
@@ -885,7 +890,8 @@ std::optional<Address> DebugSession::searchMemory(Address start, size_t max_byte
     return std::nullopt;
 }
 
-std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_addr, size_t count) {
+// P1-B: Full Capstone decode — cache-miss path. Renamed from disassemble().
+std::vector<DisassembledInstruction> DebugSession::disassembleFull(Address start_addr, size_t count) {
     std::vector<DisassembledInstruction> result;
     if (!engine_.isAttached()) return result;
 
@@ -997,6 +1003,28 @@ std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_add
     return result;
 }
 
+// P1-B: Public disassemble() — cache-hit fast path then falls back to disassembleFull().
+std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_addr, size_t count) {
+    if (disasmCache_.isValid(start_addr, count)) {
+        // Cache hit: only refresh the two fields that change on every step
+        for (auto& insn : disasmCache_.insns) {
+            insn.isCurrentRip = (insn.address == currentRegs_.rip());
+            const auto* bp = bpMgr_.getBreakpoint(insn.address);
+            insn.hasBreakpoint     = (bp != nullptr);
+            insn.isBreakpointEnabled = (bp != nullptr && bp->enabled);
+        }
+        return disasmCache_.insns;
+    }
+
+    // Cache miss: full decode, then populate cache
+    auto result = disassembleFull(start_addr, count);
+    disasmCache_.baseAddr        = start_addr;
+    disasmCache_.requestedCount  = count;
+    disasmCache_.insns           = result;
+    disasmCache_.version         = 1;   // mark valid
+    return result;
+}
+
 std::vector<uint8_t> DebugSession::readMemory(Address addr, size_t size) {
     std::vector<uint8_t> buf(size, 0);
     if (engine_.readMemory(addr, buf.data(), size)) {
@@ -1008,6 +1036,7 @@ std::vector<uint8_t> DebugSession::readMemory(Address addr, size_t size) {
 bool DebugSession::writeMemory(Address addr, const void* data, size_t size) {
     bool ok = engine_.writeMemory(addr, data, size);
     if (ok) {
+        invalidateDisasmCache();   // P1-B: memory changed, opcodes may differ
         Q_EMIT memoryUpdated();
     }
     return ok;

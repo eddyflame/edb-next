@@ -272,6 +272,24 @@ private:
     // P1-A: sync all active hardware breakpoints into a newly-created thread's DR regs
     void syncHardwareBreakpointsToAllThreads();
 
+    // P1-B: incremental disassembly cache — avoids full Capstone re-decode on every step
+    struct DisasmCache {
+        Address  baseAddr{0};
+        size_t   requestedCount{0};
+        uint64_t version{0};   // 0 = invalid; incremented on writeMemory / bp change
+        std::vector<DisassembledInstruction> insns;
+
+        [[nodiscard]] bool isValid(Address addr, size_t count) const noexcept {
+            return version != 0 && addr == baseAddr && count == requestedCount && !insns.empty();
+        }
+        void invalidate() noexcept { version = 0; }
+    };
+    DisasmCache disasmCache_;
+    void invalidateDisasmCache() noexcept { disasmCache_.invalidate(); }
+
+    // Full Capstone decode (cache-miss path); public disassemble() wraps this.
+    std::vector<DisassembledInstruction> disassembleFull(Address start_addr, size_t count);
+
     void setState(SessionState s);
     void refreshRegisters();
     void setupRendezvousHook(const std::string& targetPath, Address baseAddr);

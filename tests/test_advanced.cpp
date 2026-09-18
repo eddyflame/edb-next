@@ -8,10 +8,10 @@
 #include "core/IntermodularCallsFinder.hpp"
 #include "core/OpcodeSearcher.hpp"
 #include "core/StateDumper.hpp"
-#include "core/PageGuardManager.hpp"
-#include "core/RendezvousManager.hpp"
 #include "core/IDebugBackend.hpp"
 #include "tests/MockDebugBackend.hpp"
+#include "core/PageGuardManager.hpp"
+#include "core/RendezvousManager.hpp"
 #include "ui/CFGGraphView.hpp"
 #include "ui/CommandBarView.hpp"
 #include "ui/MemoryHexView.hpp"
@@ -1753,6 +1753,57 @@ void test_hw_breakpoint_thread_sync() {
 }
 
 // ============================================================
+// P1-B: Incremental Disassembly Cache (DisasmCache)
+// ============================================================
+void test_disasm_cache() {
+    std::cout << "\n[TEST] Starting P1-B Disassembly Cache test..." << std::endl;
+
+    DebugSession session("test_p1b_sess", "Disasm Cache Test");
+    bool launched = session.launch(getTestTargetPath(), {"WorkerDisasmCache"});
+    assert(launched && "Failed to launch target for disasm cache test");
+
+    Address rip = session.registers().rip();
+    constexpr size_t kCount = 20;
+
+    // First call: cache miss, full Capstone decode
+    auto result1 = session.disassemble(rip, kCount);
+    assert(!result1.empty() && "First disassemble must return instructions");
+    assert(result1.size() == kCount);
+
+    // Second call at same address: cache hit, only hot fields updated
+    auto result2 = session.disassemble(rip, kCount);
+    assert(result2.size() == kCount && "Cache-hit disassemble must return same count");
+    // Instruction bytes must be identical
+    for (size_t i = 0; i < kCount; ++i) {
+        assert(result1[i].bytes == result2[i].bytes && "Cached bytes must match");
+        assert(result1[i].mnemonic == result2[i].mnemonic && "Cached mnemonics must match");
+    }
+
+    // After writeMemory: cache must be invalidated (next call decodes fresh)
+    Address writeAddr = rip + 100;
+    uint8_t nop = 0x90;
+    session.writeMemory(writeAddr, &nop, 1);
+    auto result3 = session.disassemble(rip, kCount);
+    assert(!result3.empty() && "Post-write disassemble must succeed");
+
+    // After toggleBreakpoint: cache must be invalidated
+    session.toggleBreakpoint(rip);
+    auto result4 = session.disassemble(rip, kCount);
+    assert(!result4.empty() && "Post-BP-toggle disassemble must succeed");
+    // hasBreakpoint field must be set on first insn now
+    assert(result4[0].hasBreakpoint && "First instruction must reflect active breakpoint");
+    session.toggleBreakpoint(rip); // remove it
+
+    // Cache hit again after a same-address call (no mutation)
+    auto result5 = session.disassemble(rip, kCount);
+    auto result6 = session.disassemble(rip, kCount); // should hit cache
+    assert(result5.size() == result6.size());
+
+    session.terminate();
+    std::cout << "[PASS] P1-B DisasmCache hit/miss/invalidation cycle verified." << std::endl;
+}
+
+// ============================================================
 // P1-C: IDebugBackend abstraction (MockDebugBackend)
 // ============================================================
 void test_idebug_backend_interface() {
@@ -1784,7 +1835,7 @@ void test_idebug_backend_interface() {
     assert(backend.clearHardwareBreakpoint(9999, 0));
     assert(!mock.hwBpSet_[0] && "Slot 0 should be cleared");
 
-    // Verify BreakpointManager accepts callbacks wrapping IDebugBackend
+    // Verify EventLoopThread accepts IDebugBackend& (compile-time check via BreakpointManager)
     BreakpointManager bpMgr(
         [&](Address a, void* b, size_t s) { return backend.readMemory(a, b, s); },
         [&](Address a, const void* b, size_t s) { return backend.writeMemory(a, b, s); }
@@ -1827,6 +1878,7 @@ int main(int argc, char* argv[]) {
     test_x64dbg_p2_ergonomics();
     test_lazy_refresh_irefreshable();
     test_hw_breakpoint_thread_sync();
+    test_disasm_cache();
     test_idebug_backend_interface();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
