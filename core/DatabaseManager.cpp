@@ -335,7 +335,8 @@ bool DatabaseManager::importSession(std::shared_ptr<DebugSession> session,
     uint64_t currentBase = session->baseAddress().value();
 
     auto remapAddr = [&](uint64_t raw) -> Address {
-        if (savedBase != 0 && currentBase != 0 && raw >= savedBase) {
+        // Only remap addresses belonging to the main module (within 1GB of base)
+        if (savedBase != 0 && currentBase != 0 && raw >= savedBase && (raw - savedBase) < 0x40000000ULL) {
             return Address(currentBase + (raw - savedBase));
         }
         return Address(raw);

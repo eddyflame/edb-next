@@ -162,16 +162,17 @@ Result<void> LinuxDebugEngine::attach(Pid pid) {
 }
 
 void LinuxDebugEngine::detach() {
-    if (pid_ > 0) {
+    if (pid_.load() > 0) {
         memFd_.reset();
         ::ptrace(PTRACE_DETACH, pid_.load(), nullptr, nullptr);
-        pid_ = 0;
-        mainTid_ = 0;
+        pid_.store(0);
+        mainTid_.store(0);
+        activeTid_.store(0);
     }
 }
 
 void LinuxDebugEngine::kill() {
-    if (pid_ > 0) {
+    if (pid_.load() > 0) {
         memFd_.reset();
         ::kill(pid_.load(), SIGKILL);
         int status = 0;
@@ -185,8 +186,9 @@ void LinuxDebugEngine::kill() {
         }
         // Drain any leftover child threads
         while (::waitpid(-1, &status, __WALL | WNOHANG) > 0) {}
-        pid_ = 0;
-        mainTid_ = 0;
+        pid_.store(0);
+        mainTid_.store(0);
+        activeTid_.store(0);
     }
 }
 

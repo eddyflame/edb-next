@@ -187,11 +187,11 @@ bool PatchManager::patchFileToDisk(const std::string& inputBinaryPath,
             if (!found_segment) {
                 for (int i = 0; i < ehdr->e_phnum; ++i) {
                     if (phdrs[i].p_type == PT_LOAD) {
-                        uint64_t seg_start = phdrs[i].p_vaddr;
-                        if (target_vaddr > seg_start) {
-                            uint64_t deduced_base = (target_vaddr - seg_start) & ~0xfffULL;
-                            if (deduced_base > 0 && target_vaddr >= deduced_base) {
-                                uint64_t vaddr = (target_vaddr - deduced_base) + min_vaddr;
+                        uint64_t rva_start = phdrs[i].p_vaddr - min_vaddr;
+                        if (target_vaddr > rva_start) {
+                            uint64_t cand_base = (target_vaddr - rva_start) & ~0xfffULL;
+                            if (cand_base > 0 && target_vaddr >= cand_base) {
+                                uint64_t vaddr = (target_vaddr - cand_base) + min_vaddr;
                                 if (tryApply(vaddr, p)) {
                                     applied_count++;
                                     found_segment = true;
