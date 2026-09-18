@@ -449,115 +449,111 @@ void DebugSession::refreshRegisters() {
 
 void DebugSession::handleEvent(const DebugEvent& event) {
     if (event.reason == StopReason::ProcessForked) {
-        unsigned long child_msg = 0;
-        engine_.getEventMessage(event.tid, &child_msg);
-        Pid child_pid = static_cast<Pid>(child_msg);
-
-        DebugEvent fork_ev = event;
-        fork_ev.childPid = child_pid;
-
-        std::string mode_str = followForkModeToString(followForkMode_);
-        LogManager::instance().info("FollowFork",
-            QString("[Fork] Process %1 forked child %2 (Follow mode: %3)")
-                .arg(event.pid).arg(child_pid).arg(mode_str.c_str()).toStdString());
-
-        if (followForkMode_ == FollowForkMode::Parent) {
-            // Detach child immediately so child runs freely
-            if (child_pid > 0) {
-                engine_.detachProcess(child_pid);
-            }
-            if (stopOnForkEvents_) {
-                setState(SessionState::Paused);
-                refreshRegisters();
-                Q_EMIT eventOccurred(fork_ev);
-            } else {
-                engine_.continueExecution(event.tid);
-            }
-            return;
-        }
-
-        if (followForkMode_ == FollowForkMode::Child) {
-            // Detach parent, follow child
-            engine_.detachProcess(event.pid);
-            adoptChild(child_pid);
-            if (stopOnForkEvents_) {
-                setState(SessionState::Paused);
-                Q_EMIT eventOccurred(fork_ev);
-            } else {
-                engine_.continueExecution(child_pid);
-            }
-            return;
-        }
-
-        if (followForkMode_ == FollowForkMode::Both) {
-            // Notify multi-process manager to create a child session
-            Q_EMIT childProcessForked(event.pid, child_pid);
-            if (stopOnForkEvents_) {
-                setState(SessionState::Paused);
-                refreshRegisters();
-                Q_EMIT eventOccurred(fork_ev);
-            } else {
-                engine_.continueExecution(event.tid);
-            }
-            return;
-        }
+        handleForkEvent(event);
+        return;
     }
 
     if (event.reason == StopReason::ThreadCreated) {
-        if (event.pid != engine_.pid()) {
-            // Child process from fork that stopped on initial SIGSTOP
-            if (followForkMode_ == FollowForkMode::Parent) {
-                engine_.detachProcess(event.pid);
-                return;
-            }
+        handleThreadCreatedEvent(event);
+        return;
+    }
+
+    if (handleInternalStep(event)) {
+        return;
+    }
+
+    restorePendingPageGuard();
+    if (bpMgr_.isSteppingOver()) {
+        bpMgr_.finishStepOver();
+    }
+
+    if (event.reason == StopReason::ProcessExit) {
+        handleProcessExit(event);
+        return;
+    }
+
+    if (event.signal == SIGSEGV && handlePageGuardFault(event)) {
+        return;
+    }
+
+    if (handleSignalPolicy(event)) {
+        return;
+    }
+
+    handleBreakpointOrTrap(event);
+}
+
+void DebugSession::handleForkEvent(const DebugEvent& event) {
+    unsigned long child_msg = 0;
+    engine_.getEventMessage(event.tid, &child_msg);
+    Pid child_pid = static_cast<Pid>(child_msg);
+
+    DebugEvent fork_ev = event;
+    fork_ev.childPid = child_pid;
+
+    std::string mode_str = followForkModeToString(followForkMode_);
+    LogManager::instance().info("FollowFork",
+        QString("[Fork] Process %1 forked child %2 (Follow mode: %3)")
+            .arg(event.pid).arg(child_pid).arg(mode_str.c_str()).toStdString());
+
+    if (followForkMode_ == FollowForkMode::Parent) {
+        // Detach child immediately so child runs freely
+        if (child_pid > 0) {
+            engine_.detachProcess(child_pid);
         }
-        if (isThreadFrozen(event.tid)) {
+        if (stopOnForkEvents_) {
+            setState(SessionState::Paused);
+            refreshRegisters();
+            Q_EMIT eventOccurred(fork_ev);
+        } else {
+            engine_.continueExecution(event.tid);
+        }
+        return;
+    }
+
+    if (followForkMode_ == FollowForkMode::Child) {
+        // Detach parent, follow child
+        engine_.detachProcess(event.pid);
+        adoptChild(child_pid);
+        if (stopOnForkEvents_) {
+            setState(SessionState::Paused);
+            Q_EMIT eventOccurred(fork_ev);
+        } else {
+            engine_.continueExecution(child_pid);
+        }
+        return;
+    }
+
+    if (followForkMode_ == FollowForkMode::Both) {
+        // Notify multi-process manager to create a child session
+        Q_EMIT childProcessForked(event.pid, child_pid);
+        if (stopOnForkEvents_) {
+            setState(SessionState::Paused);
+            refreshRegisters();
+            Q_EMIT eventOccurred(fork_ev);
+        } else {
+            engine_.continueExecution(event.tid);
+        }
+        return;
+    }
+}
+
+void DebugSession::handleThreadCreatedEvent(const DebugEvent& event) {
+    if (event.pid != engine_.pid()) {
+        // Child process from fork that stopped on initial SIGSTOP
+        if (followForkMode_ == FollowForkMode::Parent) {
+            engine_.detachProcess(event.pid);
             return;
         }
-        // Resume thread (clone event or initial SIGSTOP) from the TRACER thread!
-        engine_.continueExecution(event.tid);
+    }
+    if (isThreadFrozen(event.tid)) {
         return;
     }
+    // Resume thread (clone event or initial SIGSTOP) from the TRACER thread!
+    engine_.continueExecution(event.tid);
+}
 
-    if (isStepOverBreak_) {
-        // We just stepped over the original byte of the breakpoint
-        bpMgr_.finishStepOver();
-        isStepOverBreak_ = false;
-        if (!isThreadFrozen(engine_.activeTid())) {
-            engine_.continueExecution(engine_.activeTid());
-        }
-        return;
-    }
-
-    if (isPageGuardStepOver_) {
-        // We just stepped over the instruction while page protection was temporarily lifted
-        isPageGuardStepOver_ = false;
-        if (pendingPageGuardRestoreAddr_.value() != 0) {
-            auto* g = pageGuardMgr_.getGuardMutable(pendingPageGuardRestoreAddr_);
-            if (g) {
-                pageGuardMgr_.reprotect(g);
-            }
-            pendingPageGuardRestoreAddr_ = Address(0);
-        }
-        engine_.continueExecution(engine_.activeTid());
-        return;
-    }
-
-    if (isPageGuardResuming_) {
-        // User clicked Continue while paused on a Page-Guard hit;
-        // stepped 1 instruction, now reprotect and continue!
-        isPageGuardResuming_ = false;
-        if (pendingPageGuardRestoreAddr_.value() != 0) {
-            auto* g = pageGuardMgr_.getGuardMutable(pendingPageGuardRestoreAddr_);
-            if (g) {
-                pageGuardMgr_.reprotect(g);
-            }
-            pendingPageGuardRestoreAddr_ = Address(0);
-        }
-        engine_.continueExecution(engine_.activeTid());
-        return;
-    }
-
+void DebugSession::restorePendingPageGuard() {
     if (pendingPageGuardRestoreAddr_.value() != 0) {
         auto* g = pageGuardMgr_.getGuardMutable(pendingPageGuardRestoreAddr_);
         if (g) {
@@ -565,234 +561,266 @@ void DebugSession::handleEvent(const DebugEvent& event) {
         }
         pendingPageGuardRestoreAddr_ = Address(0);
     }
+}
 
-    if (bpMgr_.isSteppingOver()) {
+bool DebugSession::handleInternalStep(const DebugEvent& /*event*/) {
+    if (isStepOverBreak_) {
+        // We just stepped over the original byte of the breakpoint
         bpMgr_.finishStepOver();
+        isStepOverBreak_ = false;
+        if (!isThreadFrozen(engine_.activeTid())) {
+            engine_.continueExecution(engine_.activeTid());
+        }
+        return true;
     }
 
-    if (event.reason == StopReason::ProcessExit) {
-        setState(SessionState::Terminated);
-    } else {
-        if (event.signal == SIGSEGV) {
-            siginfo_t siginfo{};
-            if (engine_.getSigInfo(event.tid, &siginfo)) {
-                Address faultAddr(reinterpret_cast<uint64_t>(siginfo.si_addr));
-                auto* guard = pageGuardMgr_.findGuardForFault(faultAddr);
-                if (guard && guard->enabled) {
-                    // Page-Guard trap!
-                    pageGuardMgr_.temporarilyUnprotect(guard);
-                    pendingPageGuardRestoreAddr_ = guard->address;
+    if (isPageGuardStepOver_) {
+        // We just stepped over the instruction while page protection was temporarily lifted
+        isPageGuardStepOver_ = false;
+        restorePendingPageGuard();
+        engine_.continueExecution(engine_.activeTid());
+        return true;
+    }
 
-                    bool inRange = (faultAddr >= guard->address && faultAddr < guard->address + guard->size);
-                    refreshRegisters();
-                    if (!inRange && (currentRegs_.rip() >= guard->address && currentRegs_.rip() < guard->address + guard->size)) {
-                        inRange = true;
-                        faultAddr = currentRegs_.rip();
-                    }
+    if (isPageGuardResuming_) {
+        // User clicked Continue while paused on a Page-Guard hit;
+        // stepped 1 instruction, now reprotect and continue!
+        isPageGuardResuming_ = false;
+        restorePendingPageGuard();
+        engine_.continueExecution(engine_.activeTid());
+        return true;
+    }
 
-                    if (inRange) {
-                        guard->hitCount++;
+    return false;
+}
 
-                        bool ignore = false;
-                        if (!guard->condition.empty()) {
-                            if (!ExpressionEvaluator::evaluateCondition(guard->condition, currentRegs_, &engine_)) {
-                                ignore = true;
-                            }
-                        }
+void DebugSession::handleProcessExit(const DebugEvent& event) {
+    setState(SessionState::Terminated);
+    LogManager::instance().event("Process", "Process exited with code: " + std::to_string(event.exitCode));
+    Q_EMIT eventOccurred(event);
+    Q_EMIT memoryUpdated();
+}
 
-                        if (!ignore && !guard->scriptCode.empty()) {
-                            auto* eng = scriptEngines_.engine(guard->scriptLanguage);
-                            if (eng) {
-                                eng->setSession(this);
-                                bool shouldPause = eng->executeHook(guard->scriptCode);
-                                refreshRegisters();
-                                if (!shouldPause) {
-                                    ignore = true;
-                                }
-                            }
-                        }
+bool DebugSession::handlePageGuardFault(const DebugEvent& event) {
+    siginfo_t siginfo{};
+    if (!engine_.getSigInfo(event.tid, &siginfo)) {
+        return false;
+    }
 
-                        if (ignore) {
-                            isPageGuardStepOver_ = true;
-                            engine_.singleStep(engine_.activeTid());
-                            return;
-                        }
+    Address faultAddr(reinterpret_cast<uint64_t>(siginfo.si_addr));
+    auto* guard = pageGuardMgr_.findGuardForFault(faultAddr);
+    if (!guard || !guard->enabled) {
+        return false;
+    }
 
-                        DebugEvent processed_event = event;
-                        processed_event.reason = StopReason::Breakpoint;
-                        processed_event.address = faultAddr;
-                        processed_event.message = "Page-Guard Breakpoint Hit at " + faultAddr.toHex() +
-                                                  " (Page " + guard->pageBase.toHex() + ", " +
-                                                  pageGuardAccessToString(guard->access) + ")";
-                        LogManager::instance().bp("PageGuard", processed_event.message);
+    // Page-Guard trap!
+    pageGuardMgr_.temporarilyUnprotect(guard);
+    pendingPageGuardRestoreAddr_ = guard->address;
 
-                        setState(SessionState::Paused);
-                        Q_EMIT eventOccurred(processed_event);
-                        Q_EMIT memoryUpdated();
-                        return;
-                    } else {
-                        // False-positive page touch (another address on same page)
-                        isPageGuardStepOver_ = true;
-                        engine_.singleStep(engine_.activeTid());
-                        return;
-                    }
+    bool inRange = (faultAddr >= guard->address && faultAddr < guard->address + guard->size);
+    refreshRegisters();
+    if (!inRange && (currentRegs_.rip() >= guard->address && currentRegs_.rip() < guard->address + guard->size)) {
+        inRange = true;
+        faultAddr = currentRegs_.rip();
+    }
+
+    if (inRange) {
+        guard->hitCount++;
+
+        bool ignore = false;
+        if (!guard->condition.empty()) {
+            if (!ExpressionEvaluator::evaluateCondition(guard->condition, currentRegs_, &engine_)) {
+                ignore = true;
+            }
+        }
+
+        if (!ignore && !guard->scriptCode.empty()) {
+            auto* eng = scriptEngines_.engine(guard->scriptLanguage);
+            if (eng) {
+                eng->setSession(this);
+                bool shouldPause = eng->executeHook(guard->scriptCode);
+                refreshRegisters();
+                if (!shouldPause) {
+                    ignore = true;
                 }
             }
         }
 
-        if (event.signal != 0 && event.signal != SIGTRAP && event.signal != SIGSTOP) {
-            lastSignal_ = event.signal;
-            const auto& policy = ConfigurationManager::instance().signalPolicy(event.signal);
-            if (!policy.stopDebugger && policy.passToApp) {
-                // Signal configured to be passed through without pausing debugger
-                engine_.continueExecution(engine_.activeTid(), event.signal);
-                lastSignal_ = 0;
-                return;
-            }
+        if (ignore) {
+            isPageGuardStepOver_ = true;
+            engine_.singleStep(engine_.activeTid());
+            return true;
         }
-
-        refreshRegisters();
 
         DebugEvent processed_event = event;
-        if (event.signal == SIGTRAP) {
-            Address bp_addr = currentRegs_.rip() - 1;
-
-            if (rendezvousBrkAddr_.value() != 0 && bp_addr == rendezvousBrkAddr_) {
-                currentRegs_.setRip(bp_addr);
-                engine_.setRegisters(engine_.activeTid(), currentRegs_);
-
-                rendezvousMgr_.updateDebugState();
-                auto linkState = rendezvousMgr_.currentState();
-
-                if (linkState == LinkerState::Consistent) {
-                    auto diff = rendezvousMgr_.detectChanges();
-
-                    for (const auto& lib : diff.added) {
-                        symbols_.addSharedLibrary(lib.path, lib.baseAddress);
-                        dwarfParser_.addModule(lib.path, lib.baseAddress);
-                        LogManager::instance().info("DynamicLinker", "[Library Loaded] " + lib.name + " (" + lib.path + ") at " + lib.baseAddress.toHex());
-                        Q_EMIT libraryLoaded(QString::fromStdString(lib.name), QString::fromStdString(lib.path), lib.baseAddress);
-                    }
-
-                    for (const auto& lib : diff.removed) {
-                        LogManager::instance().info("DynamicLinker", "[Library Unloaded] " + lib.name);
-                        Q_EMIT libraryUnloaded(QString::fromStdString(lib.name));
-                    }
-
-                    checkAndResolvePendingBreakpoints();
-                    Q_EMIT memoryUpdated();
-
-                    if (stopOnLibraryEvents_ && (!diff.added.empty() || !diff.removed.empty())) {
-                        processed_event.reason = StopReason::Breakpoint;
-                        processed_event.address = bp_addr;
-                        if (!diff.added.empty()) {
-                            processed_event.message = "[Library Event] Loaded: " + diff.added.front().name;
-                        } else {
-                            processed_event.message = "[Library Event] Unloaded: " + diff.removed.front().name;
-                        }
-                        setState(SessionState::Paused);
-                        Q_EMIT eventOccurred(processed_event);
-                        return;
-                    }
-                }
-
-                bpMgr_.prepareStepOver(bp_addr);
-                isStepOverBreak_ = true;
-                engine_.singleStep(engine_.activeTid());
-                return;
-            }
-
-            if (bpMgr_.hasBreakpoint(bp_addr)) {
-                // Rewind RIP by 1 on breakpoint hit
-                currentRegs_.setRip(bp_addr);
-                engine_.setRegisters(engine_.activeTid(), currentRegs_);
-                processed_event.reason = StopReason::Breakpoint;
-                processed_event.address = bp_addr;
-
-                auto* bp = bpMgr_.getBreakpointMutable(bp_addr);
-                if (bp) {
-                    bp->hitCount++;
-
-                    bool ignore = false;
-                    if (bp->ignoreCount > 0 && bp->hitCount <= bp->ignoreCount) {
-                        ignore = true;
-                    }
-
-                    if (!ignore && !bp->condition.empty()) {
-                        if (!ExpressionEvaluator::evaluateCondition(bp->condition, currentRegs_, &engine_)) {
-                            ignore = true;
-                        }
-                    }
-
-                    if (!ignore && !bp->scriptCode.empty()) {
-                        auto* eng = scriptEngines_.engine(bp->scriptLanguage);
-                        if (eng) {
-                            eng->setSession(this);
-                            bool shouldPause = eng->executeHook(bp->scriptCode);
-                            refreshRegisters();
-                            if (!shouldPause) {
-                                ignore = true;
-                            }
-                        }
-                    }
-
-                    if (ignore) {
-                        bpMgr_.prepareStepOver(bp_addr);
-                        isStepOverBreak_ = true;
-                        engine_.singleStep(engine_.activeTid());
-                        return;
-                    }
-
-                    if (bp->isLogOnly) {
-                        std::string logMsg = ExpressionEvaluator::formatLog(
-                            bp->logFormat.empty() ? "[Breakpoint Log] Hit at " + bp_addr.toHex() : bp->logFormat,
-                            currentRegs_,
-                            &engine_);
-                        DebugEvent logEvt = processed_event;
-                        logEvt.message = logMsg;
-                        LogManager::instance().bp("Breakpoint Log", logMsg);
-                        Q_EMIT eventOccurred(logEvt);
-
-                        bpMgr_.prepareStepOver(bp_addr);
-                        isStepOverBreak_ = true;
-                        engine_.singleStep(engine_.activeTid());
-                        return;
-                    }
-                }
-            } else {
-                processed_event.reason = StopReason::SingleStep;
-                processed_event.address = currentRegs_.rip();
-            }
-        }
-
-        if (tempRunToBp_.has_value()) {
-            Address cur = currentRegs_.rip();
-            if (cur == *tempRunToBp_ || processed_event.address == *tempRunToBp_) {
-                bpMgr_.removeBreakpoint(*tempRunToBp_);
-                tempRunToBp_.reset();
-                Q_EMIT breakpointsUpdated();
-            }
-        }
-
-        if (processed_event.reason == StopReason::Breakpoint) {
-            LogManager::instance().bp("Breakpoint", "Hit at " + processed_event.address.toHex());
-        } else if (processed_event.reason == StopReason::SingleStep) {
-            LogManager::instance().trace("Step", "Stopped at " + processed_event.address.toHex());
-        }
+        processed_event.reason = StopReason::Breakpoint;
+        processed_event.address = faultAddr;
+        processed_event.message = "Page-Guard Breakpoint Hit at " + faultAddr.toHex() +
+                                  " (Page " + guard->pageBase.toHex() + ", " +
+                                  pageGuardAccessToString(guard->access) + ")";
+        LogManager::instance().bp("PageGuard", processed_event.message);
 
         setState(SessionState::Paused);
         Q_EMIT eventOccurred(processed_event);
         Q_EMIT memoryUpdated();
-        return;
+        return true;
+    } else {
+        // False-positive page touch (another address on same page)
+        isPageGuardStepOver_ = true;
+        engine_.singleStep(engine_.activeTid());
+        return true;
+    }
+}
+
+bool DebugSession::handleSignalPolicy(const DebugEvent& event) {
+    if (event.signal != 0 && event.signal != SIGTRAP && event.signal != SIGSTOP) {
+        lastSignal_ = event.signal;
+        const auto& policy = ConfigurationManager::instance().signalPolicy(event.signal);
+        if (!policy.stopDebugger && policy.passToApp) {
+            // Signal configured to be passed through without pausing debugger
+            engine_.continueExecution(engine_.activeTid(), event.signal);
+            lastSignal_ = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+void DebugSession::handleBreakpointOrTrap(const DebugEvent& event) {
+    refreshRegisters();
+
+    DebugEvent processed_event = event;
+    if (event.signal == SIGTRAP) {
+        Address bp_addr = currentRegs_.rip() - 1;
+
+        if (rendezvousBrkAddr_.value() != 0 && bp_addr == rendezvousBrkAddr_) {
+            currentRegs_.setRip(bp_addr);
+            engine_.setRegisters(engine_.activeTid(), currentRegs_);
+
+            rendezvousMgr_.updateDebugState();
+            auto linkState = rendezvousMgr_.currentState();
+
+            if (linkState == LinkerState::Consistent) {
+                auto diff = rendezvousMgr_.detectChanges();
+
+                for (const auto& lib : diff.added) {
+                    symbols_.addSharedLibrary(lib.path, lib.baseAddress);
+                    dwarfParser_.addModule(lib.path, lib.baseAddress);
+                    LogManager::instance().info("DynamicLinker", "[Library Loaded] " + lib.name + " (" + lib.path + ") at " + lib.baseAddress.toHex());
+                    Q_EMIT libraryLoaded(QString::fromStdString(lib.name), QString::fromStdString(lib.path), lib.baseAddress);
+                }
+
+                for (const auto& lib : diff.removed) {
+                    LogManager::instance().info("DynamicLinker", "[Library Unloaded] " + lib.name);
+                    Q_EMIT libraryUnloaded(QString::fromStdString(lib.name));
+                }
+
+                checkAndResolvePendingBreakpoints();
+                Q_EMIT memoryUpdated();
+
+                if (stopOnLibraryEvents_ && (!diff.added.empty() || !diff.removed.empty())) {
+                    processed_event.reason = StopReason::Breakpoint;
+                    processed_event.address = bp_addr;
+                    if (!diff.added.empty()) {
+                        processed_event.message = "[Library Event] Loaded: " + diff.added.front().name;
+                    } else {
+                        processed_event.message = "[Library Event] Unloaded: " + diff.removed.front().name;
+                    }
+                    setState(SessionState::Paused);
+                    Q_EMIT eventOccurred(processed_event);
+                    return;
+                }
+            }
+
+            bpMgr_.prepareStepOver(bp_addr);
+            isStepOverBreak_ = true;
+            engine_.singleStep(engine_.activeTid());
+            return;
+        }
+
+        if (bpMgr_.hasBreakpoint(bp_addr)) {
+            // Rewind RIP by 1 on breakpoint hit
+            currentRegs_.setRip(bp_addr);
+            engine_.setRegisters(engine_.activeTid(), currentRegs_);
+            processed_event.reason = StopReason::Breakpoint;
+            processed_event.address = bp_addr;
+
+            auto* bp = bpMgr_.getBreakpointMutable(bp_addr);
+            if (bp) {
+                bp->hitCount++;
+
+                bool ignore = false;
+                if (bp->ignoreCount > 0 && bp->hitCount <= bp->ignoreCount) {
+                    ignore = true;
+                }
+
+                if (!ignore && !bp->condition.empty()) {
+                    if (!ExpressionEvaluator::evaluateCondition(bp->condition, currentRegs_, &engine_)) {
+                        ignore = true;
+                    }
+                }
+
+                if (!ignore && !bp->scriptCode.empty()) {
+                    auto* eng = scriptEngines_.engine(bp->scriptLanguage);
+                    if (eng) {
+                        eng->setSession(this);
+                        bool shouldPause = eng->executeHook(bp->scriptCode);
+                        refreshRegisters();
+                        if (!shouldPause) {
+                            ignore = true;
+                        }
+                    }
+                }
+
+                if (ignore) {
+                    bpMgr_.prepareStepOver(bp_addr);
+                    isStepOverBreak_ = true;
+                    engine_.singleStep(engine_.activeTid());
+                    return;
+                }
+
+                if (bp->isLogOnly) {
+                    std::string logMsg = ExpressionEvaluator::formatLog(
+                        bp->logFormat.empty() ? "[Breakpoint Log] Hit at " + bp_addr.toHex() : bp->logFormat,
+                        currentRegs_,
+                        &engine_);
+
+                    DebugEvent logEvt = processed_event;
+                    logEvt.message = logMsg;
+                    LogManager::instance().bp("Breakpoint Log", logMsg);
+                    Q_EMIT eventOccurred(logEvt);
+
+                    bpMgr_.prepareStepOver(bp_addr);
+                    isStepOverBreak_ = true;
+                    engine_.singleStep(engine_.activeTid());
+                    return;
+                }
+            }
+        } else {
+            processed_event.reason = StopReason::SingleStep;
+            processed_event.address = currentRegs_.rip();
+        }
     }
 
-    if (event.reason == StopReason::ProcessExit) {
-        LogManager::instance().event("Process", "Process exited with code: " + std::to_string(event.exitCode));
-    } else if (event.reason == StopReason::Signal) {
-        LogManager::instance().event("Signal", "Received signal: " + std::to_string(event.signal));
+    if (tempRunToBp_.has_value()) {
+        Address cur = currentRegs_.rip();
+        if (cur == *tempRunToBp_ || processed_event.address == *tempRunToBp_) {
+            bpMgr_.removeBreakpoint(*tempRunToBp_);
+            tempRunToBp_.reset();
+            Q_EMIT breakpointsUpdated();
+        }
     }
 
-    Q_EMIT eventOccurred(event);
+    if (processed_event.reason == StopReason::Breakpoint) {
+        LogManager::instance().bp("Breakpoint", "Hit at " + processed_event.address.toHex());
+    } else if (processed_event.reason == StopReason::SingleStep) {
+        LogManager::instance().trace("Step", "Stopped at " + processed_event.address.toHex());
+    } else if (processed_event.reason == StopReason::Signal) {
+        LogManager::instance().event("Signal", "Received signal: " + std::to_string(processed_event.signal));
+    }
+
+    setState(SessionState::Paused);
+    Q_EMIT eventOccurred(processed_event);
     Q_EMIT memoryUpdated();
 }
 

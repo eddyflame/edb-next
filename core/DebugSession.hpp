@@ -256,6 +256,15 @@ private Q_SLOTS:
     void handleEvent(const edb_next::DebugEvent& event);
 
 private:
+    void handleForkEvent(const edb_next::DebugEvent& event);
+    void handleThreadCreatedEvent(const edb_next::DebugEvent& event);
+    bool handleInternalStep(const edb_next::DebugEvent& event);
+    void restorePendingPageGuard();
+    void handleProcessExit(const edb_next::DebugEvent& event);
+    bool handlePageGuardFault(const edb_next::DebugEvent& event);
+    bool handleSignalPolicy(const edb_next::DebugEvent& event);
+    void handleBreakpointOrTrap(const edb_next::DebugEvent& event);
+
     void setState(SessionState s);
     void refreshRegisters();
     void setupRendezvousHook(const std::string& targetPath, Address baseAddr);
