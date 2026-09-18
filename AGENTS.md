@@ -9,7 +9,7 @@ Mandatory instructions for AI agents and developers. Follow by default without u
 ### 1.1 Autonomous Execution Cycle
 On every feature, bug fix, or code update, the agent **MUST autonomously**:
 1. **Update Docs**: Synchronize [README.md](file:///home/eddy/myplace/project/edb-next/README.md), [README_zh.md](file:///home/eddy/myplace/project/edb-next/README_zh.md), and `doc/` if applicable.
-2. **Build & Test**: Compile (`make -C build -j4`) and run all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`).
+2. **Build & Test**: Compile (`make -C build -j`) and run all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`).
 3. **Commit**: Stage and commit changes. Never ask user permission to commit or update docs.
 
 ### 1.2 Atomic Conventional Commits (Single Responsibility)
@@ -50,5 +50,5 @@ On every feature, bug fix, or code update, the agent **MUST autonomously**:
 ## 4. Verification Protocol
 
 Before committing:
-1. `make -C build -j`
+1. `make -C build -j4`
 2. `QT_QPA_PLATFORM=offscreen ./build/test_core && ./build/test_dwarf && ./build/test_exit && ./build/test_scripting && ./build/test_advanced`
