@@ -396,6 +396,27 @@ High information density, semantic color differentiation, and fluid keyboard/mou
     - `origin` without arguments centers RIP; standalone `rip` shortcut.
     - Added `step` alias `sti`, `stepo` alias `sto`, and `ret` alias `rtr` to seamlessly honor x64dbg terminal habits.
 
+  - **Continuous Assemble In-Place (`Space` AssembleDialog)**:
+    - Replaces the legacy one-shot `QInputDialog` with a dedicated, non-modal `AssembleDialog` matching x64dbg's assembly workflow.
+    - Upon successful assembly, target virtual address automatically advances to the subsequent instruction row, retaining focus and pre-selecting input text for uninterrupted multi-instruction patching.
+    - Features a default-checked "Fill with NOPs" option to pad remaining bytes with `0x90` if the new instruction is shorter than the replaced instruction, preventing opcode misalignment corruption.
+    - Inlines validation and assembler syntax errors in high-contrast red warning text without dismissing the dialog.
+
+  - **Stack View Keyboard Navigation Flow (`StackView`)**:
+    - `Enter` (Smart Follow): Inspects the selected stack slot QWORD; jumps to `DisassemblyView` if the pointer points into an executable ELF segment or symbol (e.g. return address), or navigates to `MultiDumpWidget` (`Follow in Dump`) if pointing to valid memory.
+    - `Space` (In-Place QWORD Modification): Prompts a 64-bit hexadecimal edit modal for immediate in-place stack corruption or local variable manipulation.
+    - `Ctrl+G` (Go to Address): Pure keyboard shortcut to jump directly to any stack virtual address or offset.
+
+  - **Register View Native Keyboard Manipulation (`RegisterView`)**:
+    - Direct keyboard shortcuts on the General Purpose Register (GPR) table:
+      - `+`: Atomically increments register value by 1.
+      - `-`: Atomically decrements register value by 1.
+      - `0`: Clears register value to zero.
+      - `~`: Performs bitwise inversion (`~val`).
+      - `Enter`: Pops modal dialog to edit the 64-bit hexadecimal register value.
+    - Full keyboard traversal and toggling on the `EFLAGS` table via Tab and Space.
+
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap
@@ -505,6 +526,7 @@ edb-next/
 │   ├── TypeViewer.hpp/cpp       # Compound data type & struct layout visualizer (Tab 22)
 │   ├── CommandBarView.hpp/cpp  # Bottom interactive CLI console
 │   ├── PreferencesDialog.hpp/cpp# Comprehensive 7-category preferences dialog
+│   ├── AssembleDialog.hpp/cpp  # x64dbg-style continuous in-place assemble dialog (Space)
 │   ├── LaunchArgumentsDialog.hpp/cpp# Target argv and cwd setup dialog
 │   ├── PluginManagerDialog.hpp/cpp# Plugin manager and hot-loader dialog
 │   ├── PatchManagerDialog.hpp/cpp# Centralized patch manager & disk export dialog (Ctrl+P)

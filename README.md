@@ -173,10 +173,10 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 
 | Hotkey | Action | Hotkey | Action |
 | :--- | :--- | :--- | :--- |
-| **F9** | Continue Execution | **Enter** | Follow Branch (`CALL`/`JMP`) |
+| **F9** | Continue Execution | **Enter** | Follow Branch (`CALL`/`JMP`) / Stack Smart Follow |
 | **F7** | Step Into | **Esc / Backspace** | Go Back in Navigation History |
 | **F8** | Step Over | **\*** *(Numpad / Key)* | **Origin**: Follow / Center on Current RIP |
-| **Shift+F11** | Step Out of Function | **Space** | Assemble In-Place (with NOP fill) |
+| **Shift+F11** | Step Out of Function | **Space** | Continuous Assemble (Auto-advancing with NOP fill) |
 | **F4** | Run to Selection | **; (Semicolon)** | Add / Edit Instruction Comment |
 | **Ctrl+F2** | Restart Debug Session | **: (Colon)** | Set / Edit User Label (`🏷`) |
 | **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+B** | Toggle Bookmark (`★`) |
@@ -187,6 +187,7 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 | **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | **Alt+C** | Focus CPU / Disassembly |
 | **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump Formatted CPU State Snapshot |
 | **Shift+S** | Toggle Stack View | **Shift+F7/F8/F9** | Pass Signal Step / Run |
+| **Regs: `+` / `-` / `0`** | Inc / Dec / Zero Register | **Stack: `Space` / `Ctrl+G`** | Modify QWORD / Go to Address |
 
 ---
 
