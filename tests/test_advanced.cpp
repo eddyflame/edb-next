@@ -29,6 +29,10 @@
 #include "ui/SessionTabWidget.hpp"
 #include "ui/IRefreshable.hpp"
 #include "ui/IUIPlugin.hpp"
+#include "ui/MainWindow.hpp"
+#include <QMenuBar>
+#include <QToolBar>
+#include <QMouseEvent>
 #include <QKeyEvent>
 #include <sys/mman.h>
 #include <QApplication>
@@ -2023,6 +2027,118 @@ void test_command_registry() {
     std::cout << "[PASS] P2-B CommandRegistry architecture and CommandBarView integration verified." << std::endl;
 }
 
+void test_titlebar_double_click_maximize() {
+    std::cout << "\n[TEST] Starting Title Bar & Menu Bar Double-Click Maximize/Restore test..." << std::endl;
+
+    MainWindow w;
+    w.show();
+    QCoreApplication::processEvents();
+
+    assert(!w.isMaximized() && "Window should start in normal non-maximized state");
+
+    // 1. Test direct toggleMaximized() method
+    w.toggleMaximized();
+    assert(w.isMaximized() && "Window should be maximized after toggleMaximized()");
+    w.toggleMaximized();
+    assert(!w.isMaximized() && "Window should be restored to normal after second toggleMaximized()");
+
+    // Helper to find guaranteed empty pixel on a bar
+    auto findEmptyPos = [](QWidget* bar, auto checkAction) -> QPoint {
+        for (int x = bar->width() - 5; x > 50; x -= 10) {
+            QPoint pt(x, bar->height() / 2);
+            if (checkAction(pt) == nullptr) {
+                return pt;
+            }
+        }
+        return QPoint(-1, -1);
+    };
+
+    // 2. Test double click on MenuBar empty area via synthetic QMouseEvent
+    QMenuBar* menuBar = w.menuBar();
+    assert(menuBar != nullptr);
+
+    QPoint emptyPos = findEmptyPos(menuBar, [menuBar](const QPoint& pt) { return menuBar->actionAt(pt); });
+    assert(emptyPos.x() > 0 && "Should find empty space on menu bar");
+
+    QMouseEvent dblClickEmpty(QEvent::MouseButtonDblClick,
+                              QPointF(emptyPos),
+                              QPointF(emptyPos),
+                              Qt::LeftButton,
+                              Qt::LeftButton,
+                              Qt::NoModifier);
+    QCoreApplication::sendEvent(menuBar, &dblClickEmpty);
+    QCoreApplication::processEvents();
+
+    assert(w.isMaximized() && "Double clicking empty space on MenuBar should maximize window");
+
+    // Double click again on empty space to restore
+    QPoint emptyPos2 = findEmptyPos(menuBar, [menuBar](const QPoint& pt) { return menuBar->actionAt(pt); });
+    assert(emptyPos2.x() > 0);
+    QMouseEvent dblClickEmpty2(QEvent::MouseButtonDblClick,
+                               QPointF(emptyPos2),
+                               QPointF(emptyPos2),
+                               Qt::LeftButton,
+                               Qt::LeftButton,
+                               Qt::NoModifier);
+    QCoreApplication::sendEvent(menuBar, &dblClickEmpty2);
+    QCoreApplication::processEvents();
+    assert(!w.isMaximized() && "Double clicking empty space on MenuBar again should restore window");
+
+    // 3. Test that double clicking on an actual menu action does NOT toggle maximized
+    if (!menuBar->actions().isEmpty()) {
+        QAction* firstAction = menuBar->actions().first();
+        QRect actionRect = menuBar->actionGeometry(firstAction);
+        QPoint actionPos = actionRect.center();
+        assert(menuBar->actionAt(actionPos) == firstAction);
+
+        bool wasMaximized = w.isMaximized();
+        QMouseEvent dblClickAction(QEvent::MouseButtonDblClick,
+                                  QPointF(actionPos),
+                                  QPointF(actionPos),
+                                  Qt::LeftButton,
+                                  Qt::LeftButton,
+                                  Qt::NoModifier);
+        QCoreApplication::sendEvent(menuBar, &dblClickAction);
+        QCoreApplication::processEvents();
+
+        assert(w.isMaximized() == wasMaximized && "Double clicking a menu action should NOT trigger maximize toggle");
+    }
+
+    // 4. Test double clicking on empty space of ToolBar
+    QToolBar* toolBar = w.findChild<QToolBar*>("mainDebugToolBar");
+    if (toolBar) {
+        if (w.isMaximized()) {
+            w.showNormal();
+            QCoreApplication::processEvents();
+        }
+        w.resize(1360, 860);
+        QCoreApplication::processEvents();
+
+        QPoint emptyTbPos = findEmptyPos(toolBar, [toolBar](const QPoint& pt) { return toolBar->actionAt(pt); });
+        if (emptyTbPos.x() > 0) {
+            bool wasMaximized = w.isMaximized();
+            QMouseEvent dblClickTb(QEvent::MouseButtonDblClick,
+                                  QPointF(emptyTbPos),
+                                  QPointF(emptyTbPos),
+                                  Qt::LeftButton,
+                                  Qt::LeftButton,
+                                  Qt::NoModifier);
+            QCoreApplication::sendEvent(toolBar, &dblClickTb);
+            QCoreApplication::processEvents();
+            assert(w.isMaximized() != wasMaximized && "Double clicking empty space on ToolBar should toggle window maximized");
+
+            // Restore cleanly
+            w.toggleMaximized();
+            QCoreApplication::processEvents();
+            assert(!w.isMaximized());
+        }
+    }
+
+    w.close();
+    QCoreApplication::processEvents();
+    std::cout << "[PASS] Title Bar & Menu Bar double-click maximize and restore verified." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
@@ -2057,6 +2173,7 @@ int main(int argc, char* argv[]) {
     test_idebug_backend_interface();
     test_navigation_bus();
     test_command_registry();
+    test_titlebar_double_click_maximize();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;

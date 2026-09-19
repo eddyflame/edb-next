@@ -20,6 +20,8 @@
 #include <QDir>
 #include <QClipboard>
 #include <QShortcut>
+#include <QMouseEvent>
+#include <QTabBar>
 
 namespace edb_next {
 
@@ -156,6 +158,9 @@ void MainWindow::setupUi() {
     tabWidget_->setTabsClosable(true);
     tabWidget_->setMovable(true);
     tabWidget_->setUsesScrollButtons(true);
+    if (auto* tb = tabWidget_->findChild<QTabBar*>()) {
+        tb->installEventFilter(this);
+    }
     connect(tabWidget_, &QTabWidget::tabCloseRequested, this, &MainWindow::onCloseTabRequested);
     connect(tabWidget_, &QTabWidget::currentChanged, this, &MainWindow::onCurrentTabChanged);
     center_layout->addWidget(tabWidget_, 1);
@@ -561,6 +566,10 @@ void MainWindow::setupMenusAndToolbars() {
     toolbar->addAction(actToggleStack_);
     toolbar->addAction(actPatchManager_);
     toolbar->addAction(actPreferences_);
+
+    // Enable double-clicking blank area to toggle maximize / restore
+    menuBar()->installEventFilter(this);
+    toolbar->installEventFilter(this);
 }
 
 void MainWindow::updateRecentFilesMenu() {
@@ -1129,6 +1138,39 @@ void MainWindow::registerCommand(const std::string& cmd,
     if (cmdBar_) {
         cmdBar_->registerCommand(cmd, handler, helpText);
     }
+}
+
+void MainWindow::toggleMaximized() {
+    if (isMaximized() || isFullScreen()) {
+        setWindowState(windowState() & ~(Qt::WindowMaximized | Qt::WindowFullScreen));
+    } else {
+        setWindowState(windowState() | Qt::WindowMaximized);
+    }
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton) {
+            if (auto* bar = qobject_cast<QMenuBar*>(watched)) {
+                if (!bar->actionAt(mouseEvent->pos())) {
+                    toggleMaximized();
+                    return true;
+                }
+            } else if (auto* tb = qobject_cast<QToolBar*>(watched)) {
+                if (!tb->actionAt(mouseEvent->pos())) {
+                    toggleMaximized();
+                    return true;
+                }
+            } else if (auto* tabBar = qobject_cast<QTabBar*>(watched)) {
+                if (tabBar->tabAt(mouseEvent->pos()) == -1) {
+                    toggleMaximized();
+                    return true;
+                }
+            }
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 } // namespace edb_next
