@@ -39,8 +39,11 @@ public:
     [[nodiscard]] PluginManager& pluginManager() noexcept { return pluginMgr_; }
     [[nodiscard]] PatchManager& patchManager() noexcept { return patchMgr_; }
 
+    void toggleMaximized();
+
 protected:
     void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private Q_SLOTS:
     // File
