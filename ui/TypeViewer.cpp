@@ -47,7 +47,7 @@ void TypeViewer::setupUi() {
     auto* structLabel = new QLabel("Struct:", this);
     structLabel->setStyleSheet("font-weight: bold;");
     structCombo_ = new QComboBox(this);
-    structCombo_->setMinimumWidth(180);
+    structCombo_->setMinimumWidth(120);
     connect(structCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &TypeViewer::onStructSelected);
 
     defineBtn_ = new QPushButton("➕ Define Struct...", this);
@@ -58,7 +58,7 @@ void TypeViewer::setupUi() {
     addrLabel->setStyleSheet("font-weight: bold;");
     addressEdit_ = new QLineEdit(this);
     addressEdit_->setPlaceholderText("e.g. rsp, rbp - 0x20, 0x7fffffffd7d0");
-    addressEdit_->setMinimumWidth(200);
+    addressEdit_->setMinimumWidth(140);
     connect(addressEdit_, &QLineEdit::returnPressed, this, &TypeViewer::onInspectClicked);
 
     inspectBtn_ = new QPushButton("🔬 Inspect", this);
@@ -88,12 +88,17 @@ void TypeViewer::setupUi() {
     fieldTable_ = new QTableWidget(this);
     fieldTable_->setColumnCount(6);
     fieldTable_->setHorizontalHeaderLabels({"Offset", "Field Name", "Type", "Size", "Raw Hex", "Value / Dereference"});
-    fieldTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    fieldTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    fieldTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    fieldTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    fieldTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    fieldTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
+    fieldTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
+    fieldTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Interactive);
+    fieldTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Interactive);
+    fieldTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Interactive);
     fieldTable_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+    fieldTable_->setColumnWidth(0, 65);
+    fieldTable_->setColumnWidth(1, 130);
+    fieldTable_->setColumnWidth(2, 90);
+    fieldTable_->setColumnWidth(3, 55);
+    fieldTable_->setColumnWidth(4, 110);
     fieldTable_->verticalHeader()->setVisible(false);
     fieldTable_->verticalHeader()->setDefaultSectionSize(22);
     fieldTable_->setAlternatingRowColors(true);

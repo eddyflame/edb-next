@@ -145,8 +145,7 @@ void MainWindow::setupUi() {
     setWindowTitle("edb-next: Next-Gen Linux x86-64 Debugger");
     setMinimumSize(640, 400);
     resize(1360, 860);
-
-    setWindowFlags(Qt::Window | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
+    setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
 
     // Central widget wrapper with TabWidget and CommandBarView at bottom
     auto* center_container = new QWidget(this);
@@ -1142,9 +1141,9 @@ void MainWindow::registerCommand(const std::string& cmd,
 
 void MainWindow::toggleMaximized() {
     if (isMaximized() || isFullScreen()) {
-        setWindowState(windowState() & ~(Qt::WindowMaximized | Qt::WindowFullScreen));
+        showNormal();
     } else {
-        setWindowState(windowState() | Qt::WindowMaximized);
+        showMaximized();
     }
 }
 

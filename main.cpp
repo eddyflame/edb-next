@@ -169,6 +169,13 @@ void applyDarkTheme(QApplication& app) {
 #include <iostream>
 
 int main(int argc, char* argv[]) {
+    // Under Linux Wayland environments (GNOME/Mutter), Qt6 Wayland client-side decoration (libbradient)
+    // lacks native window titlebar double-click maximization and proper Mutter window action handling.
+    // Falling back to xcb (XWayland) restores full native GNOME titlebar controls, window snapping, and double-click maximization.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "xcb;wayland");
+    }
+
     // Suppress Wayland non-critical window activation warnings
     QLoggingCategory::setFilterRules("qt.qpa.wayland.warning=false");
 
