@@ -83,10 +83,10 @@ void MemoryScannerView::setupUi() {
     gridLayout->addWidget(valueEdit_, 0, 1);
     gridLayout->addWidget(deltaLabel, 0, 2);
     gridLayout->addWidget(deltaEdit_, 0, 3);
-    gridLayout->addWidget(typeLabel, 0, 4);
-    gridLayout->addWidget(dataTypeCombo_, 0, 5);
-    gridLayout->addWidget(compareLabel, 0, 6);
-    gridLayout->addWidget(compareTypeCombo_, 0, 7);
+    gridLayout->addWidget(typeLabel, 1, 0);
+    gridLayout->addWidget(dataTypeCombo_, 1, 1);
+    gridLayout->addWidget(compareLabel, 1, 2);
+    gridLayout->addWidget(compareTypeCombo_, 1, 3);
 
     // Row 1: Actions & Scope
     auto* btnLayout = new QHBoxLayout();
