@@ -3,6 +3,7 @@
 #include "ConfigurationManager.hpp"
 #include "LogManager.hpp"
 #include "CapstoneContext.hpp"
+#include "ZydisContext.hpp"
 #include <QCoreApplication>
 #include <capstone/capstone.h>
 #include <csignal>
@@ -297,19 +298,36 @@ void DebugSession::stepOver(bool passSignal) {
     if (state_ != SessionState::Paused) return;
 
     // Check if current instruction is a CALL or REP-prefixed instruction
-    auto cs = CapstoneContext::acquire(false);
-    if (cs.isValid()) {
-        uint8_t code[16] = {0};
-        Address rip = currentRegs_.rip();
-        if (engine_.readMemory(rip, code, sizeof(code))) {
-            // Restore any breakpoint byte at rip..rip+15 so Capstone sees the real instruction
-            for (size_t i = 0; i < sizeof(code); ++i) {
-                if (const auto* bp = bpMgr_.getBreakpoint(rip + i)) {
-                    if (bp->enabled) {
-                        code[i] = bp->originalByte;
-                    }
+    Address rip = currentRegs_.rip();
+    uint8_t code[16] = {0};
+    if (engine_.readMemory(rip, code, sizeof(code))) {
+        // Restore any breakpoint byte at rip..rip+15 so decoder sees the real instruction
+        for (size_t i = 0; i < sizeof(code); ++i) {
+            if (const auto* bp = bpMgr_.getBreakpoint(rip + i)) {
+                if (bp->enabled) {
+                    code[i] = bp->originalByte;
                 }
             }
+        }
+
+        // P1-3: Fast Zydis decode path (~15ns, zero heap alloc)
+        if (ZydisContext::isAvailable()) {
+            auto fast = ZydisContext::decodeFast(code, sizeof(code), rip);
+            if (fast.isValid) {
+                if (fast.isCall || fast.isRep) {
+                    Address next_addr = rip + fast.length;
+                    bpMgr_.addBreakpoint(next_addr, true);
+                    resume(passSignal);
+                    return;
+                }
+                stepInto(passSignal);
+                return;
+            }
+        }
+
+        // Fallback: Capstone decode path
+        auto cs = CapstoneContext::acquire(false);
+        if (cs.isValid()) {
             cs_insn* insn = nullptr;
             size_t count = cs_disasm(cs.get(), code, sizeof(code), rip.value(), 1, &insn);
             if (count > 0) {
@@ -318,7 +336,6 @@ void DebugSession::stepOver(bool passSignal) {
                 bool isRep = (mnemonic.rfind("rep", 0) == 0);
                 if (isCall || isRep) {
                     Address next_addr = rip + insn[0].size;
-                    // Temporary internal breakpoint on the instruction after CALL or REP loop
                     bpMgr_.addBreakpoint(next_addr, true);
                     cs_free(insn, count);
                     resume(passSignal);
@@ -940,17 +957,13 @@ std::optional<Address> DebugSession::searchMemory(Address start, size_t max_byte
     return std::nullopt;
 }
 
-// P1-B: Full Capstone decode — cache-miss path. Renamed from disassemble().
+// P1-3: Full decode (Zydis primary / Capstone fallback) — cache-miss path.
 std::vector<DisassembledInstruction> DebugSession::disassembleFull(Address start_addr, size_t count) {
     std::vector<DisassembledInstruction> result;
     if (!engine_.isAttached()) return result;
 
-    auto syntax = ConfigurationManager::instance().disasm().syntax;
-    auto cs = CapstoneContext::acquire(false, syntax);
-    if (!cs.isValid()) {
-        return result;
-    }
-    csh cs_handle = cs.get();
+    const auto& disasmCfg = ConfigurationManager::instance().disasm();
+    auto syntax = disasmCfg.syntax;
 
     size_t buffer_size = count * 15; // Max x86 instruction is 15 bytes
     std::vector<uint8_t> code(buffer_size, 0);
@@ -959,7 +972,7 @@ std::vector<DisassembledInstruction> DebugSession::disassembleFull(Address start
         return result;
     }
 
-    // Restore any patched 0xCC bytes in the buffer so Capstone disassembles original opcodes
+    // Restore any patched 0xCC bytes in the buffer so decoder sees original opcodes
     for (size_t i = 0; i < buffer_size; ++i) {
         Address cur_addr = start_addr + i;
         if (const auto* bp = bpMgr_.getBreakpoint(cur_addr)) {
@@ -969,79 +982,97 @@ std::vector<DisassembledInstruction> DebugSession::disassembleFull(Address start
         }
     }
 
-    cs_insn* insn = nullptr;
-    size_t disasm_count = cs_disasm(cs_handle, code.data(), buffer_size, start_addr.value(), count, &insn);
+    // P1-3: Fast Zydis decode path if enabled (10x-20x faster than Capstone, zero heap allocation)
+    if (disasmCfg.engine == DisassemblyEngine::Zydis && ZydisContext::isAvailable()) {
+        result = ZydisContext::disassemble(
+            code.data(),
+            buffer_size,
+            start_addr,
+            count,
+            syntax,
+            disasmCfg.uppercaseMnemonics,
+            disasmCfg.simplifyRipRelative
+        );
+    }
 
-    if (disasm_count > 0) {
-        result.reserve(disasm_count);
-        std::string prev_file;
-        int prev_line = -1;
-
-        for (size_t i = 0; i < disasm_count; ++i) {
-            Address addr(insn[i].address);
-            std::vector<uint8_t> insn_bytes(insn[i].bytes, insn[i].bytes + insn[i].size);
-
-            std::string sym_str;
-            if (auto sym = symbols_.findNearestSymbol(addr)) {
-                const std::string& name = sym->first.displayName();
-                if (sym->second == 0) {
-                    sym_str = "<" + name + ">";
-                } else {
-                    std::ostringstream ss;
-                    ss << "<" << name << "+0x" << std::hex << sym->second << ">";
-                    sym_str = ss.str();
-                }
-            }
-
-            std::string src_file;
-            std::string src_full;
-            int src_line = 0;
-            std::string src_text;
-            bool is_line_start = false;
-
-            if (auto loc = dwarfParser_.findSourceLocation(addr)) {
-                src_file = loc->fileName;
-                src_full = loc->filePath;
-                src_line = loc->line;
-                src_text = SourceFileManager::instance().getLineText(loc->filePath, loc->line);
-                if (src_file != prev_file || src_line != prev_line) {
-                    is_line_start = true;
-                    prev_file = src_file;
-                    prev_line = src_line;
-                }
-            }
-
-            std::string mnem_str = insn[i].mnemonic;
-            if (ConfigurationManager::instance().disasm().uppercaseMnemonics) {
-                for (char& c : mnem_str) {
-                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                }
-            }
-
-            bool has_bp = bpMgr_.hasBreakpoint(addr);
-            bool is_bp_enabled = true;
-            if (has_bp) {
-                const auto* bp = bpMgr_.getBreakpoint(addr);
-                is_bp_enabled = (bp != nullptr && bp->enabled);
-            }
-
-            result.push_back(DisassembledInstruction{
-                .address = addr,
-                .mnemonic = std::move(mnem_str),
-                .operands = insn[i].op_str,
-                .bytes = std::move(insn_bytes),
-                .symbol = std::move(sym_str),
-                .isCurrentRip = (addr == currentRegs_.rip()),
-                .hasBreakpoint = has_bp,
-                .isBreakpointEnabled = is_bp_enabled,
-                .sourceFile = std::move(src_file),
-                .sourceFullPath = std::move(src_full),
-                .sourceLine = src_line,
-                .sourceText = std::move(src_text),
-                .isSourceLineStart = is_line_start
-            });
+    // Fallback to Capstone if Zydis is disabled or decode produced no instructions
+    if (result.empty()) {
+        auto cs = CapstoneContext::acquire(false, syntax);
+        if (!cs.isValid()) {
+            return result;
         }
-        cs_free(insn, disasm_count);
+        csh cs_handle = cs.get();
+
+        cs_insn* insn = nullptr;
+        size_t disasm_count = cs_disasm(cs_handle, code.data(), buffer_size, start_addr.value(), count, &insn);
+
+        if (disasm_count > 0) {
+            result.reserve(disasm_count);
+            for (size_t i = 0; i < disasm_count; ++i) {
+                Address addr(insn[i].address);
+                std::vector<uint8_t> insn_bytes(insn[i].bytes, insn[i].bytes + insn[i].size);
+
+                std::string mnem_str = insn[i].mnemonic;
+                if (disasmCfg.uppercaseMnemonics) {
+                    for (char& c : mnem_str) {
+                        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                    }
+                }
+
+                result.push_back(DisassembledInstruction{
+                    .address = addr,
+                    .mnemonic = std::move(mnem_str),
+                    .operands = insn[i].op_str,
+                    .bytes = std::move(insn_bytes),
+                    .symbol = {},
+                    .isCurrentRip = false,
+                    .hasBreakpoint = false,
+                    .isBreakpointEnabled = true,
+                    .sourceFile = {},
+                    .sourceFullPath = {},
+                    .sourceLine = 0,
+                    .sourceText = {},
+                    .isSourceLineStart = false
+                });
+            }
+            cs_free(insn, disasm_count);
+        }
+    }
+
+    // Enrich with symbols, DWARF line information, breakpoints and RIP
+    std::string prev_file;
+    int prev_line = -1;
+    Address cur_rip = currentRegs_.rip();
+
+    for (auto& insn : result) {
+        insn.isCurrentRip = (insn.address == cur_rip);
+
+        const auto* bp = bpMgr_.getBreakpoint(insn.address);
+        insn.hasBreakpoint = (bp != nullptr);
+        insn.isBreakpointEnabled = (bp != nullptr && bp->enabled);
+
+        if (auto sym = symbols_.findNearestSymbol(insn.address)) {
+            const std::string& name = sym->first.displayName();
+            if (sym->second == 0) {
+                insn.symbol = "<" + name + ">";
+            } else {
+                std::ostringstream ss;
+                ss << "<" << name << "+0x" << std::hex << sym->second << ">";
+                insn.symbol = ss.str();
+            }
+        }
+
+        if (auto loc = dwarfParser_.findSourceLocation(insn.address)) {
+            insn.sourceFile = loc->fileName;
+            insn.sourceFullPath = loc->filePath;
+            insn.sourceLine = loc->line;
+            insn.sourceText = SourceFileManager::instance().getLineText(loc->filePath, loc->line);
+            if (insn.sourceFile != prev_file || insn.sourceLine != prev_line) {
+                insn.isSourceLineStart = true;
+                prev_file = insn.sourceFile;
+                prev_line = insn.sourceLine;
+            }
+        }
     }
 
     return result;

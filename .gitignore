@@ -5,6 +5,7 @@
 *.o
 *.a
 !third_party/keystone/lib/libkeystone.a
+!third_party/zydis/lib/libzydis.a
 *.so
 *.dylib
 *.dll

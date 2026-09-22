@@ -50,6 +50,27 @@ if (KEYSTONE_INCLUDE_DIRS AND KEYSTONE_LIBRARIES)
     add_compile_definitions(HAVE_KEYSTONE=1)
 endif()
 
+find_path(ZYDIS_INCLUDE_DIRS Zydis/Zydis.h
+    PATHS
+    /usr/include
+    /usr/local/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zydis/include
+)
+
+find_library(ZYDIS_LIBRARIES NAMES zydis libzydis Zydis libZydis
+    PATHS
+    /lib/x86_64-linux-gnu
+    /usr/lib/x86_64-linux-gnu
+    /usr/lib
+    /usr/local/lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zydis/lib
+)
+
+if (ZYDIS_INCLUDE_DIRS AND ZYDIS_LIBRARIES)
+    message(STATUS "Found Zydis x86_64 Fast Decoder: ${ZYDIS_LIBRARIES}")
+    add_compile_definitions(HAVE_ZYDIS=1)
+endif()
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -65,6 +86,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lua/include
     ${KEYSTONE_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/keystone/include
+    ${ZYDIS_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zydis/include
 )
 
 # Core Library
@@ -105,6 +128,7 @@ set(CORE_SOURCES
     core/MemoryScanner.cpp
     core/TypeManager.cpp
     core/CapstoneContext.cpp
+    core/ZydisContext.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -118,6 +142,7 @@ target_link_libraries(edb_core
     ${PYTHON_LIBRARIES}
     ${LUA_LIBRARIES}
     ${KEYSTONE_LIBRARIES}
+    ${ZYDIS_LIBRARIES}
     pthread
 )
 

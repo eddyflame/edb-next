@@ -105,6 +105,7 @@ void ConfigurationManager::load() {
 
     s.beginGroup("Disassembly");
     disasm_.syntax = static_cast<DisassemblySyntax>(s.value("syntax", static_cast<int>(disasm_.syntax)).toInt());
+    disasm_.engine = static_cast<DisassemblyEngine>(s.value("engine", static_cast<int>(disasm_.engine)).toInt());
     disasm_.uppercaseMnemonics = s.value("uppercaseMnemonics", disasm_.uppercaseMnemonics).toBool();
     disasm_.showSymbolicAddresses = s.value("showSymbolicAddresses", disasm_.showSymbolicAddresses).toBool();
     disasm_.simplifyRipRelative = s.value("simplifyRipRelative", disasm_.simplifyRipRelative).toBool();
@@ -169,6 +170,7 @@ void ConfigurationManager::save() {
 
     s.beginGroup("Disassembly");
     s.setValue("syntax", static_cast<int>(disasm_.syntax));
+    s.setValue("engine", static_cast<int>(disasm_.engine));
     s.setValue("uppercaseMnemonics", disasm_.uppercaseMnemonics);
     s.setValue("showSymbolicAddresses", disasm_.showSymbolicAddresses);
     s.setValue("simplifyRipRelative", disasm_.simplifyRipRelative);

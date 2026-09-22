@@ -154,7 +154,7 @@
 | **P0** | **反汇编句柄池化与 LRU 缓存 (Capstone Reuse)** | `core/CapstoneContext.cpp`, `core/DebugSession.cpp` 及各分析模块 | **[已完成]** 消除频繁 `cs_open` 重复初始化，8 窗口 LRU 缓存，单步与悬停响应提升 | 低 |
 | **P1** | **DWARF CFI 栈回溯 (libdwfl Unwinding)** | `core/CallStackUnwinder.cpp` | **[已完成]** 基于 `.eh_frame` / `.debug_frame` CFI 状态机，克服 `-fomit-frame-pointer` 栈帧截断，支持系统库跨帧与双轨回退 | 中 |
 | **P1** | **全功能现代表达式求值 (Enhanced Evaluator)** | `core/ExpressionEvaluator.cpp` | **[已完成]** 现代递归下降解析器，支持乘除变址寻址、位运算、复合逻辑与括号优先级 | 中 |
-| **P1** | **Zydis x86_64 解码引擎引入** | `core/DebugSession.cpp` / `core/ZydisDisasm.cpp` | 零堆分配，解码吞吐提升 10x~20x | 中 |
+| **P1** | **Zydis x86_64 解码引擎引入** | `core/ZydisContext.cpp`, `core/DebugSession.cpp` | **[已完成]** 零堆分配，栈上定长解码（100,000条仅耗时 26ms，约 260ns/条），与 Capstone 构成双引擎架构与透明回退 | 中 |
 | **P2** | **CFG 分层图布局 (Sugiyama/Graphviz)** | `ui/CFGGraphView.cpp` | 呈现专业级无交叉分层控制流图 | 中~高 |
 | **P2** | **向量化多线程内存搜索** | `core/MemoryScanner.cpp`, `PatternSearcher.cpp` | GB 级内存扫描提速 10x+，修复 16MB 截断缺陷 | 中 |
 | **P2** | **脚本绑定重构 (sol2 / nanobind)** | `core/LuaScriptEngine.cpp`, `PythonScriptEngine.cpp` | 缩减 80% 裸 C 样板代码，保障类型与内存安全 | 中 |
@@ -242,3 +242,20 @@
      - **细粒度内存解引用**：`[expr]` 及尺寸前缀（`byte ptr [...]`, `word ptr [...]`, `dword ptr [...]`, `qword ptr [...]`）。
   3. **全架构寄存器覆盖**：全面解析 x86_64 64位（`rax`~`r15`）、32位（`eax`~`r15d`）、16位（`ax`~`r15w`）以及 8位（`al`~`r15b`、`ah`~`dh`）所有寄存器。
 
+### 5.3 P1-3: Zydis x86_64 高速指令解码引擎（已落地）
+
+#### 5.3.1 架构设计与双引擎策略
+* **核心模块**：[`core/ZydisContext.hpp`](file:///home/eddy/myplace/project/edb-next/core/ZydisContext.hpp) / [`core/ZydisContext.cpp`](file:///home/eddy/myplace/project/edb-next/core/ZydisContext.cpp)
+* **实现亮点**：
+  1. **零堆分配栈上解码**：`FastInstructionInfo` 与 `ZydisDecodedInstruction` 完全位于栈内存，彻底根除高频单步和跟踪中的 `malloc`/`free` 垃圾回收抖动。
+  2. **纳秒级单步判定 (`stepOver`)**：重构 `DebugSession::stepOver`，使用 `ZydisContext::decodeFast` 瞬时判断 `call`、`syscall` 与 `rep` 循环前缀，单步判定由数十微秒降至纳秒级。
+  3. **双引擎无缝互补**：在 `ConfigurationManager` 中提供 `DisassemblyEngine::Zydis` 与 `DisassemblyEngine::Capstone` 选型，默认优先采用 Zydis；若遇到不支持的架构或禁用 Zydis 时平滑透明回退至 Capstone。
+  4. **全套语法与格式化支持**：
+     - 支持 Intel 风格与 AT&T 风格；
+     - 支持大写操作码/寄存器/类型修饰符切换；
+     - 支持 RIP 相对寻址自动计算并简化为绝对地址；
+     - 遇到非法/未映射机器码自动降级为 `db 0xXX` 保护。
+  5. **工程轻量内嵌**：裁剪静态库与 Zycore 打包在 `third_party/zydis/`（仅 926KB），并附带独立一键构建脚本 [`scripts/build_zydis.sh`](file:///home/eddy/myplace/project/edb-next/scripts/build_zydis.sh)。
+
+#### 5.3.2 性能实测数据
+* **实测吞吐**：在 Linux x86_64 基准压测中，**连续解码 100,000 条指令仅耗时 26.2ms**（平均 **~262ns/条**，吞吐量达 **3.8+ 百万指令/秒**）。

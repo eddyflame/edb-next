@@ -2,6 +2,7 @@
 #include "core/SessionManager.hpp"
 #include "core/ExpressionEvaluator.hpp"
 #include "core/CapstoneContext.hpp"
+#include "core/ZydisContext.hpp"
 #include <QCoreApplication>
 #include <iostream>
 #include <thread>
@@ -739,6 +740,148 @@ void test_capstone_context_and_lru_cache() {
     std::cout << "[PASS] CapstoneContext and LRU DisasmCache tests passed." << std::endl;
 }
 
+void test_phase6_zydis_fast_decoder() {
+    std::cout << "\n>>> Testing Zydis Fast Instruction Decoder (P1-3) <<<" << std::endl;
+
+    assert(ZydisContext::isAvailable() && "Zydis must be compiled in and available");
+
+    // 1. Fast decode tests (decodeFast)
+    {
+        // CALL rel32: e8 10 00 00 00 -> from 0x401000 jumps to 0x401015 (0x401000 + 5 + 0x10)
+        const uint8_t callInsn[] = {0xe8, 0x10, 0x00, 0x00, 0x00};
+        auto fastCall = ZydisContext::decodeFast(callInsn, sizeof(callInsn), Address(0x401000));
+        assert(fastCall.isValid);
+        assert(fastCall.length == 5);
+        assert(fastCall.isCall);
+        assert(!fastCall.isRet);
+        assert(fastCall.branchTarget == Address(0x401015));
+
+        // RET: c3
+        const uint8_t retInsn[] = {0xc3};
+        auto fastRet = ZydisContext::decodeFast(retInsn, sizeof(retInsn), Address(0x401015));
+        assert(fastRet.isValid);
+        assert(fastRet.length == 1);
+        assert(fastRet.isRet);
+        assert(!fastRet.isCall);
+
+        // SYSCALL: 0f 05
+        const uint8_t syscallInsn[] = {0x0f, 0x05};
+        auto fastSyscall = ZydisContext::decodeFast(syscallInsn, sizeof(syscallInsn), Address(0x401020));
+        assert(fastSyscall.isValid);
+        assert(fastSyscall.length == 2);
+        assert(fastSyscall.isSyscall);
+
+        // REP MOVSB: f3 a4
+        const uint8_t repInsn[] = {0xf3, 0xa4};
+        auto fastRep = ZydisContext::decodeFast(repInsn, sizeof(repInsn), Address(0x401030));
+        assert(fastRep.isValid);
+        assert(fastRep.length == 2);
+        assert(fastRep.isRep);
+
+        // JE rel8: 74 0e -> from 0x401000 jumps to 0x401010 (0x401000 + 2 + 0x0e)
+        const uint8_t jeInsn[] = {0x74, 0x0e};
+        auto fastJe = ZydisContext::decodeFast(jeInsn, sizeof(jeInsn), Address(0x401000));
+        assert(fastJe.isValid);
+        assert(fastJe.length == 2);
+        assert(fastJe.isBranch);
+        assert(fastJe.isConditional);
+        assert(fastJe.branchTarget == Address(0x401010));
+
+        // JMP rel8: eb 20 -> from 0x401000 jumps to 0x401022 (0x401000 + 2 + 0x20)
+        const uint8_t jmpInsn[] = {0xeb, 0x20};
+        auto fastJmp = ZydisContext::decodeFast(jmpInsn, sizeof(jmpInsn), Address(0x401000));
+        assert(fastJmp.isValid);
+        assert(fastJmp.length == 2);
+        assert(fastJmp.isBranch);
+        assert(!fastJmp.isConditional);
+        assert(fastJmp.branchTarget == Address(0x401022));
+
+        // NOP: 90
+        const uint8_t nopInsn[] = {0x90};
+        auto fastNop = ZydisContext::decodeFast(nopInsn, sizeof(nopInsn), Address(0x401050));
+        assert(fastNop.isValid);
+        assert(fastNop.length == 1);
+        assert(!fastNop.isCall);
+        assert(!fastNop.isBranch);
+        assert(!fastNop.isRep);
+
+        std::cout << "[PASS] ZydisContext::decodeFast instruction attribute detection verified." << std::endl;
+    }
+
+    // 2. Batch disassembly and formatting tests
+    {
+        // Sequence: push rbp; mov rbp, rsp; sub rsp, 0x20; ret
+        const uint8_t code[] = {
+            0x55,                   // push rbp
+            0x48, 0x89, 0xe5,       // mov rbp, rsp
+            0x48, 0x83, 0xec, 0x20, // sub rsp, 0x20
+            0xc3                    // ret
+        };
+
+        // Intel syntax (lowercase)
+        auto insnsIntel = ZydisContext::disassemble(code, sizeof(code), Address(0x401000), 10, DisassemblySyntax::Intel, false);
+        assert(insnsIntel.size() == 4);
+        assert(insnsIntel[0].mnemonic == "push");
+        assert(insnsIntel[0].operands == "rbp");
+        assert(insnsIntel[1].mnemonic == "mov");
+        assert(insnsIntel[1].operands == "rbp, rsp");
+        assert(insnsIntel[2].mnemonic == "sub");
+        assert(insnsIntel[3].mnemonic == "ret");
+
+        // Intel syntax (uppercase mnemonics)
+        auto insnsUpper = ZydisContext::disassemble(code, sizeof(code), Address(0x401000), 10, DisassemblySyntax::Intel, true);
+        assert(insnsUpper.size() == 4);
+        assert(insnsUpper[0].mnemonic == "PUSH");
+        assert(insnsUpper[1].mnemonic == "MOV");
+        assert(insnsUpper[2].mnemonic == "SUB");
+        assert(insnsUpper[3].mnemonic == "RET");
+
+        // AT&T syntax
+        auto insnsATT = ZydisContext::disassemble(code, sizeof(code), Address(0x401000), 10, DisassemblySyntax::ATT, false);
+        assert(insnsATT.size() == 4);
+        assert(insnsATT[0].mnemonic.find("push") != std::string::npos);
+        assert(insnsATT[1].operands.find("%rsp") != std::string::npos);
+
+        std::cout << "[PASS] ZydisContext::disassemble batch formatting (Intel, Uppercase, AT&T) verified." << std::endl;
+    }
+
+    // 3. Fallback on invalid byte
+    {
+        const uint8_t badCode[] = {0xff, 0xff, 0x90};
+        auto insns = ZydisContext::disassemble(badCode, sizeof(badCode), Address(0x402000), 5);
+        assert(!insns.empty());
+        assert(insns[0].mnemonic == "db");
+        assert(insns.back().mnemonic == "nop");
+        std::cout << "[PASS] ZydisContext illegal opcode byte fallback verified." << std::endl;
+    }
+
+    // 4. Performance benchmark: 100,000 instruction decodes
+    {
+        const uint8_t movInsn[] = {0x48, 0x89, 0xd8}; // mov rax, rbx
+        constexpr size_t kIterations = 100000;
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        size_t validCount = 0;
+        for (size_t i = 0; i < kIterations; ++i) {
+            auto info = ZydisContext::decodeFast(movInsn, sizeof(movInsn), Address(0x401000 + i * 3));
+            if (info.isValid) ++validCount;
+        }
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+        double avgNs = static_cast<double>(ns) / kIterations;
+        double throughputMips = (kIterations * 1000.0) / (std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count());
+
+        assert(validCount == kIterations);
+        std::cout << "[BENCHMARK] ZydisContext::decodeFast 100,000 instructions in "
+                  << (ns / 1000000.0) << " ms (~"
+                  << avgNs << " ns/insn, "
+                  << throughputMips << " M insns/sec)" << std::endl;
+        std::cout << "[PASS] ZydisContext performance benchmark passed." << std::endl;
+    }
+
+    std::cout << "[PASS] ALL ZYDIS FAST DECODER TESTS PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 
@@ -756,6 +899,7 @@ int main(int argc, char* argv[]) {
     test_phase4_threads_assembler_and_conditional_bp();
     test_phase5_rop_branch_prediction_xrefs_and_pattern();
     test_capstone_context_and_lru_cache();
+    test_phase6_zydis_fast_decoder();
 
     std::cout << "\n>>> ALL UNIT TESTS PASSED SUCCESSFULLY! <<<" << std::endl;
     return 0;

@@ -26,6 +26,11 @@ enum class DisassemblySyntax {
     ATT = 1
 };
 
+enum class DisassemblyEngine {
+    Zydis = 0,
+    Capstone = 1
+};
+
 struct GeneralConfig {
     CloseBehavior closeBehavior{CloseBehavior::Prompt};
     bool restoreWindowGeometry{true};
@@ -50,11 +55,16 @@ struct EngineConfig {
     bool breakOnLibraryLoad{false};
     bool ptyTerminalEnabled{false};
     QString ptyTerminalCommand{"xterm -e"};
-    int defaultBpSlot{0}; // 0: Software (int3), 1: Hardware (DRx)
+    int defaultBpSlot{0}; // 0: Software (int3 entered), 1: Hardware (DRx)
 };
 
 struct DisassemblyConfig {
     DisassemblySyntax syntax{DisassemblySyntax::Intel};
+#if defined(HAVE_ZYDIS)
+    DisassemblyEngine engine{DisassemblyEngine::Zydis};
+#else
+    DisassemblyEngine engine{DisassemblyEngine::Capstone};
+#endif
     bool uppercaseMnemonics{false};
     bool showSymbolicAddresses{true};
     bool simplifyRipRelative{true};
