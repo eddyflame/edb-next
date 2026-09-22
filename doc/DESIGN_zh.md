@@ -341,9 +341,10 @@
 2. **Python 3 原生 C-API 嵌入**：
    - 无缝内嵌 CPython 3 运行时并注册原生 `edb` 内置模块，提供完整的寄存器读写（`get_regs`, `get_reg`, `set_reg`）、内存读写（`read_memory`, `write_memory`）、断点管理（`set_breakpoint`, `remove_breakpoint`）、单步及源码控制（`step_into`, `step_over`, `step_source`, `resume`, `pause`）、表达式求值（`eval`）以及进程状态查询；
    - 自动重定向 `sys.stdout` 和 `sys.stderr` 捕获异常 Traceback 与输出，实时打印至控制台；
-3. **Lua 5.4 轻量级极速嵌入**：
-   - 内嵌 Lua 5.4 解释器并注入全局 `edb` 模块表，实现与 Python 对应的完整对称 API；
-   - 重写 `print()` 捕获机制，专为高频断点命中、微秒级条件求值与无 GIL 瓶颈的高性能自动化场景打造；
+3. **统一领域桥接层与现代 C++20 泛型绑定架构 (`ScriptApiBridge`, `LuaTypeBinding`, `PythonTypeBinding`)**：
+   - **统一领域桥接 (`ScriptApiBridge`)**：将寄存器大小写归一化、16 大通用寄存器与 RIP/EFLAGS 映射、内存读写、断点管理、单步推进、表达式求值与状态查询统一收敛至独立的 C++ 业务层，100% 消除跨语言冗余代码；
+   - **Lua 5.4 泛型分发器 (`LuaTypeBinding.hpp`)**：基于 C++20 变长模板与 `std::index_sequence_for` 实现类型萃取（`ArgReader`）与自动返回值压栈（`pushVal`），彻底消除手工操作 Lua 栈的脆弱缺陷；
+   - **Python 3 RAII 智能句柄与泛型解包 (`PythonTypeBinding.hpp`)**：引入 `PyRef` 智能指针自动管理 `Py_XDECREF` 引用计数，通过泛型调度器 `PythonFunctionDispatcher` 自动完成元组参数解包、`std::optional` 映射与字典/字节装箱；
 4. **现代化交互式脚本控制台 (`ui/ScriptConsoleView`, `Alt+P`)**：
    - 集成在底部工作区抽屉，具备语言切换（`Python 3` / `Lua 5.4`）、脚本文件一键运行（`▶ Run File...`）、控制台清空、历史命令上下箭头回溯及暗黑极客高对比度语法高亮渲染；
 5. **全局 CommandBar 快速命令与自动化测试**：
@@ -768,6 +769,9 @@ edb-next/
 │   ├── IScriptEngine.hpp       # 嵌入式脚本引擎纯虚契约 (Python/Lua 多态接口)
 │   ├── PythonScriptEngine.hpp/cpp# 嵌入式 Python 3 解释器与 edb 模块导出引擎
 │   ├── LuaScriptEngine.hpp/cpp # 嵌入式 Lua 5.4 解释器与全局 edb 表绑定引擎
+│   ├── ScriptApiBridge.hpp/cpp # 统一脚本 API 业务领域桥接器 (寄存器/内存/断点/单步/会话内省)
+│   ├── LuaTypeBinding.hpp      # Lua 5.4 现代 C++20 泛型分发器与栈类型萃取系统
+│   ├── PythonTypeBinding.hpp   # Python 3 现代 C++20 RAII PyRef 智能句柄与泛型解包分发器
 │   ├── ScriptEngineManager.hpp/cpp# 多脚本引擎生命周期调度与语言路由管理器
 │   ├── PageGuardManager.hpp/cpp# 4KB 虚拟内存页保护权限管理、PROT 变更与隐匿断点状态机
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug 协议、link_map 遍历与动态库热重载

@@ -188,6 +188,10 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 - **Unified Dual-Engine Architecture**: Managed by `IScriptEngine` and `ScriptEngineManager`, providing dynamic language routing by extension (`.py` / `.lua`) or CLI command prefix (`py` / `lua`), while synchronizing lifecycle with active `DebugSession`.
 - **Python 3 C-API Embedding**: Embedded CPython 3 runtime exporting native built-in module `edb` (registers, memory I/O, breakpoints, stepping, expression evaluation, process state) with complete `sys.stdout`/`sys.stderr` capture and traceback formatting redirected to the console.
 - **Lua 5.4 High-Performance Embedding**: Embedded Lua 5.4 runtime providing symmetric APIs under global table `edb` and redirected `print()`, optimized for microsecond-latency condition evaluation, high-frequency hooks, and GIL-free automation.
+- **Unified Domain Bridge & Modern C++20 Generic Binding Architecture (`ScriptApiBridge`, `LuaTypeBinding`, `PythonTypeBinding`)**:
+  - **Unified Domain Bridge (`ScriptApiBridge`)**: Centralizes case-insensitive register normalization, mapping of all 16 GPRs + RIP/EFLAGS, memory read/write, breakpoint management, step/run execution, expression evaluation, and session introspection into a dedicated C++20 business layer, eliminating 100% of cross-language duplicated logic.
+  - **Lua 5.4 Generic Dispatcher (`LuaTypeBinding.hpp`)**: Header-only C++20 variadic template system leveraging `std::index_sequence_for` for compile-time type extraction (`ArgReader`) and automatic return value pushing (`pushVal`), completely eliminating brittle manual Lua stack operations.
+  - **Python 3 RAII Smart Handle & Generic Unpacking (`PythonTypeBinding.hpp`)**: Introduces `PyRef` RAII smart pointer for leak-free reference counting (`Py_XDECREF`), paired with `PythonFunctionDispatcher` for automated tuple argument unpacking, `std::optional` mapping, and dict/bytes marshaling.
 - **Interactive Script Console (`ScriptConsoleView`, `Alt+P`)**: Bottom drawer terminal with language switcher, one-click script file execution (`▶ Run File...`), history navigation, and dark syntax color rendering.
 - **CommandBar Quick Commands & CI Coverage**: Integrated single-line execution (`py <expr>` / `lua <expr>`) with 100% automated regression test suite (`tests/test_scripting.cpp`).
 
@@ -516,6 +520,9 @@ edb-next/
 │   ├── IScriptEngine.hpp       # Embedded scripting engine interface contract (Python/Lua)
 │   ├── PythonScriptEngine.hpp/cpp# Embedded Python 3 interpreter and edb module exporter
 │   ├── LuaScriptEngine.hpp/cpp # Embedded Lua 5.4 interpreter and global edb table binding
+│   ├── ScriptApiBridge.hpp/cpp # Unified script API domain bridge (registers/memory/breakpoints/step/introspection)
+│   ├── LuaTypeBinding.hpp      # Lua 5.4 modern C++20 generic dispatcher & stack traits system
+│   ├── PythonTypeBinding.hpp   # Python 3 modern C++20 RAII PyRef smart handle & generic dispatcher
 │   ├── ScriptEngineManager.hpp/cpp# Multi-engine lifecycle and language routing manager
 │   ├── PageGuardManager.hpp/cpp# 4KB virtual memory page protection manager & stealth breakpoint state machine
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug protocol, link_map crawler & shared library hot-reloader

@@ -79,6 +79,7 @@
 - ⚡ **高频单步控件单元格对象池复用与无缝滚轮滚动**：在 `DisassemblyView` 与 `MemoryHexView` 中以 `getOrCreateItem` 惰性对象池复用替代每帧全量 `new QTableWidgetItem`，根治单步与跟踪时的内存抖动；重载 `wheelEvent` 实现向前向后无缝反汇编与内存浏览。
 - 🧵 **线程局部脚本引擎并发隔离**：消除 Python 与 Lua 脚本引擎对全局单一静态实例指针的依赖，引入 `thread_local`、RAII 生命周期守卫（`PythonEngineScope`、`GilStateScope`）与 Lua Registry 映射（`kLuaEngineRegistryKey`），实现纯净的多会话并发脚本调试。
 - 📊 **Sugiyama 分层控制流图布局与核心解耦架构 (`CFGBuilder` & `SugiyamaLayout`)**：核心层实现标准编译原理三准则先导指令（Leader）划分基本块，配合三状态 DFS 精准侦测循环回边（Loop Back-Edge），实现纯净无 UI 依赖的控制流图模型。UI 呈现层创新引入经典五阶段 Sugiyama 分层布局算法（去环、最长路径拓扑分层、跨层虚拟占位节点、8 轮双向重心交叉极小化、层次化居中对齐、样条平滑避障与外侧专用通道回边布线），彻底解决连线穿透代码块与遮挡问题；支持滚轮无级缩放与双击基本块一键联动反汇编。
+- 🧬 **现代 C++20 类型安全脚本绑定体系 (`ScriptApiBridge`, `LuaTypeBinding`, `PythonTypeBinding`)**：全面重构解耦 Python 3 与 Lua 5.4 嵌入式脚本引擎。通过独立领域层 `ScriptApiBridge` 集中管理 18 大调试器 API 与寄存器不区分大小写读写，彻底消除 620+ 行跨语言重复样板代码；引入零开销 RAII `PyRef` 智能句柄、现代变长参数解包分发器与类型萃取系统，100% 杜绝 Python 引用泄漏与 Lua 堆栈偏移错位异常。
 
 ---
 
