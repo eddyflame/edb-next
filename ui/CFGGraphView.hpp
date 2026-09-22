@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/Types.hpp"
+#include "core/CFGBuilder.hpp"
+#include "SugiyamaLayout.hpp"
 #include <QWidget>
 #include <QGraphicsView>
 #include <QGraphicsScene>
@@ -14,21 +16,8 @@ namespace edb_next {
 
 class DebugSession;
 
-struct CFGInstruction {
-    Address address{0};
-    std::string mnemonic;
-    std::string operands;
-};
-
-struct CFGBasicBlock {
-    int id{0};
-    Address startAddr{0};
-    Address endAddr{0};
-    std::vector<CFGInstruction> instructions;
-    std::optional<Address> trueTarget;   // Branch taken (green)
-    std::optional<Address> falseTarget;  // Branch not taken (red)
-    std::optional<Address> directTarget; // Unconditional branch / call (blue)
-};
+// Backward-compatibility alias
+using CFGBasicBlock = CFGBlock;
 
 class CFGGraphView : public QWidget {
     Q_OBJECT
@@ -56,7 +45,7 @@ private Q_SLOTS:
 
 private:
     void setupUi();
-    void layoutAndDrawBlocks(const std::vector<CFGBasicBlock>& blocks);
+    void layoutAndDrawBlocks(const CFGGraph& graph);
 
     std::shared_ptr<DebugSession> session_;
     Address currentFuncAddr_{0};

@@ -155,8 +155,8 @@
 | **P1** | **DWARF CFI 栈回溯 (libdwfl Unwinding)** | `core/CallStackUnwinder.cpp` | **[已完成]** 基于 `.eh_frame` / `.debug_frame` CFI 状态机，克服 `-fomit-frame-pointer` 栈帧截断，支持系统库跨帧与双轨回退 | 中 |
 | **P1** | **全功能现代表达式求值 (Enhanced Evaluator)** | `core/ExpressionEvaluator.cpp` | **[已完成]** 现代递归下降解析器，支持乘除变址寻址、位运算、复合逻辑与括号优先级 | 中 |
 | **P1** | **Zydis x86_64 解码引擎引入** | `core/ZydisContext.cpp`, `core/DebugSession.cpp` | **[已完成]** 零堆分配，栈上定长解码（100,000条仅耗时 26ms，约 260ns/条），与 Capstone 构成双引擎架构与透明回退 | 中 |
-| **P2** | **CFG 分层图布局 (Sugiyama/Graphviz)** | `ui/CFGGraphView.cpp` | 呈现专业级无交叉分层控制流图 | 中~高 |
-| **P2** | **向量化多线程内存搜索** | `core/MemoryScanner.cpp`, `PatternSearcher.cpp` | GB 级内存扫描提速 10x+，修复 16MB 截断缺陷 | 中 |
+| **P2** | **CFG 分层图布局 (Sugiyama Layout)** | `ui/CFGGraphView.cpp`, `core/CFGBuilder.hpp`, `ui/SugiyamaLayout.hpp` | **[已完成]** 现代五阶段 Sugiyama 分层布局算法，3 条经典 Leader 规则无遗漏划分基本块，DFS 去环与外侧专用通道回边避让布线，8 轮双向重心启发式交叉极小化 | 中~高 |
+| **P2** | **向量化多线程内存搜索** | `core/MemoryScanner.cpp`, `PatternSearcher.cpp` | **[已完成]** GB 级内存扫描提速 38x+（达 2.87 GB/s），彻底消除 16MB 截断 Bug，自适应 AVX2/标量降级 | 中 |
 | **P2** | **脚本绑定重构 (sol2 / nanobind)** | `core/LuaScriptEngine.cpp`, `PythonScriptEngine.cpp` | 缩减 80% 裸 C 样板代码，保障类型与内存安全 | 中 |
 
 ---
@@ -309,3 +309,71 @@
 * **16MB 截断 Bug 彻底修复验证**：
   - 针对 32MB 目标段，在 20MB 与 28MB 位置（均位于老版本 16MB 截断点之外）埋入特征码，现版本 100% 稳定检出。
 
+---
+
+### 6.2 P2-1: Sugiyama 分层控制流图 (CFG) 布局与核心解耦（已落地）
+
+#### 6.2.1 历史实现缺陷分析
+1. **控制流划分不完整**：
+   - 历史 `CFGGraphView` 仅在检测到当前指令为分支时才做简单切分，未针对分支目标（Branch Target）进行先导指令（Leader）标记。当存在跳入基本块中间的指令时，图结构划分严重失真，违反控制流图单一入口、单一出口（Single-Entry, Single-Exit）的基本定义。
+2. **布局朴素穿体严重**：
+   - 原布局仅按节点索引执行纯线性累加垂直坐标，并根据奇偶性做微弱的 X 偏移。在循环结构（Loop）、复杂条件多分支与跨块跳转时，连线直接斜穿覆盖在基本块代码文本上方，视觉遮挡严重。
+3. **架构耦合界面库**：
+   - 图结构构建逻辑与 Qt `QGraphicsScene` / `QGraphicsItem` 紧密混杂在 UI 文件中，核心层缺乏无界面（Headless）控制流图抽象，无法在终端或脱机单元测试中复用。
+
+#### 6.2.2 核心解耦架构与标准 Leader 划分 (`core/CFGBuilder`)
+1. **纯净核心抽象 (`CFGBuilder.hpp` & `.cpp`)**：
+   - 完全遵循 `AGENTS.md` 架构准则 3.1，零依赖 `<QWidget>`、`<QPainter>` 或任何 UI 头文件，位于 `core/` 静态库中；
+   - 抽象出标准控制流数据模型：`CFGInstruction`、`CFGEdge`（`TrueBranch`、`FalseBranch`、`DirectJump`、`Fallthrough`）、`CFGBlock` 与 `CFGGraph`。
+2. **经典编译原理三准则先导指令（Leader）划分算法**：
+   - **准则 1**：函数入口指令 $I_0$ 是 Leader；
+   - **准则 2**：任何条件分支或无条件跳转的目标指令（Target）是 Leader；
+   - **准则 3**：紧跟在条件跳转指令之后的第一条顺序指令（Fallthrough）以及返回指令之后的指令是 Leader；
+   - 基于 Leader 集合切分保证生成的基本块符合 100% 工业级反编译规范。
+3. **三状态 DFS 循环回边探测 (Cycle & Loop Detection)**：
+   - 维护节点遍历状态（0: 未访问，1: 递归调用栈中，2: 访问完毕）；
+   - 在图构建阶段执行深度优先搜索，若发现指向状态 1 祖先节点的边，精准标记为循环回边（`isBackEdge = true`），为后续有向无环图（DAG）分层奠定基础。
+
+#### 6.2.3 五阶段 Sugiyama 工业级分层布局引擎 (`ui/SugiyamaLayout`)
+为了在零依赖 Graphviz 动态链接库的前提下获得媲美 IDA Pro / Binary Ninja 的分层流图美感，自主实现了经典的五阶段 Sugiyama 分层布局算法：
+
+```
+┌─────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐
+│ Phase 1: 去环   │ ───> │ Phase 2: 最长路径分层     │ ───> │ Phase 3: 8轮重心交叉极小化│
+│ (Cycle Breaking)│      │ & 跨层虚拟节点(Dummy)插入 │      │ (Barycenter Sweeps)       │
+└─────────────────┘      └───────────────────────────┘      └───────────────────────────┘
+                                                                          │
+                                                                          ▼
+┌─────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐
+│ 最终交互渲染    │ <─── │ Phase 5: 样条避障布线     │ <─── │ Phase 4: 坐标分派与网格   │
+│ (CFGGraphView)  │      │ & 外侧通道回边避让        │      │ 居中平衡 (Coordinate)     │
+└─────────────────┘      └───────────────────────────┘      └───────────────────────────┘
+```
+
+1. **Phase 1: 环消除 (Cycle Breaking)**：
+   - 将有向图拆分为前向 DAG 边与循环回边，在计算层次等级时临时忽略回边，保障拓扑松弛收敛。
+2. **Phase 2: 最长路径分层与虚拟节点插入 (Longest-Path Ranking & Dummy Nodes)**：
+   - 基于前向拓扑依赖计算每个节点的绝对层级 $L(v)$；
+   - 对跨度大于 1 的长边（$L(v) - L(u) > 1$），在中间各层动态插入轻量虚拟占位节点（Dummy Nodes），将长边转化为一系列单层短边，彻底消除长线跨层穿透问题。
+3. **Phase 3: 双向 8 轮重心启发式交叉极小化 (Barycenter Sweeps)**：
+   - 交替执行自顶向下（Downward Sweep）与自底向上（Upward Sweep）扫描；
+   - 依据前驱/后继节点的位置重心重排本层节点顺序，实测在 8 轮迭代内迅速收敛，大幅度消除边与边之间的交叉。
+4. **Phase 4: 紧凑坐标分派与居中平衡 (Coordinate Assignment & Centering)**：
+   - 统计每层最大节点高度分配 Y 间距（`layerGap = 70.0`）；
+   - 计算各层宽度与节点尺寸，按全局最大宽度执行相对居中对齐，赋予整图平衡对称的美学观感。
+5. **Phase 5: 避障样条布线与外侧回边专用车道 (Collision-Free Routing & Outer Side-Channels)**：
+   - **前向平滑曲线**：相邻层间采用三次贝塞尔样条（Cubic Bezier Curve），多层虚拟节点则通过复合样条顺滑过渡；
+   - **循环回边绝对避障**：对所有回边（$L(v) \le L(u)$），不再穿过图中央，而是统一引向图形外侧的左/右专用回流车道（Side-Channels），采用多车道递增安全偏移量（`laneOffset = 45.0 + idx * 22.0`），以清晰的虚线与左/右箭头平滑切入目标块头部，彻底消除连线遮挡。
+
+#### 6.2.4 交互式体验与多维分析赋能 (`ui/CFGGraphView`)
+1. **语义语法高亮与块内渲染**：
+   - 块头呈现带十六进制地址的标签 `loc_0xXXXXXXXX:`；
+   - 汇编指令针对不同语义提供语法着色：`call`（橙黄）、`jcc/jmp`（青蓝）、`ret`（珊瑚红）、其他通用指令（浅灰/柔绿）；
+2. **语义边线与指示标**：
+   - 条件满足分支（True）：翡翠绿实线 + "True"；
+   - 条件不满足直行（False）：珊瑚红实线 + "False"；
+   - 无条件跳转（Jump）：深蓝实线 + "Jump"；
+   - 循环回边（Loop）：虚线 + "Loop (True/False/Jump)"；
+3. **极速交互操作**：
+   - 支持滚轮无级平滑缩放、鼠标抓手平移拖拽；
+   - 双击任意基本块，自动向中央总线发送 `jumpToDisassemblyRequested`，一键联动主反汇编窗口定位至目标指令。

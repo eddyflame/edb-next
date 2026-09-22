@@ -5,6 +5,7 @@
 #include "core/ZydisContext.hpp"
 #include "core/PatternSearcher.hpp"
 #include "core/MemoryScanner.hpp"
+#include "core/CFGBuilder.hpp"
 #include "tests/MockDebugBackend.hpp"
 #include <QCoreApplication>
 #include <iostream>
@@ -1114,6 +1115,109 @@ void test_phase7_avx2_memory_scanner() {
     std::cout << "[PASS] ALL PHASE 7 AVX2 MEMORY SCANNER TESTS PASSED!" << std::endl;
 }
 
+void test_phase8_cfg_builder() {
+    std::cout << "\n[TEST] Starting Phase 8 CFGBuilder and Leader Partitioning tests..." << std::endl;
+
+    // 1. Branch and instruction classification checks
+    assert(CFGBuilder::isConditionalBranch("je"));
+    assert(CFGBuilder::isConditionalBranch("jne"));
+    assert(CFGBuilder::isConditionalBranch("jl"));
+    assert(CFGBuilder::isConditionalBranch("jg"));
+    assert(!CFGBuilder::isConditionalBranch("jmp"));
+    assert(!CFGBuilder::isConditionalBranch("call"));
+    assert(!CFGBuilder::isConditionalBranch("mov"));
+
+    assert(CFGBuilder::isUnconditionalBranch("jmp"));
+    assert(CFGBuilder::isUnconditionalBranch("ljmp"));
+    assert(!CFGBuilder::isUnconditionalBranch("jz"));
+
+    assert(CFGBuilder::isReturn("ret"));
+    assert(CFGBuilder::isReturn("retq"));
+    assert(!CFGBuilder::isReturn("call"));
+
+    assert(CFGBuilder::parseBranchTarget("je", "0x100040") == Address(0x100040));
+    assert(CFGBuilder::parseBranchTarget("jmp", "0x401020") == Address(0x401020));
+    assert(CFGBuilder::parseBranchTarget("call", "rax") == Address(0));
+
+    // 2. Build synthetic instruction stream:
+    // 0x1000: cmp eax, 0
+    // 0x1004: je 0x1014       -> jumps to 0x1014 (exit), or falls through to 0x1008
+    // 0x1008: dec eax        -> Block 1 start (leader: fallthrough of branch)
+    // 0x100c: nop
+    // 0x1010: jmp 0x1000      -> jumps back to 0x1000 (loop back-edge!)
+    // 0x1014: xor eax, eax    -> Block 2 start (leader: target of branch)
+    // 0x1018: ret
+    std::vector<DisassembledInstruction> insns = {
+        DisassembledInstruction{.address = Address(0x1000), .mnemonic = "cmp", .operands = "eax, 0", .bytes = {0x83, 0xf8, 0x00}},
+        DisassembledInstruction{.address = Address(0x1004), .mnemonic = "je", .operands = "0x1014", .bytes = {0x74, 0x0e}},
+        DisassembledInstruction{.address = Address(0x1008), .mnemonic = "dec", .operands = "eax", .bytes = {0xff, 0xc8}},
+        DisassembledInstruction{.address = Address(0x100c), .mnemonic = "nop", .operands = "", .bytes = {0x90}},
+        DisassembledInstruction{.address = Address(0x1010), .mnemonic = "jmp", .operands = "0x1000", .bytes = {0xeb, 0xee}},
+        DisassembledInstruction{.address = Address(0x1014), .mnemonic = "xor", .operands = "eax, eax", .bytes = {0x31, 0xc0}},
+        DisassembledInstruction{.address = Address(0x1018), .mnemonic = "ret", .operands = "", .bytes = {0xc3}}
+    };
+
+    CFGGraph graph = CFGBuilder::build(insns);
+
+    // Validate block partitioning
+    assert(graph.blocks.size() == 3);
+    assert(graph.blocks[0].id == 0);
+    assert(graph.blocks[0].startAddr == Address(0x1000));
+    assert(graph.blocks[0].endAddr == Address(0x1004));
+    assert(graph.blocks[0].instructions.size() == 2);
+    assert(graph.blocks[0].trueTarget == Address(0x1014));
+    assert(graph.blocks[0].falseTarget == Address(0x1008));
+
+    assert(graph.blocks[1].id == 1);
+    assert(graph.blocks[1].startAddr == Address(0x1008));
+    assert(graph.blocks[1].endAddr == Address(0x1010));
+    assert(graph.blocks[1].instructions.size() == 3);
+    assert(graph.blocks[1].directTarget == Address(0x1000));
+
+    assert(graph.blocks[2].id == 2);
+    assert(graph.blocks[2].startAddr == Address(0x1014));
+    assert(graph.blocks[2].endAddr == Address(0x1018));
+    assert(graph.blocks[2].instructions.size() == 2);
+
+    // Validate edges & loop cycle detection
+    // Expected edges:
+    // Block 0 -> Block 2 (TrueBranch, !isBackEdge)
+    // Block 0 -> Block 1 (FalseBranch, !isBackEdge)
+    // Block 1 -> Block 0 (DirectJump, isBackEdge == true)
+    assert(graph.edges.size() == 3);
+    bool foundTrue = false, foundFalse = false, foundBackEdge = false;
+    for (const auto& e : graph.edges) {
+        if (e.fromBlockId == 0 && e.toBlockId == 2) {
+            assert(e.type == CFGEdgeType::TrueBranch);
+            assert(!e.isBackEdge);
+            foundTrue = true;
+        } else if (e.fromBlockId == 0 && e.toBlockId == 1) {
+            assert(e.type == CFGEdgeType::FalseBranch);
+            assert(!e.isBackEdge);
+            foundFalse = true;
+        } else if (e.fromBlockId == 1 && e.toBlockId == 0) {
+            assert(e.type == CFGEdgeType::DirectJump);
+            assert(e.isBackEdge);
+            foundBackEdge = true;
+        }
+    }
+    assert(foundTrue && foundFalse && foundBackEdge);
+
+    // Check queries
+    assert(graph.findBlock(0) != nullptr);
+    assert(graph.findBlock(99) == nullptr);
+    assert(graph.findBlockByAddress(Address(0x100c)) != nullptr);
+    assert(graph.findBlockByAddress(Address(0x100c))->id == 1);
+    assert(graph.findBlockByAddress(Address(0x1018))->id == 2);
+
+    auto succs0 = graph.getSuccessors(0);
+    assert(succs0.size() == 2);
+    auto preds0 = graph.getPredecessors(0);
+    assert(preds0.size() == 1 && preds0[0] == 1);
+
+    std::cout << "[PASS] ALL PHASE 8 CFG BUILDER TESTS PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 
@@ -1133,6 +1237,7 @@ int main(int argc, char* argv[]) {
     test_capstone_context_and_lru_cache();
     test_phase6_zydis_fast_decoder();
     test_phase7_avx2_memory_scanner();
+    test_phase8_cfg_builder();
 
     std::cout << "\n>>> ALL UNIT TESTS PASSED SUCCESSFULLY! <<<" << std::endl;
     return 0;

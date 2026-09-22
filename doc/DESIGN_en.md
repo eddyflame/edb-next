@@ -433,7 +433,15 @@ High information density, semantic color differentiation, and fluid keyboard/mou
     - Enabled state: Re-writes `0xCC` and restores the bright red dot `● ` and highlight aura.
     - Fully synchronized bidirectionally with the `BreakpointManagerView` drawer.
 
-
+### 3.23 Sugiyama Layered Control Flow Graph (CFG) Layout & Headless CFGBuilder
+- **Headless Core Partitioning (`CFGBuilder`)**: Fully headless component in `core/` following standard compiler 3-rule basic block leader detection (entry point $I_0$, conditional/unconditional branch targets, and instruction fallthroughs) to guarantee single-entry, single-exit basic blocks. Performs 3-state DFS cycle detection marking loop back-edges (`isBackEdge = true`).
+- **Five-Phase Sugiyama Layered Layout (`SugiyamaLayout`)**:
+  - **Phase 1 (Cycle Breaking)**: Separates DAG forward edges and back-edges, ignoring back-edges during topological ranking.
+  - **Phase 2 (Longest-Path Layering & Dummy Nodes)**: Assigns rank $L(v)$ and introduces virtual dummy nodes for multi-layer edge spans ($L(v) - L(u) > 1$).
+  - **Phase 3 (8-Sweep Barycenter Crossing Minimization)**: Iterative downward and upward barycenter sweeps rapidly reducing edge crossings.
+  - **Phase 4 (Coordinate Assignment & Centering)**: Allocates Y spacing by maximum layer node height and centers each layer horizontally.
+  - **Phase 5 (Collision-Free Routing & Outer Loop Channels)**: Cubic Bezier splines for forward edges, and dedicated exterior left/right side-channels with safe incremental offsets for loop back-edges, completely eliminating line collision over basic block code.
+- **Interactive UI Presentation (`CFGGraphView`, Tab 14)**: Monospace semantic instruction highlighting, color-coded branch edges (True: green, False: red, Jump: blue, Loop: dashed), and double-click navigation to disassembly.
 
 ---
 
@@ -513,6 +521,7 @@ edb-next/
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug protocol, link_map crawler & shared library hot-reloader
 │   ├── MemoryScanner.hpp/cpp   # CheatEngine-style differential memory scanner & multi-pass engine
 │   ├── TypeManager.hpp/cpp     # Compound data type manager, C struct parser, AMD64 ABI alignment & live evaluator
+│   ├── CFGBuilder.hpp/cpp      # Headless CFG graph builder (leader partitioning, SESE basic blocks, DFS cycle detection)
 │   ├── DebugSession.hpp/cpp    # Facade aggregating engine, breakpoints, symbols, and thread control
 │   └── SessionManager.hpp/cpp  # Multi-session container and active session dispatcher
 ├── ui/                         # Qt6 Presentation Layer
@@ -535,6 +544,7 @@ edb-next/
 │   ├── WatchView.hpp/cpp       # Dynamic expression watch window
 │   ├── TraceView.hpp/cpp       # Trace configuration, execution step history, and time-travel bar
 │   ├── CFGGraphView.hpp/cpp    # Interactive basic-block control flow graph view
+│   ├── SugiyamaLayout.hpp/cpp  # Five-phase Sugiyama layered graph layout engine (cycle breaking, barycenter sweeps, side-channel loop routing)
 │   ├── NotesView.hpp/cpp       # Monospace scratchpad notes editor
 │   ├── LogView.hpp/cpp         # Real-time filterable event console
 │   ├── BinaryInfoView.hpp/cpp  # Comprehensive ELF structural explorer

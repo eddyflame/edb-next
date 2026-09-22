@@ -13,6 +13,7 @@
 #include "core/PageGuardManager.hpp"
 #include "core/RendezvousManager.hpp"
 #include "ui/CFGGraphView.hpp"
+#include "ui/SugiyamaLayout.hpp"
 #include "ui/CommandBarView.hpp"
 #include "ui/MemoryHexView.hpp"
 #include "ui/BinaryInfoView.hpp"
@@ -282,8 +283,40 @@ void test_cfg_and_command_bar() {
     cfgView.setSession(std::shared_ptr<DebugSession>(&session, [](DebugSession*){}));
     cfgView.buildGraphForFunction(*session.resolveSymbol("calculate_fib"));
 
+    // Test SugiyamaLayout on synthetic cyclic CFG
+    std::vector<DisassembledInstruction> insns = {
+        DisassembledInstruction{.address = Address(0x1000), .mnemonic = "cmp", .operands = "eax, 0", .bytes = {0x83, 0xf8, 0x00}},
+        DisassembledInstruction{.address = Address(0x1004), .mnemonic = "je", .operands = "0x1014", .bytes = {0x74, 0x0e}},
+        DisassembledInstruction{.address = Address(0x1008), .mnemonic = "dec", .operands = "eax", .bytes = {0xff, 0xc8}},
+        DisassembledInstruction{.address = Address(0x100c), .mnemonic = "nop", .operands = "", .bytes = {0x90}},
+        DisassembledInstruction{.address = Address(0x1010), .mnemonic = "jmp", .operands = "0x1000", .bytes = {0xeb, 0xee}},
+        DisassembledInstruction{.address = Address(0x1014), .mnemonic = "xor", .operands = "eax, eax", .bytes = {0x31, 0xc0}},
+        DisassembledInstruction{.address = Address(0x1018), .mnemonic = "ret", .operands = "", .bytes = {0xc3}}
+    };
+    CFGGraph testGraph = CFGBuilder::build(insns);
+    std::map<int, QSizeF> sizes;
+    sizes[0] = QSizeF(300, 80);
+    sizes[1] = QSizeF(300, 100);
+    sizes[2] = QSizeF(300, 60);
+    auto layoutRes = SugiyamaLayout::layout(testGraph, sizes);
+    assert(layoutRes.blockRects.size() == 3);
+    assert(layoutRes.routedEdges.size() == 3);
+    assert(layoutRes.totalBounds.isValid());
+    assert(layoutRes.totalBounds.width() > 0 && layoutRes.totalBounds.height() > 0);
+
+    // Verify back-edge is flagged and routed
+    bool foundBackEdge = false;
+    for (const auto& re : layoutRes.routedEdges) {
+        if (re.fromBlockId == 1 && re.toBlockId == 0) {
+            assert(re.isBackEdge);
+            assert(!re.path.isEmpty());
+            foundBackEdge = true;
+        }
+    }
+    assert(foundBackEdge);
+
     session.terminate();
-    std::cout << "[PASS] CFG Graph generation and CommandBar execution verified." << std::endl;
+    std::cout << "[PASS] CFG Graph generation, Sugiyama layout, and CommandBar execution verified." << std::endl;
 }
 
 void test_log_manager() {
