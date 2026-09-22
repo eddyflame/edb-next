@@ -1,5 +1,6 @@
 #include "OpcodeSearcher.hpp"
 #include "DebugSession.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <algorithm>
 #include <cctype>
@@ -34,11 +35,11 @@ std::vector<OpcodeSearchResult> OpcodeSearcher::search(
     std::vector<OpcodeSearchResult> results;
     auto regions = session.memoryRegions();
 
-    csh cs_handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle) != CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(false);
+    if (!cs.isValid()) {
         return results;
     }
-    cs_option(cs_handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_INTEL);
+    csh cs_handle = cs.get();
 
     std::string lowerQuery = toLower(customQuery);
 
@@ -134,7 +135,6 @@ std::vector<OpcodeSearchResult> OpcodeSearcher::search(
         }
     }
 
-    cs_close(&cs_handle);
     return results;
 }
 

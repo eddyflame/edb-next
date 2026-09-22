@@ -151,7 +151,7 @@
 | 优先级 | 任务项 | 涉及文件 | 预期收益 | 预估复杂度 |
 | :--- | :--- | :--- | :--- | :--- |
 | **P0** | **汇编引擎内存化 (In-Memory Assembler)** | `core/Assembler.cpp` | 消除子进程与磁盘 IO，汇编速度从 50ms 降至微秒级，脱离外部 binutils 依赖 | 低~中 |
-| **P0** | **反汇编句柄池化 (Capstone Reuse)** | `core/DebugSession.cpp` 及各分析模块 | 消除频繁 `cs_open` 重复初始化，提升单步与鼠标悬停响应性 | 低 |
+| **P0** | **反汇编句柄池化与 LRU 缓存 (Capstone Reuse)** | `core/CapstoneContext.cpp`, `core/DebugSession.cpp` 及各分析模块 | **[已完成]** 消除频繁 `cs_open` 重复初始化，8 窗口 LRU 缓存，单步与悬停响应提升 | 低 |
 | **P1** | **DWARF CFI / libunwind 栈回溯** | `core/CallStackUnwinder.cpp` | 解决 `-fomit-frame-pointer` 现代程序栈帧截断问题，恢复完整调用栈 | 中 |
 | **P1** | **Zydis x86_64 解码引擎引入** | `core/DebugSession.cpp` / `core/ZydisDisasm.cpp` | 零堆分配，解码吞吐提升 10x~20x | 中 |
 | **P1** | **现代表达式求值 (ExprTk)** | `core/ExpressionEvaluator.cpp` | 支持变址乘法、位运算、复合条件断点 | 中 |

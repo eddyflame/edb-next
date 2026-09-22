@@ -1,6 +1,7 @@
 #include "CodeXRefFinder.hpp"
 #include "LinuxDebugEngine.hpp"
 #include "ElfParser.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <algorithm>
 
@@ -14,11 +15,11 @@ std::vector<CodeXRef> CodeXRefFinder::findXRefsTo(
     std::vector<CodeXRef> results;
     if (!engine.isAttached() || targetAddr.isNull()) return results;
 
-    csh handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(true);
+    if (!cs.isValid()) {
         return results;
     }
-    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+    csh handle = cs.get();
 
     auto regions = engine.getMemoryRegions();
     for (const auto& region : regions) {
@@ -104,7 +105,6 @@ std::vector<CodeXRef> CodeXRefFinder::findXRefsTo(
         cs_free(insn, count);
     }
 
-    cs_close(&handle);
     return results;
 }
 

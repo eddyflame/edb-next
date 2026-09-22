@@ -1,4 +1,5 @@
 #include "IntermodularCallsFinder.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <sstream>
 #include <algorithm>
@@ -11,11 +12,11 @@ std::vector<IntermodularCall> IntermodularCallsFinder::findCalls(std::shared_ptr
         return results;
     }
 
-    csh handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(true);
+    if (!cs.isValid()) {
         return results;
     }
-    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+    csh handle = cs.get();
 
     auto regions = session->memoryRegions();
     const auto& elf = session->elfParser();
@@ -112,7 +113,6 @@ std::vector<IntermodularCall> IntermodularCallsFinder::findCalls(std::shared_ptr
         cs_free(insn, count);
     }
 
-    cs_close(&handle);
     return results;
 }
 

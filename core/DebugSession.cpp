@@ -2,6 +2,7 @@
 #include "ExpressionEvaluator.hpp"
 #include "ConfigurationManager.hpp"
 #include "LogManager.hpp"
+#include "CapstoneContext.hpp"
 #include <QCoreApplication>
 #include <capstone/capstone.h>
 #include <csignal>
@@ -296,8 +297,8 @@ void DebugSession::stepOver(bool passSignal) {
     if (state_ != SessionState::Paused) return;
 
     // Check if current instruction is a CALL or REP-prefixed instruction
-    csh cs_handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle) == CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(false);
+    if (cs.isValid()) {
         uint8_t code[16] = {0};
         Address rip = currentRegs_.rip();
         if (engine_.readMemory(rip, code, sizeof(code))) {
@@ -310,7 +311,7 @@ void DebugSession::stepOver(bool passSignal) {
                 }
             }
             cs_insn* insn = nullptr;
-            size_t count = cs_disasm(cs_handle, code, sizeof(code), rip.value(), 1, &insn);
+            size_t count = cs_disasm(cs.get(), code, sizeof(code), rip.value(), 1, &insn);
             if (count > 0) {
                 std::string mnemonic = insn[0].mnemonic;
                 bool isCall = (mnemonic == "call");
@@ -320,14 +321,12 @@ void DebugSession::stepOver(bool passSignal) {
                     // Temporary internal breakpoint on the instruction after CALL or REP loop
                     bpMgr_.addBreakpoint(next_addr, true);
                     cs_free(insn, count);
-                    cs_close(&cs_handle);
                     resume(passSignal);
                     return;
                 }
                 cs_free(insn, count);
             }
         }
-        cs_close(&cs_handle);
     }
 
     stepInto(passSignal);
@@ -946,22 +945,17 @@ std::vector<DisassembledInstruction> DebugSession::disassembleFull(Address start
     std::vector<DisassembledInstruction> result;
     if (!engine_.isAttached()) return result;
 
-    csh cs_handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle) != CS_ERR_OK) {
+    auto syntax = ConfigurationManager::instance().disasm().syntax;
+    auto cs = CapstoneContext::acquire(false, syntax);
+    if (!cs.isValid()) {
         return result;
     }
-
-    if (ConfigurationManager::instance().disasm().syntax == DisassemblySyntax::ATT) {
-        cs_option(cs_handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_ATT);
-    } else {
-        cs_option(cs_handle, CS_OPT_SYNTAX, CS_OPT_SYNTAX_INTEL);
-    }
+    csh cs_handle = cs.get();
 
     size_t buffer_size = count * 15; // Max x86 instruction is 15 bytes
     std::vector<uint8_t> code(buffer_size, 0);
 
     if (!engine_.readMemory(start_addr, code.data(), buffer_size)) {
-        cs_close(&cs_handle);
         return result;
     }
 
@@ -1050,29 +1044,25 @@ std::vector<DisassembledInstruction> DebugSession::disassembleFull(Address start
         cs_free(insn, disasm_count);
     }
 
-    cs_close(&cs_handle);
     return result;
 }
 
-// P1-B: Public disassemble() — cache-hit fast path then falls back to disassembleFull().
+// P0-2: Public disassemble() — LRU cache-hit fast path then falls back to disassembleFull().
 std::vector<DisassembledInstruction> DebugSession::disassemble(Address start_addr, size_t count) {
-    if (disasmCache_.isValid(start_addr, count)) {
-        // Cache hit: only refresh the two fields that change on every step
-        for (auto& insn : disasmCache_.insns) {
+    if (auto* entry = disasmCache_.find(start_addr, count)) {
+        // Cache hit: only refresh the dynamic fields that change on every step
+        for (auto& insn : entry->insns) {
             insn.isCurrentRip = (insn.address == currentRegs_.rip());
             const auto* bp = bpMgr_.getBreakpoint(insn.address);
-            insn.hasBreakpoint     = (bp != nullptr);
+            insn.hasBreakpoint       = (bp != nullptr);
             insn.isBreakpointEnabled = (bp != nullptr && bp->enabled);
         }
-        return disasmCache_.insns;
+        return entry->insns;
     }
 
     // Cache miss: full decode, then populate cache
     auto result = disassembleFull(start_addr, count);
-    disasmCache_.baseAddr        = start_addr;
-    disasmCache_.requestedCount  = count;
-    disasmCache_.insns           = result;
-    disasmCache_.version         = 1;   // mark valid
+    disasmCache_.put(start_addr, count, result);
     return result;
 }
 

@@ -1205,10 +1205,11 @@ sequenceDiagram
 - **全线程下发与广播**：`DebugSession` 中的 `bpMgr_` 硬件断点设置与清除回调（`SetHwBpFunc` / `ClearHwBpFunc`）不仅向当前触发事件的活动线程配置 DR 寄存器，更主动通过 `engine_.enumerateTids()` 广播写入所有处于存活态的子线程。
 - **子线程捕获钩子无感补齐**：当内核触发线程创建事件（`handleThreadCreatedEvent`）时，系统在释放新线程执行前，调用 `syncHardwareBreakpointsToAllThreads()` 遍历 `BreakpointManager` 中全部已激活的硬件断点，将 DR0~DR3 地址与 DR7 控制掩码全量写入新线程，彻底解决多线程并发下的硬件断点脱靶问题。
 
-### 6.9 增量反汇编指令缓存架构 (`DisasmCache`)
-- **性能瓶颈**：在自动化单步追踪（Auto Trace）、逐指令步进及复杂条件断点循环中，调试器通常在同一代码窗口反复调用 `disassemble()`。此前每次调用皆执行 `process_vm_readv` 跨进程内存读取、Capstone 引擎重新初始化（`cs_open`）与全量指令重解码，形成显著的 CPU 热点。
-- **版本化视口缓存模型**：在 `DebugSession` 中引入轻量级 `DisasmCache`：记录当前反汇编缓存基地址 `baseAddr`、请求指令数 `requestedCount`、缓存版本号 `version` 与解码后的 `DisassembledInstruction` 序列。
-- **极速命中路径 (Fast-Path)**：当反汇编视口基地址与请求数量未发生变动且缓存有效时，直接跳过 Capstone 解码与跨进程内存读取，微秒级就地更新动态易变字段（`isCurrentRip`、`hasBreakpoint`、`isBreakpointEnabled`），单步刷新性能提升数倍。
+### 6.9 线程本地 CapstoneContext 句柄池与 LRU 反汇编指令缓存
+- **性能瓶颈**：在自动化单步追踪（Auto Trace）、逐指令步进及复杂条件断点循环中，调试器此前在反汇编与分析模块中（包含 `stepOver`、`disassembleFull`、`InstructionInspector`、`ROPScanner`、`FunctionFinder`、`StringScanner`、`OpcodeSearcher`、`CodeXRefFinder`、`IntermodularCallsFinder`）均反复执行 `cs_open` 初始化与 `cs_close` 销毁。高频的内部架构表构建和动态堆分配产生了显著 CPU 额外损耗。
+- **线程本地 CapstoneContext 句柄池**：引入 `CapstoneContext` 与零分配 RAII `CapstoneLease`。每个工作线程仅在首次使用时初始化并持有基础句柄与详情句柄，后续调用实现纳秒级就地复用，线程退出时自动安全释放。天然保障线程隔离与重入安全。
+- **多条目 LRU 视口缓存模型**：将 `DebugSession` 的 `DisasmCache` 由单一视口升级为容量为 8 的版本化 LRU 缓存。记录基地址、指令数量、访问计数器与 `DisassembledInstruction` 序列。当用户在上下多段代码、调用栈跳转或视图切换时，具备高达 90%+ 的直接命中率。
+- **极速命中路径 (Fast-Path)**：命中缓存时，跳过 Capstone 解码与跨进程内存读取，微秒级就地更新动态易变字段（`isCurrentRip`、`hasBreakpoint`、`isBreakpointEnabled`），单步刷新性能提升数倍。
 - **精确失效机制 (Selective Invalidation)**：在目标内存被覆写（`writeMemory()`）、断点添加/移除/切换/启用/禁用（`addBreakpoint`, `removeBreakpoint`, `toggleBreakpoint`, `enableBreakpoint`, `disableBreakpoint`）时，主动触发 `invalidateDisasmCache()`，确保反汇编与实际机器指令严格一致。
 
 ### 6.10 可插拔调试引擎抽象接口 (`IDebugBackend`)
