@@ -184,7 +184,7 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 | :--- | :--- | :--- | :--- |
 | **Software Design Document (SDD)** | [doc/DESIGN_en.md](doc/DESIGN_en.md) | [doc/DESIGN_zh.md](doc/DESIGN_zh.md) | Comprehensive technical architecture, algorithms, and roadmap |
 | **User Manual & Plugin Guide** | [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) | [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) | Full user manual, shortcut guide, and C++20 plugin development tutorial |
-| **Core Optimization & Modernization Proposal** | - | [doc/CORE_OPTIMIZATION_zh.md](doc/CORE_OPTIMIZATION_zh.md) | In-depth evaluation & roadmap for Keystone, Zydis, libunwind, ExprTk, etc. |
+| **Next-Gen Architecture & 2026 Roadmap** | - | [doc/NEXT_GEN_OPTIMIZATION_zh.md](doc/NEXT_GEN_OPTIMIZATION_zh.md) | In-depth 2026 modernization roadmap for Linux pidfd, Intel PT TTD, eBPF, libclang, SSA-IR & Ghidra |
 | **Contribution Guidelines** | [doc/CONTRIBUTING_en.md](doc/CONTRIBUTING_en.md) | [doc/CONTRIBUTING_zh.md](doc/CONTRIBUTING_zh.md) | Code style, git workflow, and PR verification rules |
 
 ---
