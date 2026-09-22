@@ -78,6 +78,7 @@
 - 🗺️ **ASLR/PIE 项目数据动态重定位与二进制离线打补丁**：`.edb_db` 工程数据库引入基址动态重构，在多次运行或跨 ASLR 启动时自适应重映射注释、标签、书签与断点；`PatchManager::patchFileToDisk` 引入运行时基址与动态基地址推导算法，全面支持 PIE/ASLR 二进制物理文件补丁导出。
 - ⚡ **高频单步控件单元格对象池复用与无缝滚轮滚动**：在 `DisassemblyView` 与 `MemoryHexView` 中以 `getOrCreateItem` 惰性对象池复用替代每帧全量 `new QTableWidgetItem`，根治单步与跟踪时的内存抖动；重载 `wheelEvent` 实现向前向后无缝反汇编与内存浏览。
 - 🧵 **线程局部脚本引擎并发隔离**：消除 Python 与 Lua 脚本引擎对全局单一静态实例指针的依赖，引入 `thread_local`、RAII 生命周期守卫（`PythonEngineScope`、`GilStateScope`）与 Lua Registry 映射（`kLuaEngineRegistryKey`），实现纯净的多会话并发脚本调试。
+- 📊 **Sugiyama 分层控制流图布局与核心解耦架构 (`CFGBuilder` & `SugiyamaLayout`)**：核心层实现标准编译原理三准则先导指令（Leader）划分基本块，配合三状态 DFS 精准侦测循环回边（Loop Back-Edge），实现纯净无 UI 依赖的控制流图模型。UI 呈现层创新引入经典五阶段 Sugiyama 分层布局算法（去环、最长路径拓扑分层、跨层虚拟占位节点、8 轮双向重心交叉极小化、层次化居中对齐、样条平滑避障与外侧专用通道回边布线），彻底解决连线穿透代码块与遮挡问题；支持滚轮无级缩放与双击基本块一键联动反汇编。
 
 ---
 

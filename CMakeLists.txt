@@ -129,6 +129,7 @@ set(CORE_SOURCES
     core/TypeManager.cpp
     core/CapstoneContext.cpp
     core/ZydisContext.cpp
+    core/CFGBuilder.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -175,6 +176,7 @@ set(UI_SOURCES
     ui/WatchView.cpp
     ui/TraceView.cpp
     ui/CFGGraphView.cpp
+    ui/SugiyamaLayout.cpp
     ui/NotesView.cpp
     ui/LogView.cpp
     ui/BinaryInfoView.cpp

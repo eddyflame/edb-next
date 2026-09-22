@@ -183,10 +183,11 @@
 2. **EFLAGS 动态分支预测推演**：
    - `InstructionInspector` 解析基址变址复合内存寻址（`base + index*scale + disp`）；
    - 根据当前实时标志位（ZF, SF, OF, CF）动态推算条件跳转是否发生（`[JUMP TAKEN]` / `[JUMP NOT TAKEN]`），常驻在主工作台底部状态条。
-3. **交互式基本块控制流图 (CFGGraphView - Tab 14)**：
-   - 自动切分函数基本块（Basic Blocks），分析无条件跳转、条件跳转（True 分支）与 Fall-through（False 直行分支）；
-   - 采用有向图层级分层拓扑渲染，绿色标识条件满足跳转，红色标识条件不满足直行，蓝色标识无条件跳转；
-   - 支持鼠标拖拽平移、滚轮无级缩放、双击节点直接联动反汇编定位。
+3. **交互式基本块控制流图 (CFGBuilder & SugiyamaLayout & CFGGraphView - Tab 14)**：
+   - **核心解耦与先导指令切分**：`CFGBuilder` 遵循标准三条先导指令（Leader）规则（函数入口指令、分支跳转目标、分支紧随顺序指令）精准提取函数内所有单入口单出口基本块，配合三状态 DFS 遍历精准识别循环回边（Loop Back-Edge）；
+   - **五阶段 Sugiyama 工业级分层布局**：`SugiyamaLayout` 自动执行去环、最长路径拓扑分层、跨层虚拟节点插入、8 轮双向重心交叉极小化（Barycenter Sweeps）、层次化居中平衡网格坐标分派；
+   - **样条平滑避障与外侧专用通道回边布线**：前向边采用三次贝塞尔平滑样条，循环回边采用图形左右外侧专用通道避让布线（多车道递增安全偏移），彻底根除连线穿透覆盖基本块代码的缺陷；
+   - **语义色彩与交互联动**：绿色标识条件满足分支（True）、红色标识条件不满足直行（False）、蓝色标识无条件跳转（Jump）、虚线标识循环回边（Loop）；支持鼠标滚轮无级平滑缩放、抓手平移拖拽，双击基本块一键通过中央总线联动定位至主反汇编窗口。
 4. **分支跟随与导航历史堆栈 (Follow Branch & Navigation History)**：
    - 快捷键 **Enter**：自动解析当前指令分支目标（`CALL`, `JMP`, `Jcc`），将当前地址压入导航历史栈并瞬时跳转至目标；
    - 快捷键 **Esc / Backspace / Alt+Left**：瞬时回退至上一个逆向分析点，**Alt+Right** 前进，逆向函数调用极为流畅。
@@ -772,6 +773,7 @@ edb-next/
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug 协议、link_map 遍历与动态库热重载
 │   ├── MemoryScanner.hpp/cpp   # CheatEngine 风格动态内存特征差分扫描器与多轮收敛引擎
 │   ├── TypeManager.hpp/cpp     # 复合数据类型管理、C 结构体语法解析、ABI 自然对齐与实时取样
+│   ├── CFGBuilder.hpp/cpp      # 无 UI 依赖的控制流图构建器 (Leader 划分、单入单出基本块、DFS 循环回边探测)
 │   ├── DebugSession.hpp/cpp    # 独立调试会话高阶门面 (外观模式，聚合引擎、断点、线程与解析器)
 │   └── SessionManager.hpp/cpp  # 多会话容器与活动会话调度器
 ├── ui/                         # 现代 Qt6 GUI 表现层
@@ -793,7 +795,8 @@ edb-next/
 │   ├── ROPToolView.hpp/cpp     # ROP Gadget 分类浏览器与 Python Payload 导出面板
 │   ├── WatchView.hpp/cpp       # 动态监视表达式常驻窗口
 │   ├── TraceView.hpp/cpp       # 执行追踪、自动步进与时间旅行历史导航面板
-│   ├── CFGGraphView.hpp/cpp    # 交互式基本块控制流有向图视图
+│   ├── CFGGraphView.hpp/cpp    # 交互式基本块控制流有向图视图 (高亮渲染与反汇编双向联动)
+│   ├── SugiyamaLayout.hpp/cpp  # 五阶段 Sugiyama 分层布局引擎 (去环、长边虚拟节点、8轮重心交叉极小化、外侧通道回边避让)
 │   ├── NotesView.hpp/cpp       # 随手记逆向分析草稿笔记视图
 │   ├── LogView.hpp/cpp         # 实时系统日志与分级过滤控制台
 │   ├── BinaryInfoView.hpp/cpp  # ELF 文件头、节区表、段头表与动态依赖全景视图

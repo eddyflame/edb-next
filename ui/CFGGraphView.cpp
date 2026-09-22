@@ -10,8 +10,8 @@
 #include <QWheelEvent>
 #include <QPen>
 #include <QBrush>
+#include <QFont>
 #include <map>
-#include <set>
 #include <cmath>
 
 namespace edb_next {
@@ -44,19 +44,24 @@ void CFGGraphView::setSession(std::shared_ptr<DebugSession> session) {
 
 void CFGGraphView::setupUi() {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setContentsMargins(0, 0, 0, 0);
 
     auto* toolbar = new QHBoxLayout();
-    auto* lbl_title = new QLabel("Interactive Control Flow Graph (CFG)", this);
-    lbl_title->setStyleSheet("font-weight: bold; color: #64b5f6;");
+    toolbar->setContentsMargins(8, 4, 8, 4);
 
-    auto* btn_refresh = new QPushButton("Refresh Current Function", this);
+    auto* lbl_title = new QLabel("Interactive Control Flow Graph (CFG)", this);
+    lbl_title->setStyleSheet("font-weight: bold; color: #80cbc4;");
+
+    auto* btn_refresh = new QPushButton("Refresh", this);
     connect(btn_refresh, &QPushButton::clicked, this, &CFGGraphView::onRefreshCurrent);
-    auto* btn_zin = new QPushButton("Zoom In (+)", this);
+
+    auto* btn_zin = new QPushButton("+", this);
     connect(btn_zin, &QPushButton::clicked, this, &CFGGraphView::onZoomIn);
-    auto* btn_zout = new QPushButton("Zoom Out (-)", this);
+
+    auto* btn_zout = new QPushButton("-", this);
     connect(btn_zout, &QPushButton::clicked, this, &CFGGraphView::onZoomOut);
-    auto* btn_zreset = new QPushButton("Reset Zoom", this);
+
+    auto* btn_zreset = new QPushButton("100%", this);
     connect(btn_zreset, &QPushButton::clicked, this, &CFGGraphView::onResetZoom);
 
     toolbar->addWidget(lbl_title);
@@ -118,102 +123,50 @@ void CFGGraphView::buildGraphForFunction(Address targetAddr) {
     // 1. Find function boundary
     auto func = FunctionFinder::findEnclosingFunction(*session_, targetAddr);
     Address start_addr = func ? func->startAddress : targetAddr;
-    size_t insn_count = func ? std::max<size_t>(10, func->size / 3) : 50;
+    size_t insn_count = func ? std::max<size_t>(10, func->size / 3) : 60;
 
-    auto raw_insns = session_->disassemble(start_addr, std::min<size_t>(insn_count, 120));
+    auto raw_insns = session_->disassemble(start_addr, std::min<size_t>(insn_count, 150));
     if (raw_insns.empty()) return;
 
-    // 2. Partition into Basic Blocks
-    std::vector<CFGBasicBlock> blocks;
-    CFGBasicBlock curBlock;
-    curBlock.id = 0;
-    curBlock.startAddr = raw_insns[0].address;
+    // 2. Build precise CFG with Leader detection & cycle breaking
+    CFGGraph graph = CFGBuilder::build(raw_insns);
 
-    auto is_jcc = [](const std::string& m) {
-        return (m.rfind("j", 0) == 0 && m != "jmp");
-    };
-
-    for (size_t i = 0; i < raw_insns.size(); ++i) {
-        const auto& insn = raw_insns[i];
-        curBlock.instructions.push_back(CFGInstruction{
-            .address = insn.address,
-            .mnemonic = insn.mnemonic,
-            .operands = insn.operands
-        });
-        curBlock.endAddr = insn.address;
-
-        bool is_ret = (insn.mnemonic == "ret");
-        bool is_jmp = (insn.mnemonic == "jmp");
-        bool is_cond = is_jcc(insn.mnemonic);
-
-        if (is_cond || is_jmp || is_ret || i == raw_insns.size() - 1) {
-            // Parse branch target address
-            Address target(0);
-            if (!insn.operands.empty()) {
-                uint64_t val = std::strtoull(insn.operands.c_str(), nullptr, 0);
-                target = Address(val);
-            }
-
-            if (is_cond) {
-                curBlock.trueTarget = target;
-                if (i + 1 < raw_insns.size()) {
-                    curBlock.falseTarget = raw_insns[i + 1].address;
-                }
-            } else if (is_jmp) {
-                curBlock.directTarget = target;
-            }
-
-            blocks.push_back(curBlock);
-
-            if (i + 1 < raw_insns.size()) {
-                curBlock = CFGBasicBlock();
-                curBlock.id = static_cast<int>(blocks.size());
-                curBlock.startAddr = raw_insns[i + 1].address;
-            }
-        }
-    }
-
-    // 3. Layout and render blocks
-    layoutAndDrawBlocks(blocks);
+    // 3. Layout and render blocks via Sugiyama layered algorithm
+    layoutAndDrawBlocks(graph);
 }
 
-void CFGGraphView::layoutAndDrawBlocks(const std::vector<CFGBasicBlock>& blocks) {
-    if (blocks.empty()) return;
+void CFGGraphView::layoutAndDrawBlocks(const CFGGraph& graph) {
+    if (graph.blocks.empty()) return;
 
-    std::map<Address, QPointF> blockPositions;
-    std::map<Address, QSizeF> blockSizes;
-
-    qreal curY = 40.0;
+    // 1. Calculate bounding boxes for all basic blocks
+    std::map<int, QSizeF> blockSizes;
     const qreal blockWidth = 340.0;
-    const qreal startX = 60.0;
 
-    // Draw blocks sequentially vertically, branching horizontally if branching
-    for (size_t i = 0; i < blocks.size(); ++i) {
-        const auto& b = blocks[i];
-        qreal blockHeight = 40.0 + b.instructions.size() * 18.0;
+    for (const auto& b : graph.blocks) {
+        qreal blockHeight = 44.0 + b.instructions.size() * 18.0;
+        blockSizes[b.id] = QSizeF(blockWidth, blockHeight);
+    }
 
-        qreal x = startX;
-        if (b.trueTarget.has_value() && (i % 2 == 1)) {
-            x += (blockWidth + 50.0);
-        }
+    // 2. Calculate Sugiyama layout
+    CFGLayoutResult layoutResult = SugiyamaLayout::layout(graph, blockSizes, 70.0, 50.0);
 
-        QRectF rect(x, curY, blockWidth, blockHeight);
-        blockPositions[b.startAddr] = QPointF(x, curY);
-        blockSizes[b.startAddr] = QSizeF(blockWidth, blockHeight);
+    // 3. Render Basic Blocks
+    for (const auto& b : graph.blocks) {
+        if (!layoutResult.blockRects.count(b.id)) continue;
+        const QRectF& rect = layoutResult.blockRects.at(b.id);
 
-        // Container Box
         auto* box = new ClickableBlockItem(b.startAddr, rect, [this](Address addr) {
             Q_EMIT jumpToDisassemblyRequested(addr);
         });
-        box->setBrush(QColor(32, 36, 42));
-        box->setPen(QPen(QColor(70, 78, 90), 1.5));
+        box->setBrush(QColor(30, 34, 40));
+        box->setPen(QPen(QColor(65, 75, 90), 1.5));
         scene_->addItem(box);
 
         // Title text item
         auto* title = new QGraphicsTextItem(box);
         title->setHtml(QString("<b style='color: #64b5f6;'>loc_%1:</b>")
             .arg(b.startAddr.toQString()));
-        title->setPos(x + 8, curY + 4);
+        title->setPos(rect.x() + 8, rect.y() + 4);
         title->setFont(QFont("Monospace", 9));
 
         // Instructions text item
@@ -222,7 +175,7 @@ void CFGGraphView::layoutAndDrawBlocks(const std::vector<CFGBasicBlock>& blocks)
             QString mColor = "#81c784";
             if (insn.mnemonic == "call") mColor = "#ffb74d";
             else if (insn.mnemonic.rfind("j", 0) == 0) mColor = "#4dd0e1";
-            else if (insn.mnemonic == "ret") mColor = "#e57373";
+            else if (insn.mnemonic.rfind("ret", 0) == 0) mColor = "#e57373";
 
             insnHtml += QString("<span style='color: #888;'>%1</span>  <span style='color: %2; font-weight: bold;'>%3</span> %4<br>")
                 .arg(insn.address.toQString())
@@ -234,72 +187,44 @@ void CFGGraphView::layoutAndDrawBlocks(const std::vector<CFGBasicBlock>& blocks)
 
         auto* body = new QGraphicsTextItem(box);
         body->setHtml(insnHtml);
-        body->setPos(x + 8, curY + 24);
-
-        curY += (blockHeight + 50.0);
+        body->setPos(rect.x() + 8, rect.y() + 24);
     }
 
-    // Draw routing arrows between blocks
-    for (const auto& b : blocks) {
-        auto fromPosIt = blockPositions.find(b.startAddr);
-        auto fromSizeIt = blockSizes.find(b.startAddr);
-        if (fromPosIt == blockPositions.end() || fromSizeIt == blockSizes.end()) continue;
+    // 4. Render Routed Edges (Forward curves & Outer loop channels)
+    for (const auto& edge : layoutResult.routedEdges) {
+        auto* pathItem = new QGraphicsPathItem(edge.path);
+        QPen pen(edge.color, 2, edge.isBackEdge ? Qt::DashLine : Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        pathItem->setPen(pen);
+        scene_->addItem(pathItem);
 
-        QPointF fromBottomCenter(fromPosIt->second.x() + fromSizeIt->second.width() / 2,
-                                 fromPosIt->second.y() + fromSizeIt->second.height());
-
-        // Helper to draw curved bezier edge
-        auto draw_edge = [this](QPointF p1, QPointF p2, const QColor& color, const QString& label) {
-            QPainterPath path;
-            path.moveTo(p1);
-            qreal midY = (p1.y() + p2.y()) / 2.0;
-            path.cubicTo(QPointF(p1.x(), midY), QPointF(p2.x(), midY), p2);
-
-            auto* edgeItem = new QGraphicsPathItem(path);
-            edgeItem->setPen(QPen(color, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            scene_->addItem(edgeItem);
-
-            // Arrow head
-            qreal arrowSize = 7.0;
-            QPolygonF arrowHead;
-            arrowHead << p2 << QPointF(p2.x() - arrowSize, p2.y() - arrowSize) << QPointF(p2.x() + arrowSize, p2.y() - arrowSize);
-            auto* headItem = scene_->addPolygon(arrowHead, QPen(color), QBrush(color));
-            (void)headItem;
-
-            if (!label.isEmpty()) {
-                auto* lbl = scene_->addText(label, QFont("Monospace", 8));
-                lbl->setDefaultTextColor(color);
-                lbl->setPos((p1.x() + p2.x()) / 2 + 5, midY - 10);
-            }
-        };
-
-        // True branch (Taken) -> Green
-        if (b.trueTarget.has_value()) {
-            auto toIt = blockPositions.find(*b.trueTarget);
-            if (toIt != blockPositions.end()) {
-                QPointF toTop(toIt->second.x() + blockWidth / 2, toIt->second.y());
-                draw_edge(QPointF(fromBottomCenter.x() - 40, fromBottomCenter.y()), toTop, QColor(76, 175, 80), "True");
-            }
+        // Arrow head
+        QPolygonF arrowHead;
+        const qreal sz = 7.0;
+        if (std::abs(edge.arrowAngle - 90.0) < 5.0) {
+            arrowHead << edge.arrowHeadPos
+                      << QPointF(edge.arrowHeadPos.x() - sz, edge.arrowHeadPos.y() - sz)
+                      << QPointF(edge.arrowHeadPos.x() + sz, edge.arrowHeadPos.y() - sz);
+        } else if (std::abs(edge.arrowAngle) < 5.0) {
+            arrowHead << edge.arrowHeadPos
+                      << QPointF(edge.arrowHeadPos.x() - sz, edge.arrowHeadPos.y() - sz)
+                      << QPointF(edge.arrowHeadPos.x() - sz, edge.arrowHeadPos.y() + sz);
+        } else {
+            arrowHead << edge.arrowHeadPos
+                      << QPointF(edge.arrowHeadPos.x() + sz, edge.arrowHeadPos.y() - sz)
+                      << QPointF(edge.arrowHeadPos.x() + sz, edge.arrowHeadPos.y() + sz);
         }
+        scene_->addPolygon(arrowHead, QPen(edge.color), QBrush(edge.color));
 
-        // False branch (Not Taken) -> Red
-        if (b.falseTarget.has_value()) {
-            auto toIt = blockPositions.find(*b.falseTarget);
-            if (toIt != blockPositions.end()) {
-                QPointF toTop(toIt->second.x() + blockWidth / 2, toIt->second.y());
-                draw_edge(QPointF(fromBottomCenter.x() + 40, fromBottomCenter.y()), toTop, QColor(244, 67, 54), "False");
-            }
-        }
-
-        // Direct branch / Fallthrough -> Blue/Cyan
-        if (b.directTarget.has_value()) {
-            auto toIt = blockPositions.find(*b.directTarget);
-            if (toIt != blockPositions.end()) {
-                QPointF toTop(toIt->second.x() + blockWidth / 2, toIt->second.y());
-                draw_edge(fromBottomCenter, toTop, QColor(33, 150, 243), "Jump");
-            }
+        // Edge label
+        if (!edge.label.isEmpty()) {
+            auto* lbl = scene_->addText(edge.label, QFont("Monospace", 8));
+            lbl->setDefaultTextColor(edge.color);
+            QPointF pMid = edge.path.pointAtPercent(0.5);
+            lbl->setPos(pMid.x() + 6, pMid.y() - 10);
         }
     }
+
+    scene_->setSceneRect(layoutResult.totalBounds);
 }
 
 } // namespace edb_next
