@@ -152,9 +152,9 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **P0** | **汇编引擎内存化 (Keystone In-Memory)** | `core/Assembler.cpp`, `third_party/keystone/` | **[已完成]** 纯内存指令编译，单条微秒级（1000条仅耗时 1.2ms，提速 >10,000x），脱离外部 binutils 依赖，保留 Fallback | 低~中 |
 | **P0** | **反汇编句柄池化与 LRU 缓存 (Capstone Reuse)** | `core/CapstoneContext.cpp`, `core/DebugSession.cpp` 及各分析模块 | **[已完成]** 消除频繁 `cs_open` 重复初始化，8 窗口 LRU 缓存，单步与悬停响应提升 | 低 |
-| **P1** | **DWARF CFI / libunwind 栈回溯** | `core/CallStackUnwinder.cpp` | 解决 `-fomit-frame-pointer` 现代程序栈帧截断问题，恢复完整调用栈 | 中 |
+| **P1** | **DWARF CFI 栈回溯 (libdwfl Unwinding)** | `core/CallStackUnwinder.cpp` | **[已完成]** 基于 `.eh_frame` / `.debug_frame` CFI 状态机，克服 `-fomit-frame-pointer` 栈帧截断，支持系统库跨帧与双轨回退 | 中 |
+| **P1** | **全功能现代表达式求值 (Enhanced Evaluator)** | `core/ExpressionEvaluator.cpp` | **[已完成]** 现代递归下降解析器，支持乘除变址寻址、位运算、复合逻辑与括号优先级 | 中 |
 | **P1** | **Zydis x86_64 解码引擎引入** | `core/DebugSession.cpp` / `core/ZydisDisasm.cpp` | 零堆分配，解码吞吐提升 10x~20x | 中 |
-| **P1** | **现代表达式求值 (ExprTk)** | `core/ExpressionEvaluator.cpp` | 支持变址乘法、位运算、复合条件断点 | 中 |
 | **P2** | **CFG 分层图布局 (Sugiyama/Graphviz)** | `ui/CFGGraphView.cpp` | 呈现专业级无交叉分层控制流图 | 中~高 |
 | **P2** | **向量化多线程内存搜索** | `core/MemoryScanner.cpp`, `PatternSearcher.cpp` | GB 级内存扫描提速 10x+，修复 16MB 截断缺陷 | 中 |
 | **P2** | **脚本绑定重构 (sol2 / nanobind)** | `core/LuaScriptEngine.cpp`, `PythonScriptEngine.cpp` | 缩减 80% 裸 C 样板代码，保障类型与内存安全 | 中 |
@@ -211,3 +211,34 @@
    * 扩充 `DebugSession::DisasmCache` 为 8 槽位容量的 LRU 链表与哈希映射。
    * 支持多视口、反汇编回滚、调用栈定位与不同地址区间的无缝缓存命中，在内存写入与断点变更时按需失效。
 3. **性能收益**：单步与自动追踪耗时降低 40%~60%，彻底根除频繁的 `malloc`/`free` 抖动。
+
+---
+
+## 5. P1 专项实施成果与架构升级
+
+### 5.1 P1-1: DWARF CFI 深度调用栈回溯（已落地）
+
+#### 5.1.1 架构设计与实现机制
+* **核心模块**：[`core/CallStackUnwinder.cpp`](file:///home/eddy/myplace/project/edb-next/core/CallStackUnwinder.cpp)
+* **实现亮点**：
+  1. **零外部新包依赖**：直接复用项目中现有的 `libdw` / `libdwfl` 动态库，无需额外引入外部 `libunwind-ptrace` 复杂工具包。
+  2. **解耦式自定义回调**：通过 `dwfl_attach_state` 注册 `Dwfl_Thread_Callbacks`：
+     - `memory_read`：直通 `DebugSession::read<uint64_t>()`，天然适配任何物理或 Mock 调试引擎；
+     - `set_initial_registers`：注入 System V AMD64 ABI 标准 DWARF 寄存器映射（0..15 映射 RAX..R15，PC 映射 RIP）；
+     - `frame_cb`：调用 `dwfl_frame_pc` 获得精确的指令指针与激活态标志。
+  3. **双轨容灾机制**：若 DWARF CFI 在极端无 `.eh_frame` 剥离二进制中仅产生 1 帧，自动透明平滑回退至传统 RBP 链遍历，确保绝不丢失可用栈帧。
+
+### 5.2 P1-2: 全功能现代表达式求值引擎（已落地）
+
+#### 5.2.1 架构设计与语法支持
+* **核心模块**：[`core/ExpressionEvaluator.cpp`](file:///home/eddy/myplace/project/edb-next/core/ExpressionEvaluator.cpp)
+* **实现亮点**：
+  1. **标准优先级递归下降语法分析器**：替换原有的简易单层匹配，构建了现代 C++20 自顶向下解析器，涵盖 13 个完整语法层次。
+  2. **逆向级复合运算符支持**：
+     - **变址乘除运算**：原生支持 `rax + rcx * 8 + 0x20` 等基址变址复合表达式；
+     - **位操作符**：`&`、`|`、`^`、`~`、`<<`、`>>`（如 `(rax & 0xff00) >> 8`）；
+     - **复合条件逻辑**：`&&`、`||`、`!`、`==`、`!=`、`<`、`<=`、`>`、`>=`（如 `rax == 0x100 && rdi == 42`）；
+     - **圆括号优先级嵌套**：`(2 + 3) * 4`；
+     - **细粒度内存解引用**：`[expr]` 及尺寸前缀（`byte ptr [...]`, `word ptr [...]`, `dword ptr [...]`, `qword ptr [...]`）。
+  3. **全架构寄存器覆盖**：全面解析 x86_64 64位（`rax`~`r15`）、32位（`eax`~`r15d`）、16位（`ax`~`r15w`）以及 8位（`al`~`r15b`、`ah`~`dh`）所有寄存器。
+

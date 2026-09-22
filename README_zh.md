@@ -65,6 +65,8 @@
 - 🔄 **全线程硬件断点同步机制**：调试会话硬件断点（DR0~DR7）在配置与清除时全自动同步至所有存活线程，并在子线程创建事件（`handleThreadCreatedEvent`）中由系统无感补齐父线程已激活的硬件断点，彻底根治多线程并发场景下的硬件断点脱靶与漏报。
 - ⚡ **纯内存超高速汇编引擎 (In-Memory Keystone Assembler)**：深度集成 Keystone 汇编引擎（LLVM MC），替代传统外部 `as`/`ld`/`objcopy` 多进程与磁盘 I/O 链路，1000 条汇编指令压测仅需 1.2ms（单条 1.2μs，性能提升逾 10,000 倍），原生支持基址与相对跳转重定位，保留外部工具链无缝回退能力。
 - ⚡ **线程局部 Capstone 句柄池与 8 窗口 LRU 反汇编缓存 (`CapstoneContext` & `DisasmCache`)**：引入 RAII `CapstoneLease` 与线程局部双模式（Basic/Detail）句柄池，全域消除 8 大分析模块高频 `cs_open`/`cs_close` 初始化开销与堆内存抖动；升级 8 槽位 LRU 指令缓存，多视口与单步动画如丝般顺滑。
+- 🪜 **DWARF CFI 深度调用栈回溯与系统库跨帧展开 (CFI Call Stack Unwinding)**：基于 `libdwfl` 深度解析 `.eh_frame` 与 `.debug_frame` CFI 状态机，直通 `DebugSession` 自定义内存与寄存器读取接口，彻底根治现代编译器开启 `-fomit-frame-pointer` 优化时传统 RBP 栈帧截断问题；完美回溯穿透 `libc.so` 等系统动态库，并内置 RBP 链与双轨容灾回退。
+- 🧮 **现代递归下降全功能表达式与条件断点引擎 (Enhanced Expression Evaluator)**：全新重写 13 级运算符优先级的现代 C++20 词法与语法分析器，支持基址变址乘除缩放寻址（`[rax + rcx * 8 + 0x20]`）、位操作符（`&`、`|`、`^`、`~`、`<<`、`>>`）、复合逻辑表达式（`rax == 0x100 && rdi != 0`）、圆括号嵌套以及全架构寄存器（64/32/16/8位）与指定尺寸内存解引用，令高级条件断点与 CommandBar `eval` 表达能力达到工业级。
 - 🔌 **可插拔调试引擎抽象接口（`IDebugBackend`）**：将 `DebugSession`、`EventLoopThread` 与 `TypeManager` 等核心模块基于纯虚接口 `IDebugBackend` 与底层 Linux 内核实现完全解耦，支持零真实进程依赖的 `MockDebugBackend` 离线单元测试，并为后续适配 GDB/LLDB RSP 远程调试协议确立清晰的架构契约。
 - 🚌 **中心化多视图跨界路由总线（`NavigationBus`）**：彻底消除 22+ 个视图组件间繁复且脆弱的点对点 Qt 信号插槽网状强耦合；统一由 `NavigationBus` 集中分发反汇编跳转、内存转储、调用栈帧、结构体查看器、字符串交叉引用与模块间调用的导航请求。
 - 🗂️ **模块化命令注册与分发引擎（`CommandRegistry`）**：彻底重构解耦 1100+ 行的单体 `CommandBarView`，将命令按职责域模块化分区注册（`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`）；支持前缀命令补全、别名解析（`g` -> `run`, `libs` -> `modules`）、分类帮助与插件动态命令注入。
