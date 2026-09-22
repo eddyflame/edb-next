@@ -228,8 +228,14 @@ void test_call_stack_and_hardware_breakpoints() {
                   << " (RBP: " << f.frameBase.toHex() << ")" << std::endl;
     }
 
-    assert(frames.size() >= 2 && "Should have at least 2 stack frames (calculate_fib and caller)");
+    assert(frames.size() >= 3 && "Should have at least 3 stack frames with DWARF CFI/RBP (calculate_fib, main, and libc)");
     assert(frames[0].functionSymbol.find("calculate_fib") != std::string::npos && "Frame 0 should be calculate_fib");
+    assert(frames[1].functionSymbol.find("main") != std::string::npos && "Frame 1 should be caller main");
+
+    // Verify DWARF CFI / Unwinder direct call
+    auto direct_frames = CallStackUnwinder::unwind(session, 16);
+    assert(direct_frames.size() >= 3 && "Direct CallStackUnwinder::unwind should yield >= 3 frames");
+    assert(direct_frames[0].ip == session.registers().rip());
 
     // 3. Test Hardware Breakpoint
     session.removeBreakpoint(*fib_sym);
@@ -468,19 +474,48 @@ void test_phase4_threads_assembler_and_conditional_bp() {
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
     std::cout << "[PASS] In-memory assembler benchmark: 1000 instructions assembled in " << elapsed_ms << "ms." << std::endl;
 
-    // 2. ExpressionEvaluator test
+    // 2. Enhanced ExpressionEvaluator test
     RegisterContext dummy_regs;
     dummy_regs.raw().rax = 0x100;
+    dummy_regs.raw().rbx = 0x50;
+    dummy_regs.raw().rcx = 0x4;
     dummy_regs.raw().rdi = 42;
 
+    // Basic arithmetic & precedence
     auto val_eval = ExpressionEvaluator::evaluateValue("rax + 0x20", dummy_regs);
     assert(val_eval.has_value() && *val_eval == 0x120);
-    std::cout << "[PASS] ExpressionEvaluator value evaluation verified: rax + 0x20 = 0x120" << std::endl;
 
-    bool cond_true = ExpressionEvaluator::evaluateCondition("rdi == 42", dummy_regs);
-    bool cond_false = ExpressionEvaluator::evaluateCondition("rdi == 99", dummy_regs);
-    assert(cond_true && !cond_false);
-    std::cout << "[PASS] ExpressionEvaluator condition evaluation verified." << std::endl;
+    auto prec_eval = ExpressionEvaluator::evaluateValue("2 + 3 * 4", dummy_regs);
+    assert(prec_eval.has_value() && *prec_eval == 14);
+
+    auto paren_eval = ExpressionEvaluator::evaluateValue("(2 + 3) * 4", dummy_regs);
+    assert(paren_eval.has_value() && *paren_eval == 20);
+
+    // Scale index: rax + rcx * 8 + 0x20 -> 0x100 + 4 * 8 + 0x20 = 0x140
+    auto scale_eval = ExpressionEvaluator::evaluateValue("rax + rcx * 8 + 0x20", dummy_regs);
+    assert(scale_eval.has_value() && *scale_eval == 0x140);
+
+    // Bitwise operators: &, |, ^, ~, <<, >>
+    auto bit_and = ExpressionEvaluator::evaluateValue("(0xff00 & 0x0f00) >> 8", dummy_regs);
+    assert(bit_and.has_value() && *bit_and == 0xf);
+
+    auto bit_xor = ExpressionEvaluator::evaluateValue("1 ^ 3", dummy_regs);
+    assert(bit_xor.has_value() && *bit_xor == 2);
+
+    auto bit_or = ExpressionEvaluator::evaluateValue("0x10 | 0x01", dummy_regs);
+    assert(bit_or.has_value() && *bit_or == 0x11);
+
+    auto shift_eval = ExpressionEvaluator::evaluateValue("1 << 10", dummy_regs);
+    assert(shift_eval.has_value() && *shift_eval == 1024);
+
+    // Compound conditions: &&, ||, !
+    assert(ExpressionEvaluator::evaluateCondition("rdi == 42", dummy_regs));
+    assert(!ExpressionEvaluator::evaluateCondition("rdi == 99", dummy_regs));
+    assert(ExpressionEvaluator::evaluateCondition("rax == 0x100 && rdi == 42", dummy_regs));
+    assert(!ExpressionEvaluator::evaluateCondition("rax == 0x100 && rdi == 99", dummy_regs));
+    assert(ExpressionEvaluator::evaluateCondition("rax == 0 || rdi == 42", dummy_regs));
+    assert(ExpressionEvaluator::evaluateCondition("!(rdi == 99)", dummy_regs));
+    std::cout << "[PASS] Enhanced ExpressionEvaluator verified: arithmetic, scale-index, bitwise, and compound logic." << std::endl;
 
     // 3. Threads and Active TID test
     DebugSession session("phase4_test", "Phase 4 Test");

@@ -154,7 +154,7 @@ Conversely, the Linux ecosystem has suffered from a distinct gap:
 
 ### 3.5 Runtime Stack & Call Frame Unwinding
 - **Dedicated StackView**: 8-byte QWORD aligned layout; dynamic relative offset to RSP/RBP; intelligent double-click routing (disassembly jump for code pointers, hex dump jump for data pointers); `[RSP]` reset button; `Shift+S` expand/collapse shortcut.
-- **CallStackUnwinder (Tab 3)**: Safe RBP frame chain traversal with alignment, monotonic increment, and memory readability checks; symbol-annotated Frame #0~#N.
+- **CallStackUnwinder (Tab 3)**: DWARF CFI (`.eh_frame` / `.debug_frame` via `libdwfl`) state machine traversal overcoming `-fomit-frame-pointer` frame amputation; safe RBP chain fallback with alignment and monotonicity validation; symbol-annotated Frame #0~#N.
 
 ### 3.6 Heap Deconstruction & Linux OS Introspection
 - **Glibc ptmalloc Heap Analyzer (Tab 9)**: Traverses `malloc_chunk` structures in `[heap]`, parses size and `A|M|P` flags, identifies Allocated/Free/Top chunks, double-click to follow in Dump.
@@ -481,13 +481,13 @@ edb-next/
 │   ├── ElfParser.hpp/cpp       # ELF64 headers, segments, sections, symbol resolution, dynamic tags
 │   ├── DwarfParser.hpp/cpp     # libdw-based DWARF debug info and line mapping parser
 │   ├── SourceFileManager.hpp/cpp# Physical source file reader and line caching manager
-│   ├── CallStackUnwinder.hpp/cpp# RBP-based safe call stack frame unwinding
+│   ├── CallStackUnwinder.hpp/cpp# DWARF CFI & RBP hybrid deep call stack frame unwinding
 │   ├── StringScanner.hpp/cpp   # Readable memory ASCII string extraction & code cross-referencing
 │   ├── AnnotationManager.hpp/cpp# User comments, labels & bookmark management
 │   ├── FunctionFinder.hpp/cpp  # Heuristic prologue/epilogue function boundary detection
 │   ├── HeapAnalyzer.hpp/cpp    # Glibc ptmalloc malloc_chunk parser
 │   ├── Assembler.hpp/cpp       # In-memory Keystone assembler with GNU as fallback
-│   ├── ExpressionEvaluator.hpp/cpp# Recursive descent expression parser with memory dereferences
+│   ├── ExpressionEvaluator.hpp/cpp# Full-featured recursive descent expression & condition engine (scale-index, bitwise, logic)
 │   ├── ROPScanner.hpp/cpp      # Reverse sliding-window ROP gadget scanner & payload exporter
 │   ├── InstructionInspector.hpp/cpp# Effective address calculation & dynamic EFLAGS branch predictor
 │   ├── CodeXRefFinder.hpp/cpp  # Code cross-reference scanner (CALL/JMP/LEA targets)

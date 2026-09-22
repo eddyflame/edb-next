@@ -240,9 +240,10 @@
      - **Offset 列**：动态计算相对当前 RSP/RBP 偏移（`=> RSP`、`+0x08`、`[RBP]`、`[RBP-0x10]`）；
      - **Symbol / Comment 列**：自动绑定函数符号、偏移及内存字符串预览。
    - 顶部快捷操作条：`[RSP]` (回栈顶)、`[RBP]` (跳基址)、`[Go to...]`、快捷键 `Shift+S` (展开/折叠)。
-2. **RBP 栈帧安全回溯引擎 (CallStackUnwinder & CallStackView - Tab 3)**：
-   - 校验 8 字节对齐、严格地址递增与内存可读性，防止格式错误引发调试器奔溃；
-   - 深度回溯 Frame #0 ~ Frame #N，符号化展示调用者地址，双击直接联动反汇编。
+2. **DWARF CFI / RBP 栈帧混合深度回溯引擎 (CallStackUnwinder & CallStackView - Tab 3)**：
+   - 优先通过 `libdwfl` 状态机深度解析 `.eh_frame` / `.debug_frame` CFI，彻底突破现代编译器 `-fomit-frame-pointer` 造成的栈帧截断，平滑穿透 `libc.so` 等系统库调用；
+   - 内置 RBP 链校验（8字节对齐、严格地址递增与内存可读性）作为安全回退机制；
+   - 深度回溯 Frame #0 ~ Frame #N，符号化展示调用者地址，双击直接联动反汇编与源码。
 
 ### 3.6 堆内存深度解构与 Linux 系统内省
 1. **Glibc ptmalloc 堆内存深度剖析器 (HeapAnalyzer & HeapView - Tab 9)**：
@@ -739,13 +740,13 @@ edb-next/
 │   ├── ElfParser.hpp/cpp       # 64位 ELF 文件头、Program Headers、Section Headers、符号表与依赖解析
 │   ├── DwarfParser.hpp/cpp     # 基于 libdw 的 DWARF 调试信息与行号映射解析器
 │   ├── SourceFileManager.hpp/cpp# 源代码物理文件读取与行缓存管理器
-│   ├── CallStackUnwinder.hpp/cpp# 基于 RBP 栈帧链的安全回溯算法
+│   ├── CallStackUnwinder.hpp/cpp# 基于 libdwfl DWARF CFI 与 RBP 链混合的调用栈深度安全回溯算法
 │   ├── StringScanner.hpp/cpp   # 可读段连续 ASCII 字符串提取与 RIP 相对寻址反向索引
 │   ├── AnnotationManager.hpp/cpp# 用户注释 (Comments)、自定义标签 (Labels) 与书签 (Bookmarks) 内存管理
 │   ├── FunctionFinder.hpp/cpp  # 基于 Prologue/Epilogue 特征码的函数边界识别引擎
 │   ├── HeapAnalyzer.hpp/cpp    # Glibc ptmalloc 堆内存 malloc_chunk 结构解析器
 │   ├── Assembler.hpp/cpp       # 基于 Keystone Engine 纯内存汇编（附带 GNU as/objcopy 回退）的原生内联汇编编译器
-│   ├── ExpressionEvaluator.hpp/cpp# 递归下降表达式解析器 (支持寄存器、常数、指针解引用与关系运算)
+│   ├── ExpressionEvaluator.hpp/cpp# 现代全功能递归下降表达式与条件断点引擎 (支持变址缩放乘除、位运算、复合逻辑与括号)
 │   ├── ROPScanner.hpp/cpp      # 反向滑动窗口 ROP Gadget 搜寻分类与 Python Payload 导出器
 │   ├── InstructionInspector.hpp/cpp# 有效内存寻址计算与 EFLAGS 动态条件分支预测引擎
 │   ├── CodeXRefFinder.hpp/cpp  # 代码交叉引用检索引擎 (快速定位指向目标的 CALL/JMP/LEA)
