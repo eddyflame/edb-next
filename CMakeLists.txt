@@ -130,6 +130,7 @@ set(CORE_SOURCES
     core/CapstoneContext.cpp
     core/ZydisContext.cpp
     core/CFGBuilder.cpp
+    core/ScriptApiBridge.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})

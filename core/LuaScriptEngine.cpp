@@ -1,16 +1,7 @@
 #include "LuaScriptEngine.hpp"
-#include "DebugSession.hpp"
-#include "ExpressionEvaluator.hpp"
+#include "ScriptApiBridge.hpp"
+#include "LuaTypeBinding.hpp"
 #include "LogManager.hpp"
-
-extern "C" {
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
-}
-
-#include <algorithm>
-#include <cctype>
 #include <sstream>
 #include <iostream>
 
@@ -42,302 +33,6 @@ inline LuaScriptEngine* getEngine(lua_State* L) noexcept {
 inline DebugSession* getSession(lua_State* L) noexcept {
     auto* eng = getEngine(L);
     return eng ? eng->session() : nullptr;
-}
-
-std::string trim(const std::string& str) {
-    auto start = str.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    auto end = str.find_last_not_of(" \t\r\n");
-    return str.substr(start, end - start + 1);
-}
-
-std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
-    return s;
-}
-
-std::optional<uint64_t> getRegVal(const std::string& regName, const RegisterContext& regs) {
-    std::string name = toLower(trim(regName));
-    if (name.empty()) return std::nullopt;
-    if (name[0] == '$') name = name.substr(1);
-
-    if (name == "rax") return regs.rax();
-    if (name == "rbx") return regs.rbx();
-    if (name == "rcx") return regs.rcx();
-    if (name == "rdx") return regs.rdx();
-    if (name == "rsi") return regs.rsi();
-    if (name == "rdi") return regs.rdi();
-    if (name == "rbp") return regs.rbp().value();
-    if (name == "rsp") return regs.rsp().value();
-    if (name == "r8") return regs.r8();
-    if (name == "r9") return regs.r9();
-    if (name == "r10") return regs.r10();
-    if (name == "r11") return regs.r11();
-    if (name == "r12") return regs.r12();
-    if (name == "r13") return regs.r13();
-    if (name == "r14") return regs.r14();
-    if (name == "r15") return regs.r15();
-    if (name == "rip") return regs.rip().value();
-    if (name == "rflags" || name == "eflags") return regs.eflags();
-
-    return std::nullopt;
-}
-
-bool setRegVal(const std::string& regName, uint64_t val, RegisterContext& regs) {
-    std::string name = toLower(trim(regName));
-    if (name.empty()) return false;
-    if (name[0] == '$') name = name.substr(1);
-
-    if (name == "rax") { regs.setRax(val); return true; }
-    if (name == "rbx") { regs.setRbx(val); return true; }
-    if (name == "rcx") { regs.setRcx(val); return true; }
-    if (name == "rdx") { regs.setRdx(val); return true; }
-    if (name == "rsi") { regs.setRsi(val); return true; }
-    if (name == "rdi") { regs.setRdi(val); return true; }
-    if (name == "rbp") { regs.setRbp(Address(val)); return true; }
-    if (name == "rsp") { regs.setRsp(Address(val)); return true; }
-    if (name == "r8")  { regs.setR8(val); return true; }
-    if (name == "r9")  { regs.setR9(val); return true; }
-    if (name == "r10") { regs.setR10(val); return true; }
-    if (name == "r11") { regs.setR11(val); return true; }
-    if (name == "r12") { regs.setR12(val); return true; }
-    if (name == "r13") { regs.setR13(val); return true; }
-    if (name == "r14") { regs.setR14(val); return true; }
-    if (name == "r15") { regs.setR15(val); return true; }
-    if (name == "rip") { regs.setRip(Address(val)); return true; }
-
-    return false;
-}
-
-int lua_read_memory(lua_State* L) {
-    lua_Integer addr = luaL_checkinteger(L, 1);
-    lua_Integer size = luaL_checkinteger(L, 2);
-
-    auto* session = getSession(L);
-    if (!session || size <= 0) {
-        lua_pushlstring(L, "", 0);
-        return 1;
-    }
-
-    auto bytes = session->readMemory(Address(static_cast<uint64_t>(addr)), static_cast<size_t>(size));
-    lua_pushlstring(L, reinterpret_cast<const char*>(bytes.data()), bytes.size());
-    return 1;
-}
-
-int lua_write_memory(lua_State* L) {
-    lua_Integer addr = luaL_checkinteger(L, 1);
-    size_t len = 0;
-    const char* data = luaL_checklstring(L, 2, &len);
-
-    auto* session = getSession(L);
-    if (!session || len == 0 || !data) {
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    bool ok = session->writeMemory(Address(static_cast<uint64_t>(addr)), data, len);
-    lua_pushboolean(L, ok ? 1 : 0);
-    return 1;
-}
-
-int lua_get_reg(lua_State* L) {
-    const char* name = luaL_checkstring(L, 1);
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    auto val = getRegVal(name, session->registers());
-    if (val) {
-        lua_pushinteger(L, static_cast<lua_Integer>(*val));
-    } else {
-        lua_pushnil(L);
-    }
-    return 1;
-}
-
-int lua_set_reg(lua_State* L) {
-    const char* name = luaL_checkstring(L, 1);
-    lua_Integer val = luaL_checkinteger(L, 2);
-
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    RegisterContext regs = session->registers();
-    if (setRegVal(name, static_cast<uint64_t>(val), regs)) {
-        bool ok = session->setRegisters(regs);
-        lua_pushboolean(L, ok ? 1 : 0);
-        return 1;
-    }
-    lua_pushboolean(L, 0);
-    return 1;
-}
-
-int lua_get_regs(lua_State* L) {
-    auto* session = getSession(L);
-    lua_newtable(L);
-    if (!session) {
-        return 1;
-    }
-
-    const auto& regs = session->registers();
-    auto list = regs.toList();
-    for (const auto& item : list) {
-        std::string lowerName = toLower(item.name);
-        lua_pushstring(L, lowerName.c_str());
-        lua_pushinteger(L, static_cast<lua_Integer>(item.value));
-        lua_settable(L, -3);
-    }
-    return 1;
-}
-
-int lua_set_breakpoint(lua_State* L) {
-    lua_Integer addr = luaL_checkinteger(L, 1);
-    const char* symbol = lua_isstring(L, 2) ? lua_tostring(L, 2) : "";
-
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    bool ok = session->addBreakpoint(Address(static_cast<uint64_t>(addr)), symbol ? symbol : "");
-    lua_pushboolean(L, ok ? 1 : 0);
-    return 1;
-}
-
-int lua_remove_breakpoint(lua_State* L) {
-    lua_Integer addr = luaL_checkinteger(L, 1);
-
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushboolean(L, 0);
-        return 1;
-    }
-
-    bool ok = session->removeBreakpoint(Address(static_cast<uint64_t>(addr)));
-    lua_pushboolean(L, ok ? 1 : 0);
-    return 1;
-}
-
-int lua_step_into(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        session->stepInto();
-    }
-    return 0;
-}
-
-int lua_step_over(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        session->stepOver();
-    }
-    return 0;
-}
-
-int lua_step_source(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        session->stepSourceOver();
-    }
-    return 0;
-}
-
-int lua_resume(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        session->resume();
-    }
-    return 0;
-}
-
-int lua_pause(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        session->pause();
-    }
-    return 0;
-}
-
-int lua_resolve_symbol(lua_State* L) {
-    const char* name = luaL_checkstring(L, 1);
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    auto addr = session->resolveSymbol(name);
-    if (addr) {
-        lua_pushinteger(L, static_cast<lua_Integer>(addr->value()));
-    } else {
-        lua_pushnil(L);
-    }
-    return 1;
-}
-
-int lua_eval(lua_State* L) {
-    const char* expr = luaL_checkstring(L, 1);
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    auto val = ExpressionEvaluator::evaluate(expr, session->registers());
-    if (val) {
-        lua_pushinteger(L, static_cast<lua_Integer>(*val));
-    } else {
-        lua_pushnil(L);
-    }
-    return 1;
-}
-
-int lua_pid(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        lua_pushinteger(L, session->pid());
-    } else {
-        lua_pushinteger(L, 0);
-    }
-    return 1;
-}
-
-int lua_tid(lua_State* L) {
-    auto* session = getSession(L);
-    if (session) {
-        lua_pushinteger(L, session->activeTid());
-    } else {
-        lua_pushinteger(L, 0);
-    }
-    return 1;
-}
-
-int lua_state(lua_State* L) {
-    auto* session = getSession(L);
-    if (!session) {
-        lua_pushstring(L, "None");
-        return 1;
-    }
-    switch (session->state()) {
-        case SessionState::Running: lua_pushstring(L, "Running"); break;
-        case SessionState::Paused: lua_pushstring(L, "Paused"); break;
-        case SessionState::Stopped: lua_pushstring(L, "Stopped"); break;
-        case SessionState::Terminated: lua_pushstring(L, "Terminated"); break;
-        default: lua_pushstring(L, "Unknown"); break;
-    }
-    return 1;
-}
-
-int lua_log(lua_State* L) {
-    const char* msg = luaL_checkstring(L, 1);
-    LogManager::instance().log(LogLevel::Info, "Lua", msg ? msg : "");
-    return 0;
 }
 
 int lua_custom_print(lua_State* L) {
@@ -387,29 +82,136 @@ void LuaScriptEngine::registerEdbModule() {
     // Create global 'edb' table
     lua_newtable(L_);
 
-    auto registerFunc = [this](const char* name, lua_CFunction func) {
-        lua_pushcfunction(L_, func);
+    auto reg = [this](const char* name, lua_CFunction fn) {
+        lua_pushcfunction(L_, fn);
         lua_setfield(L_, -2, name);
     };
 
-    registerFunc("read_memory", lua_read_memory);
-    registerFunc("write_memory", lua_write_memory);
-    registerFunc("get_reg", lua_get_reg);
-    registerFunc("set_reg", lua_set_reg);
-    registerFunc("get_regs", lua_get_regs);
-    registerFunc("set_breakpoint", lua_set_breakpoint);
-    registerFunc("remove_breakpoint", lua_remove_breakpoint);
-    registerFunc("step_into", lua_step_into);
-    registerFunc("step_over", lua_step_over);
-    registerFunc("step_source", lua_step_source);
-    registerFunc("resume", lua_resume);
-    registerFunc("pause", lua_pause);
-    registerFunc("resolve_symbol", lua_resolve_symbol);
-    registerFunc("eval", lua_eval);
-    registerFunc("pid", lua_pid);
-    registerFunc("tid", lua_tid);
-    registerFunc("state", lua_state);
-    registerFunc("log", lua_log);
+    reg("read_memory", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<std::vector<uint8_t>, uint64_t, size_t>::dispatch(L, [L](uint64_t a, size_t sz) {
+            return ScriptApiBridge::readMemory(getSession(L), a, sz);
+        });
+    });
+
+    reg("write_memory", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<bool, uint64_t, std::string_view>::dispatch(L, [L](uint64_t a, std::string_view b) {
+            return ScriptApiBridge::writeMemory(getSession(L), a, b.data(), b.size());
+        });
+    });
+
+    reg("get_reg", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<std::optional<uint64_t>, std::string>::dispatch(L, [L](const std::string& n) {
+            return ScriptApiBridge::getReg(getSession(L), n);
+        });
+    });
+
+    reg("set_reg", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<bool, std::string, uint64_t>::dispatch(L, [L](const std::string& n, uint64_t v) {
+            return ScriptApiBridge::setReg(getSession(L), n, v);
+        });
+    });
+
+    reg("get_regs", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<std::vector<std::pair<std::string, uint64_t>>>::dispatch(L, [L]() {
+            return ScriptApiBridge::getRegs(getSession(L));
+        });
+    });
+
+    reg("set_breakpoint", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<bool, uint64_t, std::optional<std::string>>::dispatch(L, [L](uint64_t a, std::optional<std::string> sym) {
+            return ScriptApiBridge::setBreakpoint(getSession(L), a, sym.value_or(""));
+        });
+    });
+
+    reg("remove_breakpoint", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<bool, uint64_t>::dispatch(L, [L](uint64_t a) {
+            return ScriptApiBridge::removeBreakpoint(getSession(L), a);
+        });
+    });
+
+    reg("step_into", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<void>::dispatch(L, [L]() {
+            ScriptApiBridge::stepInto(getSession(L));
+        });
+    });
+
+    reg("step_over", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<void>::dispatch(L, [L]() {
+            ScriptApiBridge::stepOver(getSession(L));
+        });
+    });
+
+    reg("step_source", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<void>::dispatch(L, [L]() {
+            ScriptApiBridge::stepSource(getSession(L));
+        });
+    });
+
+    reg("resume", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<void>::dispatch(L, [L]() {
+            ScriptApiBridge::resume(getSession(L));
+        });
+    });
+
+    reg("pause", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<void>::dispatch(L, [L]() {
+            ScriptApiBridge::pause(getSession(L));
+        });
+    });
+
+    reg("resolve_symbol", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<std::optional<uint64_t>, std::string>::dispatch(L, [L](const std::string& n) {
+            return ScriptApiBridge::resolveSymbol(getSession(L), n);
+        });
+    });
+
+    reg("eval", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<std::optional<uint64_t>, std::string>::dispatch(L, [L](const std::string& expr) {
+            return ScriptApiBridge::eval(getSession(L), expr);
+        });
+    });
+
+    reg("pid", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<int>::dispatch(L, [L]() {
+            return ScriptApiBridge::pid(getSession(L));
+        });
+    });
+
+    reg("tid", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<int>::dispatch(L, [L]() {
+            return ScriptApiBridge::tid(getSession(L));
+        });
+    });
+
+    reg("state", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<std::string>::dispatch(L, [L]() {
+            return ScriptApiBridge::state(getSession(L));
+        });
+    });
+
+    reg("log", [](lua_State* L) {
+        using namespace lua_binding;
+        return LuaFunctionDispatcher<void, std::string>::dispatch(L, [](const std::string& msg) {
+            ScriptApiBridge::log("Lua", msg);
+        });
+    });
 
     lua_setglobal(L_, "edb");
 
@@ -459,7 +261,6 @@ ScriptResult LuaScriptEngine::executeString(const std::string& code) {
     LuaEngineScope scope(this);
     capturedOutput_.clear();
 
-    // luaL_dostring is a macro: luaL_loadstring(L, s) || lua_pcall(L, 0, LUA_MULTRET, 0)
     int loadStatus = luaL_loadstring(L_, code.c_str());
     if (loadStatus != LUA_OK) {
         const char* err = lua_tostring(L_, -1);
