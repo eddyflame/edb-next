@@ -444,9 +444,29 @@ void test_phase4_threads_assembler_and_conditional_bp() {
     assert(asm_res2 && asm_res2.value.size() == 1 && asm_res2.value[0] == 0x90);
     std::cout << "[PASS] Assembler verified: 'nop' -> 90" << std::endl;
 
+    auto asm_mem = Assembler::assemble("mov rdi, [rbp - 8]");
+    assert(asm_mem && asm_mem.value.size() == 4);
+    assert(asm_mem.value[0] == 0x48 && asm_mem.value[1] == 0x8b && asm_mem.value[2] == 0x7d && asm_mem.value[3] == 0xf8);
+    std::cout << "[PASS] Assembler verified: 'mov rdi, [rbp - 8]' -> 48 8b 7d f8" << std::endl;
+
+    // Relative branch resolution test with origin
+    auto asm_jmp = Assembler::assemble("jmp 0x401050", Address(0x401000));
+    assert(asm_jmp && asm_jmp.value.size() == 2);
+    assert(asm_jmp.value[0] == 0xeb && asm_jmp.value[1] == 0x4e);
+    std::cout << "[PASS] Assembler verified relative branch: 'jmp 0x401050' from 0x401000 -> eb 4e" << std::endl;
+
     auto asm_bad = Assembler::assemble("invalid_opcode_xyz 123");
     assert(!asm_bad && "Assembler should fail on invalid instruction");
-    std::cout << "[PASS] Assembler error handling verified." << std::endl;
+    std::cout << "[PASS] Assembler error handling verified: " << asm_bad.error << std::endl;
+
+    // High-frequency benchmark: 1000 in-memory assemblies
+    auto start_time = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000; ++i) {
+        auto bench_res = Assembler::assemble("mov eax, 1");
+        assert(bench_res && bench_res.value.size() == 5);
+    }
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
+    std::cout << "[PASS] In-memory assembler benchmark: 1000 instructions assembled in " << elapsed_ms << "ms." << std::endl;
 
     // 2. ExpressionEvaluator test
     RegisterContext dummy_regs;

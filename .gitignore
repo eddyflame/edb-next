@@ -1,9 +1,10 @@
 # Build outputs
-build/
-bin/
-lib/
+/build/
+/bin/
+/lib/
 *.o
 *.a
+!third_party/keystone/lib/libkeystone.a
 *.so
 *.dylib
 *.dll
