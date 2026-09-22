@@ -6,6 +6,11 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <immintrin.h>
+#include <bit>
+#include <thread>
+#include <future>
+#include <atomic>
 
 namespace edb_next {
 
@@ -250,12 +255,116 @@ std::string ScanResult::formatDelta(ScanDataType type) const {
     return oss.str();
 }
 
+[[gnu::target("avx2")]]
+static void scanInt32ExactAVX2(
+    const uint8_t* data,
+    size_t bytesToRead,
+    Address chunkAddr,
+    int32_t targetVal,
+    std::vector<ScanResult>& results,
+    size_t maxResults) {
+
+    size_t i = 0;
+    __m256i targetVec = _mm256_set1_epi32(targetVal);
+
+    if (bytesToRead >= 32) {
+        size_t simdLimit = bytesToRead - 32 + 1;
+        for (; i < simdLimit; i += 32) {
+            if (results.size() >= maxResults) return;
+
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+            __m256i cmp = _mm256_cmpeq_epi32(chunk, targetVec);
+            int mask = _mm256_movemask_ps(_mm256_castsi256_ps(cmp));
+            if (mask == 0) [[likely]] {
+                continue;
+            }
+
+            while (mask != 0) {
+                int dwordIdx = std::countr_zero(static_cast<unsigned int>(mask));
+                size_t matchOffset = i + static_cast<size_t>(dwordIdx) * 4;
+                ScanResult res;
+                res.address = chunkAddr + matchOffset;
+                res.previousValue = SmallBuffer(data + matchOffset, 4);
+                res.currentValue = SmallBuffer(data + matchOffset, 4);
+                results.push_back(std::move(res));
+                if (results.size() >= maxResults) return;
+                mask &= (mask - 1);
+            }
+        }
+    }
+
+    for (; i + 4 <= bytesToRead; i += 4) {
+        if (results.size() >= maxResults) return;
+        int32_t v = 0;
+        std::memcpy(&v, data + i, sizeof(v));
+        if (v == targetVal) {
+            ScanResult res;
+            res.address = chunkAddr + i;
+            res.previousValue = SmallBuffer(data + i, 4);
+            res.currentValue = SmallBuffer(data + i, 4);
+            results.push_back(std::move(res));
+        }
+    }
+}
+
+[[gnu::target("avx2")]]
+static void scanInt64ExactAVX2(
+    const uint8_t* data,
+    size_t bytesToRead,
+    Address chunkAddr,
+    int64_t targetVal,
+    std::vector<ScanResult>& results,
+    size_t maxResults) {
+
+    size_t i = 0;
+    __m256i targetVec = _mm256_set1_epi64x(targetVal);
+
+    if (bytesToRead >= 32) {
+        size_t simdLimit = bytesToRead - 32 + 1;
+        for (; i < simdLimit; i += 32) {
+            if (results.size() >= maxResults) return;
+
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+            __m256i cmp = _mm256_cmpeq_epi64(chunk, targetVec);
+            int mask = _mm256_movemask_pd(_mm256_castsi256_pd(cmp));
+            if (mask == 0) [[likely]] {
+                continue;
+            }
+
+            while (mask != 0) {
+                int qwordIdx = std::countr_zero(static_cast<unsigned int>(mask));
+                size_t matchOffset = i + static_cast<size_t>(qwordIdx) * 8;
+                ScanResult res;
+                res.address = chunkAddr + matchOffset;
+                res.previousValue = SmallBuffer(data + matchOffset, 8);
+                res.currentValue = SmallBuffer(data + matchOffset, 8);
+                results.push_back(std::move(res));
+                if (results.size() >= maxResults) return;
+                mask &= (mask - 1);
+            }
+        }
+    }
+
+    for (; i + 8 <= bytesToRead; i += 8) {
+        if (results.size() >= maxResults) return;
+        int64_t v = 0;
+        std::memcpy(&v, data + i, sizeof(v));
+        if (v == targetVal) {
+            ScanResult res;
+            res.address = chunkAddr + i;
+            res.previousValue = SmallBuffer(data + i, 8);
+            res.currentValue = SmallBuffer(data + i, 8);
+            results.push_back(std::move(res));
+        }
+    }
+}
+
 size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& options) {
     results_.clear();
     scanPass_ = 0;
     activeOptions_ = options;
 
-    if (!engine.isAttached()) return 0;
+    if (!engine.isAttached() || options.maxResults == 0) return 0;
 
     size_t dataSize = getDataTypeSize(options.dataType, options.valueStr);
     if (dataSize == 0) dataSize = 1;
@@ -287,9 +396,11 @@ size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& option
     }
 
     auto regions = engine.getMemoryRegions();
-    const size_t chunkSize = 1024 * 1024; // 1MB chunk reading
-    std::vector<uint8_t> buffer(chunkSize);
-
+    struct FilteredRegion {
+        Address start;
+        Address end;
+    };
+    std::vector<FilteredRegion> filtered;
     for (const auto& region : regions) {
         if (!region.isReadable()) continue;
         if (options.writableOnly && !region.isWritable()) continue;
@@ -304,12 +415,24 @@ size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& option
             endAddr = options.customEnd;
         }
         if (startAddr >= endAddr) continue;
+        if (static_cast<size_t>(endAddr - startAddr) < dataSize) continue;
 
+        filtered.push_back(FilteredRegion{.start = startAddr, .end = endAddr});
+    }
+
+    if (filtered.empty()) return 0;
+
+    auto scanRegionChunks = [&](Address startAddr, Address endAddr, std::vector<ScanResult>& localResults, const std::atomic<bool>& stopFlag) {
         size_t totalRegionBytes = endAddr - startAddr;
-        if (totalRegionBytes < dataSize) continue;
+        if (totalRegionBytes < dataSize) return;
 
-        for (size_t offset = 0; offset < totalRegionBytes; ) {
-            size_t bytesToRead = std::min<size_t>(chunkSize, totalRegionBytes - offset);
+        constexpr size_t kScanChunkSize = 2 * 1024 * 1024; // 2MB chunk
+        std::vector<uint8_t> buffer(kScanChunkSize);
+
+        for (size_t offset = 0; offset < totalRegionBytes && !stopFlag.load(std::memory_order_relaxed); ) {
+            if (localResults.size() >= options.maxResults) break;
+
+            size_t bytesToRead = std::min<size_t>(kScanChunkSize, totalRegionBytes - offset);
             Address chunkAddr = startAddr + offset;
 
             if (!engine.readMemory(chunkAddr, buffer.data(), bytesToRead)) {
@@ -317,6 +440,39 @@ size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& option
                 continue;
             }
 
+            // Check for AVX2 fast-paths
+            if (options.compareType == ScanCompareType::ExactValue) {
+                if (options.dataType == ScanDataType::ByteArray) {
+                    std::vector<Address> matchAddrs;
+                    PatternSearcher::searchChunk(
+                        std::span<const uint8_t>(buffer.data(), bytesToRead),
+                        targetPattern,
+                        chunkAddr,
+                        matchAddrs,
+                        options.maxResults - localResults.size());
+
+                    for (Address addr : matchAddrs) {
+                        size_t localOffset = addr - chunkAddr;
+                        ScanResult res;
+                        res.address = addr;
+                        res.previousValue = SmallBuffer(buffer.data() + localOffset, dataSize);
+                        res.currentValue = SmallBuffer(buffer.data() + localOffset, dataSize);
+                        localResults.push_back(std::move(res));
+                    }
+                    offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
+                    continue;
+                } else if (options.dataType == ScanDataType::Int32 && align == 4 && PatternSearcher::isAVX2Supported()) {
+                    scanInt32ExactAVX2(buffer.data(), bytesToRead, chunkAddr, static_cast<int32_t>(targetInt), localResults, options.maxResults);
+                    offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
+                    continue;
+                } else if (options.dataType == ScanDataType::Int64 && align == 8 && PatternSearcher::isAVX2Supported()) {
+                    scanInt64ExactAVX2(buffer.data(), bytesToRead, chunkAddr, targetInt, localResults, options.maxResults);
+                    offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
+                    continue;
+                }
+            }
+
+            // General fallback path for float/double/string/differentials
             size_t validLimit = bytesToRead >= dataSize ? (bytesToRead - dataSize + 1) : 0;
             for (size_t i = 0; i < validLimit; i += align) {
                 Address curAddr = chunkAddr + i;
@@ -383,17 +539,68 @@ size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& option
                     res.address = curAddr;
                     res.previousValue = SmallBuffer(valBytes);
                     res.currentValue = SmallBuffer(valBytes);
-                    results_.push_back(std::move(res));
+                    localResults.push_back(std::move(res));
 
-                    if (results_.size() >= options.maxResults) {
-                        scanPass_ = 1;
-                        return results_.size();
+                    if (localResults.size() >= options.maxResults) {
+                        break;
                     }
                 }
             }
 
             offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
         }
+    };
+
+    std::atomic<bool> stopFlag{false};
+    if (filtered.size() == 1) {
+        scanRegionChunks(filtered[0].start, filtered[0].end, results_, stopFlag);
+    } else {
+        unsigned int hw = std::thread::hardware_concurrency();
+        size_t threadCount = (hw == 0) ? 4 : std::min<size_t>(hw, 8);
+        size_t numWorkers = std::min(threadCount, filtered.size());
+
+        std::atomic<size_t> nextRegIdx{0};
+        std::atomic<size_t> totalFound{0};
+        std::vector<std::future<std::vector<ScanResult>>> futures;
+        futures.reserve(numWorkers);
+
+        for (size_t w = 0; w < numWorkers; ++w) {
+            futures.push_back(std::async(std::launch::async, [&]() {
+                std::vector<ScanResult> workerResults;
+                while (!stopFlag.load(std::memory_order_relaxed)) {
+                    size_t rIdx = nextRegIdx.fetch_add(1, std::memory_order_relaxed);
+                    if (rIdx >= filtered.size()) break;
+
+                    scanRegionChunks(filtered[rIdx].start, filtered[rIdx].end, workerResults, stopFlag);
+                    if (workerResults.size() >= options.maxResults) {
+                        stopFlag.store(true, std::memory_order_relaxed);
+                        break;
+                    }
+                    if (totalFound.fetch_add(workerResults.size(), std::memory_order_relaxed) + workerResults.size() >= options.maxResults) {
+                        stopFlag.store(true, std::memory_order_relaxed);
+                        break;
+                    }
+                }
+                return workerResults;
+            }));
+        }
+
+        for (auto& f : futures) {
+            auto workerRes = f.get();
+            results_.insert(results_.end(), std::make_move_iterator(workerRes.begin()), std::make_move_iterator(workerRes.end()));
+        }
+    }
+
+    std::sort(results_.begin(), results_.end(), [](const ScanResult& a, const ScanResult& b) {
+        return a.address < b.address;
+    });
+    auto last = std::unique(results_.begin(), results_.end(), [](const ScanResult& a, const ScanResult& b) {
+        return a.address == b.address;
+    });
+    results_.erase(last, results_.end());
+
+    if (results_.size() > options.maxResults) {
+        results_.resize(options.maxResults);
     }
 
     scanPass_ = 1;

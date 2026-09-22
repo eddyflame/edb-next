@@ -16,6 +16,8 @@ public:
     Tid  mainTid_{0};
     Tid  activeTid_{0};
     std::vector<uint8_t> fakeMemory_;
+    std::vector<MemoryRegion> fakeRegions_;
+    std::function<bool(Address, void*, size_t)> onReadMemory_;
     RegisterContext fakeRegs_;
 
     // Lifecycle
@@ -35,6 +37,7 @@ public:
 
     // Memory: reads from fakeMemory_, discards writes
     bool readMemory(Address addr, void* buffer, size_t size) override {
+        if (onReadMemory_) return onReadMemory_(addr, buffer, size);
         if (!attached_ || fakeMemory_.empty()) { std::memset(buffer, 0, size); return true; }
         size_t off = addr.value() % fakeMemory_.size();
         size_t avail = std::min(size, fakeMemory_.size() - off);
@@ -84,7 +87,7 @@ public:
     }
 
     // Introspection
-    std::vector<MemoryRegion> getMemoryRegions() const override { return {}; }
+    std::vector<MemoryRegion> getMemoryRegions() const override { return fakeRegions_; }
     std::vector<ThreadInfo>   getThreads() const override { return {}; }
     Pid  pid()       const noexcept override { return pid_; }
     Tid  mainTid()   const noexcept override { return mainTid_; }
