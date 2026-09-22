@@ -29,6 +29,27 @@ find_path(LIBDW_INCLUDE_DIRS elfutils/libdw.h
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libdw/include
 )
 
+find_path(KEYSTONE_INCLUDE_DIRS keystone/keystone.h
+    PATHS
+    /usr/include
+    /usr/local/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/keystone/include
+)
+
+find_library(KEYSTONE_LIBRARIES NAMES keystone libkeystone
+    PATHS
+    /lib/x86_64-linux-gnu
+    /usr/lib/x86_64-linux-gnu
+    /usr/lib
+    /usr/local/lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/keystone/lib
+)
+
+if (KEYSTONE_INCLUDE_DIRS AND KEYSTONE_LIBRARIES)
+    message(STATUS "Found Keystone In-Memory Assembler: ${KEYSTONE_LIBRARIES}")
+    add_compile_definitions(HAVE_KEYSTONE=1)
+endif()
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -42,6 +63,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libdw/include
     ${PYTHON_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lua/include
+    ${KEYSTONE_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/keystone/include
 )
 
 # Core Library
@@ -94,6 +117,7 @@ target_link_libraries(edb_core
     ${LIBELF_LIBRARIES}
     ${PYTHON_LIBRARIES}
     ${LUA_LIBRARIES}
+    ${KEYSTONE_LIBRARIES}
     pthread
 )
 
