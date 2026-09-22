@@ -179,6 +179,7 @@ chmod +x edb-next-x86_64.AppImage
 | :--- | :--- | :--- | :--- |
 | **软件架构与工程设计说明书 (SDD)** | [doc/DESIGN_zh.md](doc/DESIGN_zh.md) | [doc/DESIGN_en.md](doc/DESIGN_en.md) | 深度梳理底层机制、设计方案、状态机、数据结构与技术演进规划 |
 | **完全使用教程与插件开发指南** | [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) | [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) | 详细功能操作手册、快捷键速查表与现代 C++20 插件开发全流程实战 |
+| **核心组件性能优化与现代化选型提案** | [doc/CORE_OPTIMIZATION_zh.md](doc/CORE_OPTIMIZATION_zh.md) | - | 汇编器、反汇编句柄池化、栈回溯、特征搜索、图布局等核心组件选型与落地分析 |
 | **开源贡献规范** | [doc/CONTRIBUTING_zh.md](doc/CONTRIBUTING_zh.md) | [doc/CONTRIBUTING_en.md](doc/CONTRIBUTING_en.md) | 代码风格要求、Git 提交规范与 Pull Request 流程规范 |
 
 ---
