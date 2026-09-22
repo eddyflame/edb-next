@@ -3,6 +3,9 @@
 #include "core/ExpressionEvaluator.hpp"
 #include "core/CapstoneContext.hpp"
 #include "core/ZydisContext.hpp"
+#include "core/PatternSearcher.hpp"
+#include "core/MemoryScanner.hpp"
+#include "tests/MockDebugBackend.hpp"
 #include <QCoreApplication>
 #include <iostream>
 #include <thread>
@@ -882,6 +885,235 @@ void test_phase6_zydis_fast_decoder() {
     std::cout << "[PASS] ALL ZYDIS FAST DECODER TESTS PASSED!" << std::endl;
 }
 
+void test_phase7_avx2_memory_scanner() {
+    std::cout << "\n==========================================" << std::endl;
+    std::cout << "   Phase 7: AVX2 Multi-Threaded Scanner   " << std::endl;
+    std::cout << "==========================================" << std::endl;
+
+    // 1. CPU AVX2 Detection
+    bool avx2Supported = PatternSearcher::isAVX2Supported();
+    std::cout << "[INFO] Host CPU AVX2 acceleration supported: " << (avx2Supported ? "YES" : "NO") << std::endl;
+
+    // 2. Pattern Parsing with wildcards (*, ?, ??)
+    {
+        auto pat = PatternSearcher::parsePattern("55 48 89 e5 ?? ?? ?? ?? 5d c3");
+        assert(pat.size() == 10);
+        assert(!pat[0].isWildcard && pat[0].value == 0x55);
+        assert(!pat[1].isWildcard && pat[1].value == 0x48);
+        assert(!pat[2].isWildcard && pat[2].value == 0x89);
+        assert(!pat[3].isWildcard && pat[3].value == 0xe5);
+        assert(pat[4].isWildcard);
+        assert(pat[5].isWildcard);
+        assert(pat[6].isWildcard);
+        assert(pat[7].isWildcard);
+        assert(!pat[8].isWildcard && pat[8].value == 0x5d);
+        assert(!pat[9].isWildcard && pat[9].value == 0xc3);
+
+        auto patAsterisk = PatternSearcher::parsePattern("aa * bb ? cc ?? dd");
+        assert(patAsterisk.size() == 7);
+        assert(patAsterisk[1].isWildcard);
+        assert(patAsterisk[3].isWildcard);
+        assert(patAsterisk[5].isWildcard);
+        std::cout << "[PASS] Pattern parsing with wildcards verified." << std::endl;
+    }
+
+    // 3. AVX2 vs Scalar equivalence on boundary-crossing and varied wildcard patterns
+    {
+        std::vector<uint8_t> testBuf(1024 * 1024, 0x90); // 1MB buffer of NOPs
+        const uint8_t sig[] = {0x48, 0x8d, 0x05, 0x11, 0x22, 0x33, 0x44}; // 7 bytes
+        std::memcpy(testBuf.data() + 15, sig, sizeof(sig));
+        std::memcpy(testBuf.data() + 31, sig, sizeof(sig));
+        std::memcpy(testBuf.data() + 500000, sig, sizeof(sig));
+
+        auto pat = PatternSearcher::parsePattern("48 8d 05 ?? ?? ?? 44");
+        std::vector<Address> scalarRes;
+        PatternSearcher::searchChunkScalar(testBuf, pat, Address(0x1000), scalarRes, 100);
+
+        std::vector<Address> simdRes;
+        PatternSearcher::searchChunk(testBuf, pat, Address(0x1000), simdRes, 100);
+
+        assert(scalarRes.size() == 3);
+        assert(simdRes.size() == 3);
+        assert(scalarRes[0] == Address(0x1000 + 15));
+        assert(scalarRes[1] == Address(0x1000 + 31));
+        assert(scalarRes[2] == Address(0x1000 + 500000));
+        assert(scalarRes == simdRes);
+        std::cout << "[PASS] AVX2 SIMD and scalar equivalence verified across SIMD boundaries." << std::endl;
+    }
+
+    // 4. Proving 16MB Truncation Bug Elimination (>16MB Buffer Test)
+    {
+        MockDebugBackend mock;
+        mock.attached_ = true;
+
+        constexpr size_t kBigRegionSize = 32 * 1024 * 1024; // 32MB
+        std::vector<uint8_t> bigData(kBigRegionSize, 0xcc);
+
+        // Plant target pattern at 20MB and 28MB (both well beyond the 16MB boundary)
+        const size_t offset20MB = 20 * 1024 * 1024;
+        const size_t offset28MB = 28 * 1024 * 1024;
+        const uint8_t secretSig[] = {0xde, 0xad, 0xbe, 0xef, 0x12, 0x34, 0xfe, 0xed};
+        std::memcpy(bigData.data() + offset20MB, secretSig, sizeof(secretSig));
+        std::memcpy(bigData.data() + offset28MB, secretSig, sizeof(secretSig));
+
+        mock.fakeRegions_.push_back(MemoryRegion{
+            .start = Address(0x7fff00000000ULL),
+            .end = Address(0x7fff00000000ULL + kBigRegionSize),
+            .permissions = "r-xp",
+            .pathname = "[big_executable_code]"
+        });
+
+        mock.onReadMemory_ = [&](Address addr, void* buf, size_t sz) -> bool {
+            if (addr < Address(0x7fff00000000ULL)) return false;
+            size_t off = addr.value() - 0x7fff00000000ULL;
+            if (off >= kBigRegionSize) return false;
+            size_t toCopy = std::min(sz, kBigRegionSize - off);
+            std::memcpy(buf, bigData.data() + off, toCopy);
+            return true;
+        };
+
+        auto matches = PatternSearcher::search(mock, "de ad be ef ?? ?? fe ed", true, 10);
+        assert(matches.size() == 2);
+        assert(matches[0] == Address(0x7fff00000000ULL + offset20MB));
+        assert(matches[1] == Address(0x7fff00000000ULL + offset28MB));
+        std::cout << "[PASS] 16MB truncation bug verified eliminated (matches found at 20MB & 28MB in 32MB VMA)." << std::endl;
+    }
+
+    // 5. Multi-Region Parallel Dispatch Test
+    {
+        MockDebugBackend mock;
+        mock.attached_ = true;
+
+        constexpr size_t kNumRegions = 8;
+        constexpr size_t kRegionSize = 4 * 1024 * 1024;
+        std::vector<std::vector<uint8_t>> regionMem(kNumRegions, std::vector<uint8_t>(kRegionSize, 0x00));
+
+        const uint8_t magicMarker[] = {0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00};
+        std::memcpy(regionMem[1].data() + 0x1000, magicMarker, sizeof(magicMarker));
+        std::memcpy(regionMem[3].data() + 0x2000, magicMarker, sizeof(magicMarker));
+        std::memcpy(regionMem[5].data() + 0x3000, magicMarker, sizeof(magicMarker));
+        std::memcpy(regionMem[7].data() + 0x4000, magicMarker, sizeof(magicMarker));
+
+        for (size_t r = 0; r < kNumRegions; ++r) {
+            Address rStart(0x100000000ULL + r * 0x10000000ULL);
+            mock.fakeRegions_.push_back(MemoryRegion{
+                .start = rStart,
+                .end = rStart + kRegionSize,
+                .permissions = "r-xp",
+                .pathname = "[vma_" + std::to_string(r) + "]"
+            });
+        }
+
+        mock.onReadMemory_ = [&](Address addr, void* buf, size_t sz) -> bool {
+            for (size_t r = 0; r < kNumRegions; ++r) {
+                Address rStart(0x100000000ULL + r * 0x10000000ULL);
+                if (addr >= rStart && addr < rStart + kRegionSize) {
+                    size_t off = addr - rStart;
+                    size_t avail = std::min(sz, kRegionSize - off);
+                    std::memcpy(buf, regionMem[r].data() + off, avail);
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        auto found = PatternSearcher::search(mock, "7f 45 4c 46 ?? 01 01 00", true, 10, 4);
+        assert(found.size() == 4);
+        assert(found[0] == Address(0x100000000ULL + 1 * 0x10000000ULL + 0x1000));
+        assert(found[1] == Address(0x100000000ULL + 3 * 0x10000000ULL + 0x2000));
+        assert(found[2] == Address(0x100000000ULL + 5 * 0x10000000ULL + 0x3000));
+        assert(found[3] == Address(0x100000000ULL + 7 * 0x10000000ULL + 0x4000));
+        std::cout << "[PASS] Multi-region parallel dispatch verified across 8 VMA segments with 4 threads." << std::endl;
+    }
+
+    // 6. High-Throughput 64MB SIMD Benchmark
+    if (avx2Supported) {
+        constexpr size_t kBenchSize = 64 * 1024 * 1024; // 64MB
+        std::vector<uint8_t> benchBuf(kBenchSize, 0x00);
+        uint32_t seed = 1337;
+        for (size_t b = 0; b < kBenchSize; b += 4) {
+            seed = seed * 1664525u + 1013904223u;
+            *reinterpret_cast<uint32_t*>(benchBuf.data() + b) = seed;
+        }
+
+        const uint8_t benchTarget[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
+        std::memcpy(benchBuf.data() + 10 * 1024 * 1024, benchTarget, sizeof(benchTarget));
+        std::memcpy(benchBuf.data() + 30 * 1024 * 1024, benchTarget, sizeof(benchTarget));
+        std::memcpy(benchBuf.data() + 50 * 1024 * 1024, benchTarget, sizeof(benchTarget));
+
+        auto pat = PatternSearcher::parsePattern("11 22 ?? 44 ?? 66 77 88");
+
+        std::vector<Address> scalarRes;
+        auto tScalar0 = std::chrono::high_resolution_clock::now();
+        PatternSearcher::searchChunkScalar(benchBuf, pat, Address(0), scalarRes, 10);
+        auto tScalar1 = std::chrono::high_resolution_clock::now();
+        double msScalar = std::chrono::duration<double, std::milli>(tScalar1 - tScalar0).count();
+
+        std::vector<Address> avx2Res;
+        auto tAvx0 = std::chrono::high_resolution_clock::now();
+        PatternSearcher::searchChunkAVX2(benchBuf, pat, Address(0), avx2Res, 10);
+        auto tAvx1 = std::chrono::high_resolution_clock::now();
+        double msAvx = std::chrono::duration<double, std::milli>(tAvx1 - tAvx0).count();
+
+        assert(scalarRes.size() >= 3);
+        assert(avx2Res == scalarRes);
+
+        double speedup = msScalar / (msAvx > 0.001 ? msAvx : 0.001);
+        double throughputGbps = (kBenchSize / (1024.0 * 1024.0 * 1024.0)) / ((msAvx / 1000.0) > 0.000001 ? (msAvx / 1000.0) : 0.000001);
+
+        std::cout << "[BENCHMARK] 64MB Pattern Search:" << std::endl;
+        std::cout << "  Scalar: " << msScalar << " ms" << std::endl;
+        std::cout << "  AVX2  : " << msAvx << " ms (" << speedup << "x speedup, " << throughputGbps << " GB/s)" << std::endl;
+        assert(speedup > 1.5 && "AVX2 SIMD should provide significant speedup over scalar");
+        std::cout << "[PASS] AVX2 high-throughput benchmark passed." << std::endl;
+    }
+
+    // 7. MemoryScanner AVX2 Int32 fast-path search verification
+    {
+        MockDebugBackend mock;
+        mock.attached_ = true;
+
+        constexpr size_t kMemSize = 8 * 1024 * 1024; // 8MB
+        std::vector<uint8_t> mem(kMemSize, 0x00);
+
+        int32_t secretInt = 0x12345678;
+        *reinterpret_cast<int32_t*>(mem.data() + 0x1000) = secretInt;
+        *reinterpret_cast<int32_t*>(mem.data() + 0x500000) = secretInt;
+
+        mock.fakeRegions_.push_back(MemoryRegion{
+            .start = Address(0x20000000ULL),
+            .end = Address(0x20000000ULL + kMemSize),
+            .permissions = "rw-p",
+            .pathname = "[heap]"
+        });
+
+        mock.onReadMemory_ = [&](Address addr, void* buf, size_t sz) -> bool {
+            if (addr < Address(0x20000000ULL)) return false;
+            size_t off = addr.value() - 0x20000000ULL;
+            if (off >= kMemSize) return false;
+            size_t toCopy = std::min(sz, kMemSize - off);
+            std::memcpy(buf, mem.data() + off, toCopy);
+            return true;
+        };
+
+        MemoryScanner scanner;
+        ScanOptions opt;
+        opt.dataType = ScanDataType::Int32;
+        opt.compareType = ScanCompareType::ExactValue;
+        opt.valueStr = "0x12345678";
+        opt.writableOnly = true;
+        opt.alignment = 4;
+
+        size_t count = scanner.firstScan(mock, opt);
+        assert(count == 2);
+        assert(scanner.results()[0].address == Address(0x20000000ULL + 0x1000));
+        assert(scanner.results()[1].address == Address(0x20000000ULL + 0x500000));
+        std::cout << "[PASS] MemoryScanner AVX2 Int32 fast-path search verified." << std::endl;
+    }
+
+    std::cout << "[PASS] ALL PHASE 7 AVX2 MEMORY SCANNER TESTS PASSED!" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 
@@ -900,6 +1132,7 @@ int main(int argc, char* argv[]) {
     test_phase5_rop_branch_prediction_xrefs_and_pattern();
     test_capstone_context_and_lru_cache();
     test_phase6_zydis_fast_decoder();
+    test_phase7_avx2_memory_scanner();
 
     std::cout << "\n>>> ALL UNIT TESTS PASSED SUCCESSFULLY! <<<" << std::endl;
     return 0;
