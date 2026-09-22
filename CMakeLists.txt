@@ -81,6 +81,7 @@ set(CORE_SOURCES
     core/ScriptEngineManager.cpp
     core/MemoryScanner.cpp
     core/TypeManager.cpp
+    core/CapstoneContext.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})

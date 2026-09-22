@@ -1,5 +1,6 @@
 #include "StringScanner.hpp"
 #include "DebugSession.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <algorithm>
 #include <cctype>
@@ -75,9 +76,9 @@ std::vector<StringItem> StringScanner::scan(DebugSession& session, size_t min_le
     if (results.empty()) return results;
 
     // 2. Scan executable regions for references to these strings
-    csh cs_handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle) == CS_ERR_OK) {
-        cs_option(cs_handle, CS_OPT_DETAIL, CS_OPT_ON);
+    auto cs = CapstoneContext::acquire(true);
+    if (cs.isValid()) {
+        csh cs_handle = cs.get();
 
         for (const auto& reg : regions) {
             if (!reg.isExecutable() || !reg.isReadable()) continue;
@@ -123,7 +124,6 @@ std::vector<StringItem> StringScanner::scan(DebugSession& session, size_t min_le
                 }
             }
         }
-        cs_close(&cs_handle);
     }
 
     return results;

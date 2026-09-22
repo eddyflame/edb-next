@@ -1,5 +1,6 @@
 #include "ROPScanner.hpp"
 #include "LinuxDebugEngine.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <unordered_set>
 #include <algorithm>
@@ -42,10 +43,11 @@ std::vector<ROPGadget> ROPScanner::scan(
     std::vector<ROPGadget> gadgets;
     if (!engine.isAttached()) return gadgets;
 
-    csh handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(false);
+    if (!cs.isValid()) {
         return gadgets;
     }
+    csh handle = cs.get();
 
     auto regions = engine.getMemoryRegions();
     std::unordered_set<uint64_t> seenAddresses;
@@ -155,7 +157,6 @@ std::vector<ROPGadget> ROPScanner::scan(
         }
     }
 
-    cs_close(&handle);
     return gadgets;
 }
 

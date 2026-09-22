@@ -245,6 +245,70 @@ public:
     [[nodiscard]] TypeManager& typeManager() noexcept { return typeMgr_; }
     [[nodiscard]] const TypeManager& typeManager() const noexcept { return typeMgr_; }
 
+    // P0-2: Multi-entry LRU incremental disassembly cache — avoids full Capstone re-decode on every step
+    struct DisasmCacheEntry {
+        Address baseAddr{0};
+        size_t requestedCount{0};
+        std::vector<DisassembledInstruction> insns;
+        uint64_t accessCounter{0};
+    };
+
+    struct DisasmCache {
+        static constexpr size_t kMaxEntries = 8;
+        uint64_t version{1};   // 0 = invalid; incremented on writeMemory / bp change
+        uint64_t counter{0};
+        std::vector<DisasmCacheEntry> entries;
+
+        [[nodiscard]] DisasmCacheEntry* find(Address addr, size_t count) noexcept {
+            if (version == 0) return nullptr;
+            for (auto& entry : entries) {
+                if (entry.baseAddr == addr && entry.requestedCount == count && !entry.insns.empty()) {
+                    entry.accessCounter = ++counter;
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        void put(Address addr, size_t count, std::vector<DisassembledInstruction> insns) {
+            if (version == 0) version = 1;
+            for (auto& entry : entries) {
+                if (entry.baseAddr == addr && entry.requestedCount == count) {
+                    entry.insns = std::move(insns);
+                    entry.accessCounter = ++counter;
+                    return;
+                }
+            }
+            if (entries.size() >= kMaxEntries) {
+                auto lruIt = std::min_element(entries.begin(), entries.end(),
+                    [](const DisasmCacheEntry& a, const DisasmCacheEntry& b) {
+                        return a.accessCounter < b.accessCounter;
+                    });
+                if (lruIt != entries.end()) {
+                    *lruIt = DisasmCacheEntry{
+                        .baseAddr = addr,
+                        .requestedCount = count,
+                        .insns = std::move(insns),
+                        .accessCounter = ++counter
+                    };
+                    return;
+                }
+            }
+            entries.push_back(DisasmCacheEntry{
+                .baseAddr = addr,
+                .requestedCount = count,
+                .insns = std::move(insns),
+                .accessCounter = ++counter
+            });
+        }
+
+        void invalidate() noexcept {
+            entries.clear();
+            version = 0;
+        }
+    };
+    [[nodiscard]] const DisasmCache& disasmCache() const noexcept { return disasmCache_; }
+
 Q_SIGNALS:
     void stateChanged(edb_next::SessionState state);
     void eventOccurred(const edb_next::DebugEvent& event);
@@ -275,18 +339,6 @@ private:
     // P1-A: sync all active hardware breakpoints into a newly-created thread's DR regs
     void syncHardwareBreakpointsToAllThreads();
 
-    // P1-B: incremental disassembly cache — avoids full Capstone re-decode on every step
-    struct DisasmCache {
-        Address  baseAddr{0};
-        size_t   requestedCount{0};
-        uint64_t version{0};   // 0 = invalid; incremented on writeMemory / bp change
-        std::vector<DisassembledInstruction> insns;
-
-        [[nodiscard]] bool isValid(Address addr, size_t count) const noexcept {
-            return version != 0 && addr == baseAddr && count == requestedCount && !insns.empty();
-        }
-        void invalidate() noexcept { version = 0; }
-    };
     DisasmCache disasmCache_;
     void invalidateDisasmCache() noexcept { disasmCache_.invalidate(); }
 

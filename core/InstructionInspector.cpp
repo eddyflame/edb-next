@@ -1,5 +1,6 @@
 #include "InstructionInspector.hpp"
 #include "LinuxDebugEngine.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <sstream>
 #include <iomanip>
@@ -135,16 +136,15 @@ InstructionDetails InstructionInspector::inspect(
         return details;
     }
 
-    csh handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(true);
+    if (!cs.isValid()) {
         return details;
     }
-    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+    csh handle = cs.get();
 
     cs_insn* insn = nullptr;
     size_t count = cs_disasm(handle, code, sizeof(code), addr.value(), 1, &insn);
     if (count == 0 || !insn) {
-        cs_close(&handle);
         return details;
     }
 
@@ -335,7 +335,6 @@ InstructionDetails InstructionInspector::inspect(
     details.richSummary = rich.str();
 
     cs_free(insn, count);
-    cs_close(&handle);
     return details;
 }
 

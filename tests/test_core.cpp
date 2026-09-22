@@ -1,8 +1,10 @@
 #include "core/DebugSession.hpp"
 #include "core/SessionManager.hpp"
 #include "core/ExpressionEvaluator.hpp"
+#include "core/CapstoneContext.hpp"
 #include <QCoreApplication>
 #include <iostream>
+#include <thread>
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -559,6 +561,129 @@ void test_phase5_rop_branch_prediction_xrefs_and_pattern() {
     std::cout << "[PASS] Phase 5 tests completed cleanly." << std::endl;
 }
 
+void test_capstone_context_and_lru_cache() {
+    std::cout << "[TEST] Starting CapstoneContext and DisasmCache LRU tests..." << std::endl;
+
+    // 1. Basic handle acquisition and reuse
+    {
+        auto cs1 = CapstoneContext::acquire(false);
+        assert(cs1.isValid());
+        const uint8_t code[] = {0x90}; // nop
+        cs_insn* insn = nullptr;
+        size_t count = cs_disasm(cs1.get(), code, sizeof(code), 0x1000, 1, &insn);
+        assert(count == 1 && insn != nullptr);
+        assert(std::string(insn[0].mnemonic) == "nop");
+        cs_free(insn, count);
+    }
+    // After lease destruction, second acquire in same thread reuses the pooled handle
+    {
+        auto cs2 = CapstoneContext::acquire(false);
+        assert(cs2.isValid());
+    }
+
+    // 2. Detail mode handle
+    {
+        auto cs_det = CapstoneContext::acquire(true);
+        assert(cs_det.isValid());
+        const uint8_t code[] = {0x48, 0x89, 0xd8}; // mov rax, rbx
+        cs_insn* insn = nullptr;
+        size_t count = cs_disasm(cs_det.get(), code, sizeof(code), 0x2000, 1, &insn);
+        assert(count == 1 && insn != nullptr);
+        assert(insn[0].detail != nullptr && "Detail mode must populate insn detail");
+        assert(insn[0].detail->x86.op_count == 2);
+        cs_free(insn, count);
+    }
+
+    // 3. Re-entrancy on same thread
+    {
+        auto lease1 = CapstoneContext::acquire(false);
+        assert(lease1.isValid());
+        // Nested acquire while lease1 is still alive
+        auto lease2 = CapstoneContext::acquire(false);
+        assert(lease2.isValid());
+        assert(lease1.get() != lease2.get() && "Reentrant acquire should return distinct standalone handle");
+    }
+
+    // 4. Multithreading concurrency test
+    {
+        std::atomic<bool> threadsOk{true};
+        std::vector<std::thread> workers;
+        for (int t = 0; t < 4; ++t) {
+            workers.emplace_back([&threadsOk, t]() {
+                for (int i = 0; i < 50; ++i) {
+                    auto cs = CapstoneContext::acquire(t % 2 == 0);
+                    if (!cs.isValid()) {
+                        threadsOk = false;
+                        return;
+                    }
+                    const uint8_t code[] = {0x55, 0x48, 0x89, 0xe5}; // push rbp; mov rbp, rsp
+                    cs_insn* insn = nullptr;
+                    size_t count = cs_disasm(cs.get(), code, sizeof(code), 0x400000 + i * 16, 2, &insn);
+                    if (count != 2) {
+                        threadsOk = false;
+                    }
+                    if (insn) {
+                        cs_free(insn, count);
+                    }
+                }
+            });
+        }
+        for (auto& w : workers) {
+            w.join();
+        }
+        assert(threadsOk && "Multithreaded CapstoneContext acquisition failed");
+        std::cout << "[PASS] CapstoneContext concurrent thread-local acquisition verified." << std::endl;
+    }
+
+    // 5. DisasmCache Multi-entry LRU unit test
+    {
+        DebugSession::DisasmCache cache;
+        assert(cache.find(Address(0x1000), 10) == nullptr);
+
+        // Populate entries up to limit (8 entries)
+        for (uint64_t i = 1; i <= 8; ++i) {
+            std::vector<DisassembledInstruction> insns;
+            DisassembledInstruction insn;
+            insn.address = Address(0x1000 * i);
+            insn.mnemonic = "nop";
+            insns.push_back(std::move(insn));
+            cache.put(Address(0x1000 * i), 10, std::move(insns));
+        }
+
+        // All 8 should be present
+        for (uint64_t i = 1; i <= 8; ++i) {
+            auto* e = cache.find(Address(0x1000 * i), 10);
+            assert(e != nullptr);
+            assert(e->insns.size() == 1);
+        }
+
+        // Access 0x1000 so it becomes recently used
+        assert(cache.find(Address(0x1000), 10) != nullptr);
+
+        // Put a 9th entry (Address 0x9000); 0x2000 was least recently accessed, so it should be evicted!
+        {
+            std::vector<DisassembledInstruction> insns;
+            DisassembledInstruction insn;
+            insn.address = Address(0x9000);
+            insn.mnemonic = "ret";
+            insns.push_back(std::move(insn));
+            cache.put(Address(0x9000), 10, std::move(insns));
+        }
+
+        assert(cache.find(Address(0x1000), 10) != nullptr && "0x1000 should remain in cache (recently accessed)");
+        assert(cache.find(Address(0x9000), 10) != nullptr && "0x9000 should be in cache");
+        assert(cache.find(Address(0x2000), 10) == nullptr && "0x2000 should have been evicted by LRU");
+
+        // Invalidate test
+        cache.invalidate();
+        assert(cache.find(Address(0x1000), 10) == nullptr);
+        assert(cache.find(Address(0x9000), 10) == nullptr);
+        std::cout << "[PASS] DisasmCache multi-entry LRU eviction and invalidation verified." << std::endl;
+    }
+
+    std::cout << "[PASS] CapstoneContext and LRU DisasmCache tests passed." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 
@@ -575,6 +700,7 @@ int main(int argc, char* argv[]) {
     test_phase3_3_fpu_functions_and_heap();
     test_phase4_threads_assembler_and_conditional_bp();
     test_phase5_rop_branch_prediction_xrefs_and_pattern();
+    test_capstone_context_and_lru_cache();
 
     std::cout << "\n>>> ALL UNIT TESTS PASSED SUCCESSFULLY! <<<" << std::endl;
     return 0;

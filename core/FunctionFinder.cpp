@@ -1,5 +1,6 @@
 #include "FunctionFinder.hpp"
 #include "DebugSession.hpp"
+#include "CapstoneContext.hpp"
 #include <capstone/capstone.h>
 #include <algorithm>
 
@@ -12,15 +13,15 @@ std::vector<FunctionInfo> FunctionFinder::findFunctions(DebugSession& session, A
     auto code = session.readMemory(start, scan_bytes);
     if (code.empty()) return functions;
 
-    csh cs_handle;
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &cs_handle) != CS_ERR_OK) {
+    auto cs = CapstoneContext::acquire(false);
+    if (!cs.isValid()) {
         return functions;
     }
+    csh cs_handle = cs.get();
 
     cs_insn* insns = nullptr;
     size_t count = cs_disasm(cs_handle, code.data(), code.size(), start.value(), 0, &insns);
     if (count == 0) {
-        cs_close(&cs_handle);
         return functions;
     }
 
@@ -107,7 +108,6 @@ std::vector<FunctionInfo> FunctionFinder::findFunctions(DebugSession& session, A
     }
 
     cs_free(insns, count);
-    cs_close(&cs_handle);
     return functions;
 }
 
