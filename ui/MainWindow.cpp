@@ -1036,6 +1036,9 @@ void MainWindow::onDetachTriggered() {
 }
 
 void MainWindow::onResumeTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->disasmView()->setFollowRip(true);
+    }
     if (auto s = sessionMgr_.activeSession()) {
         logMessage("Resuming execution (Continue)...");
         s->resume(false);
@@ -1043,6 +1046,9 @@ void MainWindow::onResumeTriggered() {
 }
 
 void MainWindow::onResumePassSignalTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->disasmView()->setFollowRip(true);
+    }
     if (auto s = sessionMgr_.activeSession()) {
         logMessage(QString("Resuming execution (Passing Signal %1)...").arg(s->lastSignal()));
         s->resume(true);
@@ -1050,12 +1056,22 @@ void MainWindow::onResumePassSignalTriggered() {
 }
 
 void MainWindow::onStepIntoTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDisassemblyView();
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
+    }
     if (auto s = sessionMgr_.activeSession()) {
         s->stepInto(false);
     }
 }
 
 void MainWindow::onStepIntoPassSignalTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDisassemblyView();
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
+    }
     if (auto s = sessionMgr_.activeSession()) {
         logMessage(QString("Step Into (Passing Signal %1)...").arg(s->lastSignal()));
         s->stepInto(true);
@@ -1063,12 +1079,22 @@ void MainWindow::onStepIntoPassSignalTriggered() {
 }
 
 void MainWindow::onStepOverTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDisassemblyView();
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
+    }
     if (auto s = sessionMgr_.activeSession()) {
         s->stepOver(false);
     }
 }
 
 void MainWindow::onStepOverPassSignalTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDisassemblyView();
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
+    }
     if (auto s = sessionMgr_.activeSession()) {
         logMessage(QString("Step Over (Passing Signal %1)...").arg(s->lastSignal()));
         s->stepOver(true);
@@ -1076,12 +1102,22 @@ void MainWindow::onStepOverPassSignalTriggered() {
 }
 
 void MainWindow::onStepOutTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDisassemblyView();
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
+    }
     if (auto s = sessionMgr_.activeSession()) {
         s->stepOut();
     }
 }
 
 void MainWindow::onRunUntilReturnTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDisassemblyView();
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
+    }
     if (auto s = sessionMgr_.activeSession()) {
         s->runUntilReturn();
     }
@@ -1089,6 +1125,8 @@ void MainWindow::onRunUntilReturnTriggered() {
 
 void MainWindow::onStepBackTriggered() {
     if (auto* tab = currentSessionTabWidget()) {
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
         if (auto s = tab->session()) {
             logMessage("Time-Travel: Stepping back one instruction...");
             s->stepBack();
@@ -1098,6 +1136,8 @@ void MainWindow::onStepBackTriggered() {
 
 void MainWindow::onReverseContinueTriggered() {
     if (auto* tab = currentSessionTabWidget()) {
+        tab->disasmView()->setFollowRip(true);
+        tab->disasmView()->setFocus();
         if (auto s = tab->session()) {
             logMessage("Time-Travel: Reversing execution to previous breakpoint...");
             s->reverseContinue();

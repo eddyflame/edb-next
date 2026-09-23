@@ -832,6 +832,7 @@ void DebugSession::handleBreakpointOrTrap(const DebugEvent& event) {
             // Rewind RIP by 1 on breakpoint hit
             currentRegs_.setRip(bp_addr);
             engine_.setRegisters(engine_.activeTid(), currentRegs_);
+            refreshRegisters();
             processed_event.reason = StopReason::Breakpoint;
             processed_event.address = bp_addr;
 
@@ -912,6 +913,9 @@ void DebugSession::handleBreakpointOrTrap(const DebugEvent& event) {
             bpMgr_.removeBreakpoint(*tempRunToBp_);
             tempRunToBp_.reset();
             Q_EMIT breakpointsUpdated();
+            if (processed_event.reason == StopReason::Breakpoint) {
+                processed_event.reason = StopReason::SingleStep;
+            }
         }
     }
 

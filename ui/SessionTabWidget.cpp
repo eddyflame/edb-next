@@ -477,6 +477,9 @@ void SessionTabWidget::refreshAll() {
 
 void SessionTabWidget::onSessionStateChanged(SessionState state) {
     if (state == SessionState::Paused) {
+        if (disasmView_) {
+            disasmView_->setFollowRip(true);
+        }
         refreshAll();
     } else if (state == SessionState::Terminated || state == SessionState::Stopped) {
         refreshAll();

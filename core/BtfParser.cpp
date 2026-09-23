@@ -7,6 +7,26 @@
 #include <elf.h>
 #include <iostream>
 
+// Compatibility definitions for BTF kinds and structures missing in older Linux kernel headers (< Linux 6.0)
+#ifndef BTF_KIND_FLOAT
+#define BTF_KIND_FLOAT 16
+#endif
+#ifndef BTF_KIND_DECL_TAG
+#define BTF_KIND_DECL_TAG 17
+#endif
+#ifndef BTF_KIND_TYPE_TAG
+#define BTF_KIND_TYPE_TAG 18
+#endif
+#ifndef BTF_KIND_ENUM64
+#define BTF_KIND_ENUM64 19
+#endif
+
+namespace {
+struct BtfDeclTagCompat {
+    int32_t component_idx;
+};
+} // namespace
+
 namespace edb_next {
 
 BtfParser::BtfParser() = default;
@@ -183,8 +203,8 @@ bool BtfParser::parseBuffer(std::span<const uint8_t> data) {
             }
             case BTF_KIND_DECL_TAG: {
                 entry.targetTypeId = t->type;
-                if (ptr + sizeof(struct btf_decl_tag) <= end) {
-                    ptr += sizeof(struct btf_decl_tag);
+                if (ptr + sizeof(BtfDeclTagCompat) <= end) {
+                    ptr += sizeof(BtfDeclTagCompat);
                 }
                 break;
             }

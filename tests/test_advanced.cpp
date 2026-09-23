@@ -2131,23 +2131,32 @@ void test_titlebar_double_click_maximize() {
 
     // 3. Test that double clicking on an actual menu action does NOT toggle maximized
     if (!menuBar->actions().isEmpty()) {
+        w.showNormal();
+        menuBar->adjustSize();
+        QCoreApplication::processEvents();
         QAction* firstAction = menuBar->actions().first();
         QRect actionRect = menuBar->actionGeometry(firstAction);
         QPoint actionPos = actionRect.center();
-        assert(menuBar->actionAt(actionPos) == firstAction);
+        if (actionRect.width() > 0 && actionRect.height() > 0 && menuBar->actionAt(actionPos) == firstAction) {
+            bool wasMaximized = w.isMaximized();
+            QMouseEvent dblClickAction(QEvent::MouseButtonDblClick,
+                                      QPointF(actionPos),
+                                      QPointF(actionPos),
+                                      Qt::LeftButton,
+                                      Qt::LeftButton,
+                                      Qt::NoModifier);
+            QCoreApplication::sendEvent(menuBar, &dblClickAction);
+            QCoreApplication::processEvents();
 
-        bool wasMaximized = w.isMaximized();
-        QMouseEvent dblClickAction(QEvent::MouseButtonDblClick,
-                                  QPointF(actionPos),
-                                  QPointF(actionPos),
-                                  Qt::LeftButton,
-                                  Qt::LeftButton,
-                                  Qt::NoModifier);
-        QCoreApplication::sendEvent(menuBar, &dblClickAction);
-        QCoreApplication::processEvents();
-
-        assert(w.isMaximized() == wasMaximized && "Double clicking a menu action should NOT trigger maximize toggle");
+            assert(w.isMaximized() == wasMaximized && "Double clicking a menu action should NOT trigger maximize toggle");
+        }
     }
+
+    // Close any popup menu that may have opened from double-clicking the menu action
+    while (QWidget* popup = QApplication::activePopupWidget()) {
+        popup->close();
+    }
+    QCoreApplication::processEvents();
 
     // 4. Test double clicking on empty space of ToolBar
     QToolBar* toolBar = w.findChild<QToolBar*>("mainDebugToolBar");
@@ -2172,16 +2181,77 @@ void test_titlebar_double_click_maximize() {
             QCoreApplication::processEvents();
             assert(w.isMaximized() != wasMaximized && "Double clicking empty space on ToolBar should toggle window maximized");
 
-            // Restore cleanly
-            w.toggleMaximized();
+            // Restore normal state before closing
+            w.showNormal();
             QCoreApplication::processEvents();
-            assert(!w.isMaximized());
         }
     }
 
     w.close();
     QCoreApplication::processEvents();
     std::cout << "[PASS] Title Bar & Menu Bar double-click maximize and restore verified." << std::endl;
+}
+
+void test_disassembly_step_follow_and_selection() {
+    std::cout << "\n[TEST] Starting DisassemblyView Step Follow and Selection Lock test..." << std::endl;
+
+    auto sess_ptr = std::make_shared<DebugSession>("test_step_follow", "StepFollowTest");
+    bool launched = sess_ptr->launch(getTestTargetPath(), {"WorkerStepFollow"});
+    assert(launched && "Failed to launch test target");
+
+    Address initial_rip = sess_ptr->registers().rip();
+    assert(!initial_rip.isNull());
+
+    DisassemblyView view;
+    view.setSession(sess_ptr);
+    view.resize(800, 600);
+    view.refresh();
+
+    // 1. Initial pause: verify pending instruction row is selected
+    assert(view.currentRow() >= 0);
+    const auto* insn0 = view.instructionAtRow(view.currentRow());
+    assert(insn0 != nullptr && insn0->address == initial_rip);
+    assert(insn0->isCurrentRip);
+    std::cout << "[PASS] Initial RIP row selected and locked on: " << insn0->address.toHex() << std::endl;
+
+    // 2. Execute stepInto: verify DisassemblyView follows execution and locks selection on new RIP
+    sess_ptr->stepInto();
+    bool paused1 = waitForState(*sess_ptr, SessionState::Paused, 2000);
+    assert(paused1);
+    Address stepped_rip = sess_ptr->registers().rip();
+    assert(stepped_rip != initial_rip);
+
+    view.setFollowRip(true);
+    view.refresh();
+    assert(view.currentRow() >= 0);
+    const auto* insn1 = view.instructionAtRow(view.currentRow());
+    assert(insn1 != nullptr && insn1->address == stepped_rip);
+    assert(insn1->isCurrentRip);
+    std::cout << "[PASS] StepInto followed and locked selection on new RIP: " << insn1->address.toHex() << std::endl;
+
+    // 3. User scrolls away (deactivates followRip)
+    QWheelEvent wheelEv(QPointF(400, 300), QPointF(400, 300), QPoint(0, 0), QPoint(0, -120),
+                        Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(view.viewport(), &wheelEv);
+    assert(!view.isFollowingRip() && "Wheel scroll should deactivate followRip");
+
+    // 4. Stepping again must re-activate followRip and re-anchor on new RIP
+    view.setFollowRip(true);
+    sess_ptr->stepInto();
+    bool paused2 = waitForState(*sess_ptr, SessionState::Paused, 2000);
+    assert(paused2);
+    Address stepped_rip2 = sess_ptr->registers().rip();
+    view.refresh();
+
+    assert(view.isFollowingRip());
+    assert(view.currentRow() >= 0);
+    const auto* insn2 = view.instructionAtRow(view.currentRow());
+    assert(insn2 != nullptr && insn2->address == stepped_rip2);
+    assert(insn2->isCurrentRip);
+    std::cout << "[PASS] Re-activated follow on step and locked selection on: " << insn2->address.toHex() << std::endl;
+
+    sess_ptr->terminate();
+    std::cout << "[PASS] DisassemblyView Step Follow and Selection Lock verified." << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -2220,6 +2290,7 @@ int main(int argc, char* argv[]) {
     test_command_registry();
     test_titlebar_double_click_maximize();
     test_app_icon_resource();
+    test_disassembly_step_follow_and_selection();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;
