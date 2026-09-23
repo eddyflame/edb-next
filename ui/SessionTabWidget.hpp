@@ -27,6 +27,8 @@
 #include "ScriptConsoleView.hpp"
 #include "MemoryScannerView.hpp"
 #include "TypeViewer.hpp"
+#include "DecompilerView.hpp"
+#include "TimeTravelWidget.hpp"
 #include "NavigationBus.hpp"
 #include "core/TraceEngine.hpp"
 #include <QWidget>
@@ -49,9 +51,11 @@ public:
 
     DisassemblyView* disasmView() const noexcept { return disasmView_; }
     SourceView* sourceView() const noexcept { return sourceView_; }
+    DecompilerView* decompilerView() const noexcept { return decompilerView_; }
     QTabWidget* codeTabWidget() const noexcept { return codeTabs_; }
     void showSourceView();
     void showDisassemblyView();
+    void showDecompilerView();
 
     RegisterView* registerView() const noexcept { return regView_; }
     MemoryHexView* memoryDumpView() const noexcept { return memDumpView_; }
@@ -77,6 +81,7 @@ public:
     ScriptConsoleView* scriptConsoleView() const noexcept { return scriptConsoleView_; }
     MemoryScannerView* memoryScannerView() const noexcept { return memScannerView_; }
     TypeViewer* typeViewer() const noexcept { return typeViewer_; }
+    TimeTravelWidget* timeTravelWidget() const noexcept { return timeTravelWidget_; }
     TraceEngine& traceEngine() noexcept { return traceEngine_; }
     [[nodiscard]] NavigationBus& navigationBus() noexcept { return navBus_; }
     [[nodiscard]] const NavigationBus& navigationBus() const noexcept { return navBus_; }
@@ -106,9 +111,11 @@ private:
 
     DisassemblyView* disasmView_{nullptr};
     SourceView* sourceView_{nullptr};
+    DecompilerView* decompilerView_{nullptr};
     QTabWidget* codeTabs_{nullptr};
     RegisterView* regView_{nullptr};
     QLabel* insnStatusBar_{nullptr};
+    TimeTravelWidget* timeTravelWidget_{nullptr};
 
     QSplitter* bottomSplitter_{nullptr};
     QTabWidget* bottomTabs_{nullptr};

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
 #include <signal.h>
 
 namespace edb_next {

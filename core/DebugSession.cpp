@@ -489,6 +489,7 @@ void DebugSession::refreshRegisters() {
     previousFpRegs_ = currentFpRegs_;
     engine_.getRegisters(engine_.activeTid(), currentRegs_);
     engine_.getFpRegisters(engine_.activeTid(), currentFpRegs_);
+    timeTravelEngine_.recordFrame(currentRegs_.rip(), currentRegs_);
     Q_EMIT registersUpdated();
 
     if (auto loc = dwarfParser_.findSourceLocation(currentRegs_.rip())) {
@@ -1106,6 +1107,13 @@ std::vector<uint8_t> DebugSession::readMemory(Address addr, size_t size) {
 }
 
 bool DebugSession::writeMemory(Address addr, const void* data, size_t size) {
+    if (size > 0 && size <= 4096) {
+        std::vector<uint8_t> oldBytes(size, 0);
+        if (engine_.readMemory(addr, oldBytes.data(), size)) {
+            std::span<const uint8_t> newBytes(reinterpret_cast<const uint8_t*>(data), size);
+            timeTravelEngine_.recordMemoryChange(addr, oldBytes, newBytes);
+        }
+    }
     bool ok = engine_.writeMemory(addr, data, size);
     if (ok) {
         invalidateDisasmCache();   // P1-B: memory changed, opcodes may differ
@@ -1713,6 +1721,87 @@ void DebugSession::syncHardwareBreakpointsToAllThreads() {
             engine_.setHardwareBreakpoint(tid, bp.hardwareSlot, bp.address, hwType, HardwareBpSize::Byte1);
         }
     }
+}
+
+bool DebugSession::stepBack() {
+    auto frameOpt = timeTravelEngine_.stepBack();
+    if (!frameOpt.has_value()) return false;
+
+    setRegisters(frameOpt->registers);
+    currentRegs_ = frameOpt->registers;
+
+    for (const auto& delta : frameOpt->memoryDeltas) {
+        if (!delta.oldBytes.empty()) {
+            engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+        }
+    }
+
+    invalidateDisasmCache();
+    Q_EMIT registersUpdated();
+    Q_EMIT memoryUpdated();
+    setState(SessionState::Paused);
+    return true;
+}
+
+bool DebugSession::stepForward() {
+    auto frameOpt = timeTravelEngine_.stepForward();
+    if (!frameOpt.has_value()) return false;
+
+    setRegisters(frameOpt->registers);
+    currentRegs_ = frameOpt->registers;
+
+    for (const auto& delta : frameOpt->memoryDeltas) {
+        if (!delta.newBytes.empty()) {
+            engine_.writeMemory(delta.address, delta.newBytes.data(), delta.newBytes.size());
+        }
+    }
+
+    invalidateDisasmCache();
+    Q_EMIT registersUpdated();
+    Q_EMIT memoryUpdated();
+    setState(SessionState::Paused);
+    return true;
+}
+
+bool DebugSession::reverseContinue() {
+    std::unordered_set<uint64_t> bpAddrs;
+    for (const auto& bp : bpMgr_.allBreakpoints()) {
+        if (bp.enabled) {
+            bpAddrs.insert(bp.address.value());
+        }
+    }
+
+    auto frameOpt = timeTravelEngine_.reverseContinue(bpAddrs);
+    if (!frameOpt.has_value()) return false;
+
+    setRegisters(frameOpt->registers);
+    currentRegs_ = frameOpt->registers;
+
+    for (const auto& delta : frameOpt->memoryDeltas) {
+        if (!delta.oldBytes.empty()) {
+            engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+        }
+    }
+
+    invalidateDisasmCache();
+    Q_EMIT registersUpdated();
+    Q_EMIT memoryUpdated();
+    setState(SessionState::Paused);
+    return true;
+}
+
+bool DebugSession::seekTimeTravelFrame(size_t index) {
+    auto frameOpt = timeTravelEngine_.seekFrame(index);
+    if (!frameOpt.has_value()) return false;
+
+    setRegisters(frameOpt->registers);
+    currentRegs_ = frameOpt->registers;
+
+    invalidateDisasmCache();
+    Q_EMIT registersUpdated();
+    Q_EMIT memoryUpdated();
+    setState(SessionState::Paused);
+    return true;
 }
 
 } // namespace edb_next

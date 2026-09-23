@@ -4,7 +4,7 @@
 
 <h3>Next-Generation Linux Binary Debugger & Reverse Engineering Platform</h3>
 
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/23)
 [![Qt](https://img.shields.io/badge/Qt-6.4%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-orange.svg?style=flat-square&logo=linux)](https://www.kernel.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg?style=flat-square)](LICENSE)
@@ -21,7 +21,7 @@
 
 **edb-next** is a modern, high-performance graphical binary debugger and dynamic reverse engineering platform specifically engineered for Linux x86_64. 
 
-Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly Engine**, `edb-next` addresses the longstanding absence of an industrial-strength GUI debugger on Linux. It deeply aligns with the tactile, battle-tested reverse engineering workflows of Windows' legendary **x64dbg**, while innovating natively on Linux through in-target remote syscall injection, ELF physical disk patching, non-blocking asynchronous event loops, and full glibc ptmalloc heap deconstruction.
+Built from scratch using **C++23**, **Qt 6.4+**, and the **Capstone Disassembly Engine**, `edb-next` addresses the longstanding absence of an industrial-strength GUI debugger on Linux. It deeply aligns with the tactile, battle-tested reverse engineering workflows of Windows' legendary **x64dbg**, while innovating natively on Linux through in-target remote syscall injection, ELF physical disk patching, non-blocking asynchronous event loops, native C pseudo-code decompilation, time-travel debugging, Z3 symbolic execution, and headless DAP protocol serving.
 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
@@ -29,6 +29,7 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 │  - One Dark syntax highlighting & RIP │  - 16 GPRs with diff highlight in red │
 │  - Dynamic branch & deref preview bar │  - Quick +1/-1 & Follow in Stack      │
 │  - F2 Breakpoint / Enter Follow / Esc │  - Clickable EFLAGS badges / SSE tabs │
+│  - F5 Native C Pseudo-Code Decompiler │  - TimeTravelWidget Scrub Bar (Ctrl+F7)│
 ├───────────────────────────────────────┼───────────────────────────────────────┤
 │     Quadrant 3: Multi-Tab Dump        │       Quadrant 4: Dedicated Stack     │
 │  - Dump 1 ~ Dump 4 independent tabs   │  - 8-byte QWORD aligned rows          │
@@ -45,6 +46,11 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 - ⚡ **In-Target Remote Syscall Injection (`executeRemoteSyscall`)**: Break through read-only memory barriers by dynamically injecting `SYS_mprotect` in the target process (RWX elevation), allocating isolated executable pages (`SYS_mmap`), and freeing memory (`SYS_munmap`).
 - 💾 **One-Click Physical ELF Disk Patching (`patchFileToDisk`)**: Translates Virtual Memory Addresses to ELF Program Header physical offsets ($VAddr \to FileOffset$), exporting standalone executable patched binaries directly to disk.
 - 🗄️ **High-Performance SQLite3 + Zstandard Database Engine (`.edb_db`)**: Modern ACID transactional storage engine with WAL journaling and `libzstd` compressed BLOBs (80%+ compression ratio). Seamlessly preserves comments, bookmarks, conditional breakpoints, watches, and patches, with 100% backward-compatible transparent migration from legacy JSON databases.
+- 🧩 **Native C Pseudo-Code Decompiler & F5 View (`DecompilerEngine`)**: High-performance C++23 native decompiler that lifts disassembled instructions into structured AST control flow (`while`, `if-else`, loops) and expression trees. Bidirectional `SourceMapping` provides line-to-instruction and instruction-to-line navigation with syntax-highlighted `DecompilerView` (`F5`) and live refresh.
+- ⏳ **Time-Travel Debugging (TTD) & Step Back Replay Engine (`TimeTravelEngine`)**: Deterministic snapshot and delta tracking capturing register and memory diffs (`MemoryDeltaDiff`). Supports `stepBack()` (`Ctrl+F7`), `stepForward()`, `reverseContinue()` (`Ctrl+Shift+F9`), and arbitrary timeline scrubbing via `TimeTravelWidget`, complemented by hardware branch tracing probes via `perf_event_open`.
+- ⚡ **SSA Micro-IR & Z3 SMT Symbolic Execution (`MicroIR`, `SymbolicEngine`)**: Lifts x86_64 machine code into a clean SSA 3-Address Code Micro-IR. Features constant folding, opaque predicate simplification, and dead code elimination. Deeply integrates the Z3 SMT C++23 solver to automatically compute satisfying concrete inputs for target branch reachability (`solveReachability`) and perform dynamic register/memory taint tracking.
+- 🔌 **Headless DAP (Debug Adapter Protocol) Server (`DapServer`, `--dap`)**: Full Microsoft DAP JSON-RPC protocol implementation for headless automation and native integration with modern IDEs like VS Code and Neovim (`nvim-dap`). Supports initialize, launch, attach, threads, stackTrace, scopes, variables, continue, next, stepIn, stepBack, readMemory, and disassemble.
+- 🪝 **Linux Kernel eBPF & Uprobes Hook Engine (`EbpfHookEngine`)**: High-throughput non-intrusive userspace function probe attachment via kernel `/sys/kernel/tracing` with asynchronous ring buffer and graceful non-privileged fallback.
 - 📖 **DWARF Source-Level Debugging & Mixed-Mode Disassembly**: Parses `.debug_info` and `.debug_line` with `libdw` for bidirectional address-to-source mapping. Inline source banner rendering in `DisassemblyView` (`Ctrl+Shift+S`), dedicated `SourceView` browser (`Alt+S`), source line breakpoints, and source stepping.
 - 🐍 **Embedded Dual Scripting Engine (Python 3 & Lua 5.4)**: Native embedded CPython 3 and Lua 5.4 engines managed by `ScriptEngineManager`. Rich `edb` module exposing memory/registers/breakpoints/stepping/eval APIs, dark geek Script Console (`Alt+P`), and inline CommandBar execution (`py <code...>` / `lua <code...>`); supports script-driven breakpoint actions with silent hook bypass (`return False` / `return false`) for non-intrusive microsecond-level runtime instrumentation.
 - 🏷️ **Intelligent C++ Symbol Demangling**: Integrated GNU `<cxxabi.h>` `abi::__cxa_demangle` across global Symbol Viewer, call stack backtraces, disassembly banners, register smart dereferences, and stack memory annotations, displaying clean `calculate_fib(int)` with tooltip mangled string preservation and bidirectional search.
@@ -98,6 +104,11 @@ Built from scratch using **C++20**, **Qt 6.4+**, and the **Capstone Disassembly 
 | **Scripting Automation**| None | Plugins | **Native Python 3 & Lua 5.4 Dual Engines (`Alt+P`)** |
 | **Session Persistence** | Lost on exit | `.dd64` Database | **SQLite3 + Zstandard ACID Database (`.edb_db`)** |
 | **Interactive CLI** | None | CommandBar | **x64dbg-Style Bottom CommandBar** |
+| **Native C Decompiler** | None | Plugins / Ghidra | **Native C++23 AST Decompiler (`F5` View & Bidirectional Mapping)** |
+| **Time-Travel Debugging**| None | None | **Register/Memory Delta Step Back & Timeline Scrub (`Ctrl+F7`)** |
+| **Symbolic Execution** | None | None | **SSA Micro-IR & Z3 SMT Solver Reachability & Taint Analysis** |
+| **Headless DAP Server** | None | None | **Native Microsoft DAP JSON-RPC Protocol Server (`--dap`)** |
+| **Linux eBPF Hooking** | None | N/A (Windows) | **Kernel uprobes Non-Intrusive Hook Engine (`EbpfHookEngine`)** |
 | **Linux Heap Analysis** | Outdated plugin | N/A (Windows) | **Native Glibc ptmalloc Analyzer (Tab 9)** |
 | **Shared Lib Hot-Reload / dlopen** | Manual reload | DLL events supported | **Native glibc _r_debug rendezvous + Pending Breakpoints** |
 | **Follow-Fork / Multi-Process** | Single process only | Multi-process attach | **Native PTRACE_EVENT_FORK + Parent/Child/Both Session Tree + inferiors CLI** |
@@ -128,7 +139,8 @@ sudo apt install -y \
     liblua5.4-dev \
     libzstd-dev \
     libsqlite3-dev \
-    libclang-dev
+    libclang-dev \
+    libz3-dev
 ```
 
 ### 2. Build from Source
@@ -143,12 +155,13 @@ cmake --build build -j$(nproc)
 
 ### 3. Run Verification Tests
 ```bash
-./build/test_core       # Validates engine, breakpoints, stepping, and unwinding
-./build/test_dwarf      # Validates DWARF source-level debugging & line mapping
-./build/test_advanced   # Validates patching, disk export, remote syscalls, and plugins
-./build/test_scripting  # Validates Python 3 & Lua 5.4 dual scripting automation
-./build/test_exit       # Validates clean process teardown without crashes
-./build/test_nextgen    # Validates pidfd event loop, target FD introspection, libclang AST, SQLite3+zstd, and C++23 monads
+./build/test_core           # Validates engine, breakpoints, stepping, and unwinding
+./build/test_dwarf          # Validates DWARF source-level debugging & line mapping
+./build/test_advanced       # Validates patching, disk export, remote syscalls, and plugins
+./build/test_scripting      # Validates Python 3 & Lua 5.4 dual scripting automation
+./build/test_exit           # Validates clean process teardown without crashes
+./build/test_nextgen        # Validates pidfd event loop, target FD introspection, libclang AST, SQLite3+zstd, and C++23 monads
+./build/test_p4_advanced_re # Validates SSA Micro-IR, Z3 symbolic execution, decompiler, TTD step-back, DAP server, and eBPF
 ```
 
 ### 4. Launch edb-next
@@ -202,17 +215,19 @@ Comprehensive bilingual documentation is maintained under the `doc/` directory:
 | **F8** | Step Over | **\*** *(Numpad / Key)* | **Origin**: Follow / Center on Current RIP |
 | **Shift+F11** | Step Out of Function | **Space** | Continuous Assemble (Auto-advancing with NOP fill) |
 | **F4** | Run to Selection | **; (Semicolon)** | Add / Edit Instruction Comment |
-| **Ctrl+F2** | Restart Debug Session | **: (Colon)** | Set / Edit User Label (`🏷`) |
-| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+B** | Toggle Bookmark (`★`) |
-| **F2** | Toggle Software Breakpoint | **X** | Show Cross References (XREFs) |
-| **Ctrl+Alt+S** | Search All Referenced Strings | **Ctrl+E** | Modify Hex Bytes In-Place |
-| **Ctrl+Alt+C** | Search All Intermodular Calls | **Ctrl+P** | Patch Manager & Disk File Export |
-| **Alt+P** | Script Console (Python/Lua) | **Alt+S** | Focus Source View |
-| **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | **Alt+C** | Focus CPU / Disassembly |
-| **Ctrl+S** | Save Project Database | **Ctrl+D** | Dump Formatted CPU State Snapshot |
-| **Shift+S** | Toggle Stack View | **Shift+F7/F8/F9** | Pass Signal Step / Run |
-| **Regs: `+` / `-` / `0`** | Inc / Dec / Zero Register | **Stack: `Space` / `Ctrl+G`** | Modify QWORD / Go to Address |
-| **HexDump: `Enter` / Dbl-Click** | Modify Bytes In-Place | **Follow in Dump 1~4** | Route to Target Dump Tab |
+| **F5** | **Native C Decompiler** (Refresh/Toggle) | **: (Colon)** | Set / Edit User Label (`🏷`) |
+| **Ctrl+F7** | **Step Back** (Time-Travel Debugging) | **Ctrl+B** | Toggle Bookmark (`★`) |
+| **Ctrl+Shift+F9** | **Reverse Continue** (TTD) | **X** | Show Cross References (XREFs) |
+| **Ctrl+F2** | Restart Debug Session | **Ctrl+E** | Modify Hex Bytes In-Place |
+| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+P** | Patch Manager & Disk File Export |
+| **F2** | Toggle Software Breakpoint | **Alt+S** | Focus Source View |
+| **Ctrl+Alt+S** | Search All Referenced Strings | **Alt+C** | Focus CPU / Disassembly |
+| **Ctrl+Alt+C** | Search All Intermodular Calls | **Ctrl+D** | Dump Formatted CPU State Snapshot |
+| **Alt+P** | Script Console (Python/Lua) | **Shift+F7/F8/F9** | Pass Signal Step / Run |
+| **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | **Stack: `Space` / `Ctrl+G`** | Modify QWORD / Go to Address |
+| **Ctrl+S** | Save Project Database | **Follow in Dump 1~4** | Route to Target Dump Tab |
+| **Shift+S** | Toggle Stack View | **Regs: `+` / `-` / `0`** | Inc / Dec / Zero Register |
+| **HexDump: `Enter` / Dbl-Click** | Modify Bytes In-Place | | |
 
 ---
 

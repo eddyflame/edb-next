@@ -4,7 +4,7 @@
 
 <h3>下一代 Linux 原生图形化二进制逆向工程与动态调试平台</h3>
 
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
 [![Qt](https://img.shields.io/badge/Qt-6.4%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-orange.svg?style=flat-square&logo=linux)](https://www.kernel.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg?style=flat-square)](LICENSE)
@@ -21,7 +21,7 @@
 
 **edb-next** 是一套专为 Linux x86_64 平台设计的现代化、高性能图形化二进制逆向分析与动态调试工具。
 
-基于 **C++20**、**Qt 6.4+** 与 **Capstone 反汇编引擎** 从零重构构建，`edb-next` 旨在终结 Linux 生态长期缺少顶级原生 GUI 调试器的痛点。它不仅深度吸收了 Windows 平台逆向标杆 **x64dbg** 备受好评的四象限工作流与极客操作手感，更立足于 Linux 内核特性，创新实现了目标空间远程系统调用注入、ELF 物理磁盘二进制落盘、异步非阻塞事件驱动循环以及 Glibc ptmalloc 堆内存全景剖析。
+基于 **C++23**、**Qt 6.4+** 与 **Capstone 反汇编引擎** 从零重构构建，`edb-next` 旨在终结 Linux 生态长期缺少顶级原生 GUI 调试器的痛点。它不仅深度吸收了 Windows 平台逆向标杆 **x64dbg** 备受好评的四象限工作流与极客操作手感，更立足于 Linux 内核特性，创新实现了目标空间远程系统调用注入、ELF 物理磁盘二进制落盘、异步非阻塞事件驱动循环、原生 C 伪代码反编译、时间旅行调试、Z3 符号执行以及无头 DAP 协议服务。
 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
@@ -29,6 +29,7 @@
 │  - One Dark 语法高亮与当前 RIP 指示     │  - 16 大通用寄存器十六进制呈现与变动标红 │
 │  - 动态分支预测与操作数解引用链式预览条 │  - GPR 极速 +1/-1 微调与 Follow in Stack│
 │  - F2 断点 / Enter 跟入 / Esc 历史瞬退  │  - EFLAGS 翡翠绿一键翻转徽章条 / SSE向量│
+│  - F5 原生 C 伪代码反编译器 (Decompiler)│  - TimeTravelWidget 时间旅行轴(Ctrl+F7) │
 ├───────────────────────────────────────┼───────────────────────────────────────┤
 │     象限 3: 多路转储 (Multi-Dump)      │       象限 4: 专有 64 位栈 (StackView) │
 │  - Dump 1 ~ Dump 4 独立多标签内存转储  │  - 纯 8 字节 QWORD 对齐排布            │
@@ -45,6 +46,11 @@
 - ⚡ **目标地址空间远程系统调用注入 (`executeRemoteSyscall`)**：通过原子置换临时 `0x0F 0x05` (`syscall`) 指令，直接在被调试目标内部原生执行 `SYS_mprotect`（修改任意虚拟页为 RWX 读写执行）、`SYS_mmap`（动态分配独立内存供 Shellcode / Trampoline 注入）与 `SYS_munmap`。
 - 💾 **一键物理 ELF 磁盘文件落盘 (`patchFileToDisk`)**：自动解算虚拟内存地址到 ELF 物理段文件偏移（$VAddr \to FileOffset$），将内存补丁直接覆写生成可独立运行的脱壳/破解版 ELF 二进制，赋予 `0755` 执行权限。
 - 🗄️ **工业级 SQLite3 + Zstandard 增量工程存储引擎 (`.edb_db`)**：升级为嵌入式 ACID 事务型 SQLite3 数据库，启用 WAL 高并发日志与 `libzstd` 极速压缩算法（压缩率超 80%），毫秒级持久化/加载海量注释、书签、条件断点、监视表与补丁，并实现对旧版 JSON 项目工程的 100% 透明无感迁移与升级。
+- 🧩 **原生 C 语言伪代码反编译引擎与 F5 视图 (`DecompilerEngine`)**：现代化 C++23 原生反编译器，将反汇编指令提升为 AST 结构化控制流（`while`、`if-else`、多分支循环）与表达式树。配备双向 `SourceMapping` 行-指令精准映射，并在 `DecompilerView`（快捷键 `F5`）提供语法着色与实时就地刷新。
+- ⏳ **时间旅行调试 (TTD) 与 Step Back 历史回溯引擎 (`TimeTravelEngine`)**：确定性执行状态快照与寄存器/内存差分追踪（`MemoryDeltaDiff`）。支持 `stepBack()` 单步倒流（`Ctrl+F7`）、`stepForward()`、`reverseContinue()` 逆向全速运行（`Ctrl+Shift+F9`）与时间轴拖拽定位（`TimeTravelWidget`），辅以 `perf_event_open` 硬件级分支追踪探针。
+- ⚡ **SSA Micro-IR 与 Z3 符号执行自动化求解 (`MicroIR`, `SymbolicEngine`)**：将 x86_64 指令提升为 SSA 规范三地址码微码中间表示；支持常量折叠、不透明谓词混淆消除与死代码消除；深度集成 Z3 SMT C++23 求解器，实现分支目标到达性条件输入自动生成（`solveReachability`）与寄存器/内存动态污点追踪。
+- 🔌 **无头 DAP (Debug Adapter Protocol) 协议服务 (`DapServer`, `--dap`)**：原生实现微软 DAP JSON-RPC 协议标准（Content-Length 分帧），支持 initialize, launch, attach, threads, stackTrace, scopes, variables, continue, next, stepIn, stepBack, readMemory, disassemble 等全套指令，命令行支持 `--dap` 启动无头服务，无缝接入 VS Code 与 Neovim (`nvim-dap`) 等现代编辑器生态。
+- 🪝 **Linux 内核态 eBPF uprobes 探针引擎 (`EbpfHookEngine`)**：通过 `/sys/kernel/tracing` 实现用户态 ELF 二进制函数探针非侵入式挂载，具备异步 Ring Buffer 事件通道与优雅的非特权沙箱降级机制。
 - 🎯 **经典 4 象限黄金工作台**：反汇编、寄存器、4路独立转储（Dump 1~4）以及专有 64 位 QWORD 栈视图四维同屏联动。
 - 🔍 **原生 Linux 深度内省与漏洞利用工具**：内置 Glibc ptmalloc 堆链解析器（`malloc_chunk` 与 `A|M|P` 标志）、ROP Gadget 滑动窗口搜寻与 Python `p64(...)` 利用脚本导出、交互式基本块控制流图 (CFG)、跨模块动态库 API 外呼搜索、以及 `/proc/<pid>/fd/` 句柄分类。
 - 📖 **DWARF 源码级调试与反汇编混合渲染**：基于 `libdw` 原生解析 `.debug_info` 与 `.debug_line`，实现地址与源码行号双向瞬时映射；支持反汇编与原始 C/C++ 源码混合排版（`Ctrl+Shift+S`），内置独立源码浏览器 `SourceView`（`Alt+S`），支持源码行双击断点与源码级单步。
@@ -100,6 +106,11 @@
 | **自动化脚本引擎**| 无内嵌脚本 | 需第三方插件 | **原生 Python 3 & Lua 5.4 双脚本引擎 (`Alt+P`)** |
 | **项目成果持久化** | 退出全盘丢失 | 标配 `.dd64` 数据库 | **SQLite3 + Zstandard ACID 数据库 (`.edb_db`)** |
 | **命令行交互** | 无交互 CLI | 标配底栏命令行 | **x64dbg 风格 CommandBar 极客交互栏** |
+| **原生 C 反编译** | 无 | 需插件 / 挂接 Ghidra | **原生 C++23 AST 反编译器 (`F5` 伪代码视图与双向映射)** |
+| **时间旅行调试 (TTD)** | 无 | 无 | **寄存器与内存差分 Step Back 倒流与时间轴 (`Ctrl+F7`)** |
+| **符号执行自动化** | 无 | 无 | **SSA Micro-IR & Z3 SMT 到达性条件求解与污点追踪** |
+| **无头 DAP 协议** | 无 | 无 | **微软 DAP JSON-RPC 协议服务 (`--dap` CLI)** |
+| **Linux eBPF Hook** | 无 | 不适用 (Windows) | **内核态 uprobes 函数探针引擎 (`EbpfHookEngine`)** |
 | **Linux 堆分析** | 插件支持较旧 | 不适用 (Windows) | **原生 Glibc ptmalloc 分析器 (Tab 9)** |
 | **动态库热加载 / dlopen 拦截** | 需手动刷新符号 | 支持 DLL 事件 | **原生 glibc _r_debug 协议自动捕获 + Pending 待决断点** |
 | **多进程 Follow-Fork / 子进程跟踪** | 仅单进程跟踪 | 支持多进程附加 | **原生 PTRACE_EVENT_FORK 捕获 + Parent/Child/Both 三态会话树 + inferiors 穿梭** |
@@ -130,7 +141,8 @@ sudo apt install -y \
     liblua5.4-dev \
     libzstd-dev \
     libsqlite3-dev \
-    libclang-dev
+    libclang-dev \
+    libz3-dev
 ```
 
 ### 2. 源码编译构建
@@ -150,7 +162,8 @@ cmake --build build -j$(nproc)
 ./build/test_advanced   # 进阶测试 (补丁落盘、Trace、CFG、远程系统调用注入等)
 ./build/test_scripting  # Python 3 & Lua 5.4 嵌入式双引擎测试
 ./build/test_exit       # 析构安全压力测试
-./build/test_nextgen    # 验证 pidfd 反应式循环、目标 FD 内省、libclang AST、SQLite3+zstd 及 C++23 单子
+./build/test_nextgen        # 验证 pidfd 反应式循环、目标 FD 内省、libclang AST、SQLite3+zstd 及 C++23 单子
+./build/test_p4_advanced_re # 验证 SSA Micro-IR、Z3 符号执行、原生反编译、TTD 回溯、DAP 服务与 eBPF
 ```
 
 ### 4. 启动调试器
@@ -204,17 +217,19 @@ chmod +x edb-next-x86_64.AppImage
 | **F8** | Step Over (单步步过) | **\*** *(小键盘 / 键)* | **Origin**: 居中显示当前执行指针 RIP |
 | **Shift+F11** | Step Out (跳出当前函数) | **Space** | 连续就地汇编 (自动步进下一条 + NOP 补齐) |
 | **F4** | Run to Selection (运行到光标) | **; (分号)** | Add Comment (添加/修改指令注释) |
-| **Ctrl+F2** | Restart (重启会话) | **: (冒号)** | Set / Edit Label (自定义用户标签 `🏷`) |
-| **Ctrl+\*** | Set RIP (强制重设当前执行指针) | **Ctrl+B** | Toggle Bookmark (打下/取消书签) |
-| **F2** | Toggle Breakpoint (切换断点) | **X** | Show Cross References (交叉引用) |
-| **Ctrl+Alt+S** | Search All Strings (搜索引用字符串) | **Ctrl+E** | Modify Hex Bytes (就地编辑内存) |
-| **Ctrl+Alt+C** | Search All Calls (搜索跨模块调用) | **Ctrl+P** | Patch Manager (补丁管理与落盘) |
-| **Alt+P** | Script Console (Python/Lua 控制台) | **Alt+S** | Focus Source View (聚焦源码浏览器) |
-| **Ctrl+Shift+S** | Toggle Mixed ASM/Source (混合渲染切换) | **Alt+C** | Focus CPU / Disassembly (聚焦反汇编) |
-| **Ctrl+S** | Save Project (.edb_db 项目保存) | **Ctrl+D** | Dump CPU State (导出机器状态快照) |
-| **Shift+S** | Toggle Stack View (折叠/展开栈) | **Shift+F7/F8/F9** | 透传信号执行 (Pass Signal Step/Run) |
-| **寄存器: `+` / `-` / `0`** | GPR 快速增减/清零 | **栈视图: `Space` / `Ctrl+G`** | 就地改写 QWORD / 跳转栈地址 |
-| **转储: `Enter` / 双击** | 就地极速改写内存字节 | **Follow in Dump 1~4** | 多标签定向转储路由 |
+| **F5** | **原生 C 反编译** (刷新/呼出) | **: (冒号)** | Set / Edit Label (自定义用户标签 `🏷`) |
+| **Ctrl+F7** | **Step Back** (时间旅行单步倒流) | **Ctrl+B** | Toggle Bookmark (打下/取消书签) |
+| **Ctrl+Shift+F9** | **Reverse Continue** (逆向全速运行) | **X** | Show Cross References (交叉引用) |
+| **Ctrl+F2** | Restart (重启会话) | **Ctrl+E** | Modify Hex Bytes (就地编辑内存) |
+| **Ctrl+\*** | Set RIP (强制重设当前执行指针) | **Ctrl+P** | Patch Manager (补丁管理与落盘) |
+| **F2** | Toggle Breakpoint (切换断点) | **Alt+S** | Focus Source View (聚焦源码浏览器) |
+| **Ctrl+Alt+S** | Search All Strings (搜索引用字符串) | **Alt+C** | Focus CPU / Disassembly (聚焦反汇编) |
+| **Ctrl+Alt+C** | Search All Calls (搜索跨模块调用) | **Ctrl+D** | Dump CPU State (导出机器状态快照) |
+| **Alt+P** | Script Console (Python/Lua 控制台) | **Shift+F7/F8/F9** | 透传信号执行 (Pass Signal Step/Run) |
+| **Ctrl+Shift+S** | Toggle Mixed ASM/Source (混合渲染切换) | **栈视图: `Space` / `Ctrl+G`** | 就地改写 QWORD / 跳转栈地址 |
+| **Ctrl+S** | Save Project (.edb_db 项目保存) | **Follow in Dump 1~4** | 多标签定向转储路由 |
+| **Shift+S** | Toggle Stack View (折叠/展开栈) | **寄存器: `+` / `-` / `0`** | GPR 快速增减/清零 |
+| **转储: `Enter` / 双击** | 就地极速改写内存字节 | | |
 
 ---
 

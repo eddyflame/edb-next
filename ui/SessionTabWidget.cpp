@@ -45,8 +45,11 @@ void SessionTabWidget::setupUi() {
     sourceView_ = new SourceView(codeTabs_);
     sourceView_->setSession(session_);
 
+    decompilerView_ = new DecompilerView(&navBus_, codeTabs_);
+
     codeTabs_->addTab(disasmView_, "Disassembly (Alt+C)");
     codeTabs_->addTab(sourceView_, "Source Code (Alt+S)");
+    codeTabs_->addTab(decompilerView_, "Decompiler (F5)");
 
     connect(codeTabs_, &QTabWidget::currentChanged, this, [this](int index) {
         QWidget* w = codeTabs_->widget(index);
@@ -73,6 +76,30 @@ void SessionTabWidget::setupUi() {
     insnStatusBar_->setTextFormat(Qt::RichText);
     insnStatusBar_->setStyleSheet("background-color: #1a1a1a; color: #80c0ff; padding: 2px 6px; font-family: monospace; border-top: 1px solid #333;");
     top_layout->addWidget(insnStatusBar_);
+
+    // Time-Travel Debugging (TTD) scrub bar
+    timeTravelWidget_ = new TimeTravelWidget(top_widget);
+    top_layout->addWidget(timeTravelWidget_);
+
+    if (session_) {
+        connect(timeTravelWidget_, &TimeTravelWidget::stepBackRequested, this, [this] {
+            session_->stepBack();
+        });
+        connect(timeTravelWidget_, &TimeTravelWidget::stepForwardRequested, this, [this] {
+            session_->stepForward();
+        });
+        connect(timeTravelWidget_, &TimeTravelWidget::reverseContinueRequested, this, [this] {
+            session_->reverseContinue();
+        });
+        connect(timeTravelWidget_, &TimeTravelWidget::seekFrameRequested, this, [this](size_t idx) {
+            session_->seekTimeTravelFrame(idx);
+        });
+        connect(timeTravelWidget_, &TimeTravelWidget::liveResumeRequested, this, [this] {
+            if (session_->timeTravelEngine().frameCount() > 0) {
+                session_->seekTimeTravelFrame(session_->timeTravelEngine().frameCount() - 1);
+            }
+        });
+    }
 
     connect(disasmView_, &DisassemblyView::instructionInspected, insnStatusBar_, &QLabel::setText);
 
@@ -390,6 +417,18 @@ void SessionTabWidget::showDisassemblyView() {
     }
 }
 
+void SessionTabWidget::showDecompilerView() {
+    if (codeTabs_ && decompilerView_) {
+        codeTabs_->setCurrentWidget(decompilerView_);
+        if (session_) {
+            Address rip = session_->registers().rip();
+            if (!rip.isNull()) {
+                decompilerView_->decompileAt(session_, rip);
+            }
+        }
+    }
+}
+
 void SessionTabWidget::refreshAll() {
     // 1. Core quadrant views (always visible or main execution views)
     disasmView_->refresh();
@@ -453,6 +492,15 @@ void SessionTabWidget::onRegistersUpdated() {
         } else {
             sourceView_->markDirty();
         }
+    }
+    if (decompilerView_ && session_) {
+        Address rip = session_->registers().rip();
+        if (!rip.isNull()) {
+            decompilerView_->highlightAddress(rip);
+        }
+    }
+    if (timeTravelWidget_ && session_) {
+        timeTravelWidget_->updateTimeline(session_->timeTravelEngine());
     }
     stackView_->refresh();
 

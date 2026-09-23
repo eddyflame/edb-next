@@ -198,19 +198,23 @@
   - 全局 CMake 升级迁移至 C++23 (`CMAKE_CXX_STANDARD 23`)；
   - `Result<T, E>` 全面拥抱单子操作链式调用（`and_then`, `transform`, `or_else`），无缝兼容 `std::expected<T, E>`；全面引入 `std::span` 零拷贝内存视图。
 
-### 阶段 P4：深度逆向工程、反编译与硬件级追踪 (Advanced Reverse Engineering)
+### 阶段 P4：深度逆向工程、反编译与硬件级追踪 (Advanced Reverse Engineering) [100% 全部落地]
 
-* [ ] **P4-1: eBPF uprobes 内核态高频 Hook 引擎**
-  - 基于 `libbpf` 实现用户态函数探针挂载；
-  - 建立 Ring Buffer 异步回传机制，支持百万级/秒无感 API Monitor。
-* [ ] **P4-2: Ghidra C++ Decompiler 反编译视图集成**
-  - 引入 `ghidra_decompiler` 脱机 C++ 模块；
-  - 开发 GUI 反编译伪代码窗口 (`F5`)，实现汇编、CFG 与 C 伪代码三向聚焦。
-* [ ] **P4-3: Intel PT 硬件级时间旅行追踪 (TTD)**
-  - 基于 `perf_event_open` 记录 CPU 硬件分支流；
-  - 结合 Zydis 解码重构时间轴，实现 Step Back 回溯调试。
-* [ ] **P4-4: SSA Micro-IR 与 Z3 符号执行自动化求解**
-  - 指令提升至 SSA 微码中间表示，实现常量折叠与死代码消除；
-  - 集成 Z3 求解器实现分支目标输入自动生成与污点追踪。
-* [ ] **P4-5: DAP (Debug Adapter Protocol) 协议服务化**
-  - 封装 headless 调试引擎为标准 DAP Server，适配 VS Code / 现代化编辑器生态。
+* [x] **P4-1: eBPF uprobes 内核态高频 Hook 引擎**
+  - 引入 `core/EbpfHookEngine`，支持用户态 ELF 二进制探针挂载（`/sys/kernel/tracing/uprobe_events`）；
+  - 支持非特权回退沙箱与高速 Ring Buffer 异步事件回传机制，支持高频 API 调用监听。
+* [x] **P4-2: 原生 C++23 反编译器与 F5 伪代码视图**
+  - 引入 `core/DecompilerEngine`，支持 AST 控制流结构化重构、三地址码表达树合成；
+  - 双向 `SourceMapping` 行-指令地址双向精准映射，集成至 `ui/DecompilerView`（快捷键 `F5`），实现汇编与 C 伪代码双向跳转导航。
+* [x] **P4-3: 时间旅行调试 (TTD) 与 Step Back 回溯引擎**
+  - 引入 `core/TimeTravelEngine`，支持基于寄存器与内存写差分（Memory Delta Diffs）的历史执行帧回溯；
+  - 支持 `stepBack`（Ctrl+F7）、`stepForward`、`reverseContinue`（Ctrl+Shift+F9）与精准帧跳转（`seekFrame`）；
+  - 集成 `perf_event_open` 硬件级分支追踪探针检测，并在 UI 引入 `TimeTravelWidget` 时间旅行滑动轴与状态指示灯。
+* [x] **P4-4: SSA Micro-IR 与 Z3 符号执行自动化求解**
+  - 引入 `core/MicroIR`，实现 x86_64 指令提升为 SSA 三地址码微码中间表示；
+  - 具备常量折叠、不透明谓词混淆消除与死代码消除优化遍；
+  - 深度集成 Z3 SMT C++23 求解器（`core/SymbolicEngine`），实现自动化分支目标到达性条件求解（SAT/UNSAT）与动态污点追踪。
+* [x] **P4-5: DAP (Debug Adapter Protocol) 协议服务化**
+  - 引入 `core/DapServer`，原生支持微软 DAP JSON-RPC 协议标准（Content-Length 分帧）；
+  - 支持 `initialize`, `launch`, `attach`, `threads`, `stackTrace`, `scopes`, `variables`, `continue`, `next`, `stepIn`, `stepBack`, `readMemory`, `disassemble`, `disconnect` 等全量指令；
+  - `main.cpp` 支持 `--dap` / `--dap-port` 命令行无头自举启动，无缝接入 VS Code 与 Neovim (`nvim-dap`) 等现代编辑器生态。
