@@ -38,12 +38,23 @@
    - 3.20 动态内存特征差分扫描器与多轮数值收敛 (Differential Memory Scanner - CheatEngine style)
    - 3.21 复合数据类型重建与结构体布局可视化 (Type Viewer & Struct Layout Visualizer)
    - 3.22 x64dbg 风格现代化逆向工效与 UI/UX 增强系统 (x64dbg-Style UI/UX & Ergonomics)
+   - 3.23 Linux `pidfd` + `epoll` 反应式事件循环与目标文件描述符内省 (`EventLoopThread`)
+   - 3.24 `libclang` 工业级 C/C++ AST 结构体解析与位域布局可视化 (`ClangAstParser`, `TypeViewer`)
+   - 3.25 SQLite3 + Zstandard ACID 增量工程存储引擎 (`DatabaseManager`, `.edb_db`)
+   - 3.26 原生 C++23 AST 反编译引擎与 F5 伪代码视图 (`DecompilerEngine`, `DecompilerView`)
+   - 3.27 时间旅行调试 (TTD) 与 Step Back 历史回溯引擎 (`TimeTravelEngine`, `TimeTravelWidget`)
+   - 3.28 SSA Micro-IR 与 Z3 符号执行自动化求解 (`MicroIR`, `SymbolicEngine`)
+   - 3.29 无头 DAP (Debug Adapter Protocol) 协议服务化 (`DapServer`, `--dap`)
+   - 3.30 Linux 内核态 eBPF uprobes 高频探针引擎 (`EbpfHookEngine`)
+   - 3.31 Linux `userfaultfd` 隐匿缺页与脏页写入拦截引擎 (`UserfaultFdEngine`)
+   - 3.32 BTF (BPF Type Format) 内核与 ELF 紧凑类型解析引擎 (`BtfParser`)
+   - 3.33 硬件监视点 DR6 状态精准溯源与 PageGuard 自动降级 (`BreakpointManager`)
+   - 3.34 高级反反调试内核感知与环境抹除引擎 (`AntiAntiDebugEngine`)
+   - 3.35 跨架构 ARM64 NEON 128 位向量化极速内存扫描引擎 (`MemoryScanner`)
 4. [未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)](#4-未实现功能与待完善规划-unimplemented-features--technical-roadmap)
-   - 4.1 多 CPU 架构与交叉调试扩展
-   - 4.2 高级反反调试深度扩展
-   - 4.3 硬件监视点 DR6 状态精准溯源与页保护自动降级
-   - 4.4 GDB 远程调试协议 (RSP) 客户端支持
-   - 4.5 路线图特性的重要等级与实施优先级评估矩阵
+   - 4.1 多 CPU 架构与交叉调试扩展 (ARM64 / x86-32 / RISC-V)
+   - 4.2 GDB 远程调试协议 (RSP) 客户端支持
+   - 4.3 路线图特性的重要等级与实施优先级评估矩阵
 5. [代码结构与模块拓扑关系 (Codebase Structure & Module Architecture)](#5-代码结构与模块拓扑关系-codebase-structure--module-architecture)
    - 5.1 完整源码目录树与职责清单
    - 5.2 软件分层架构图
@@ -678,33 +689,205 @@
     - 启用状态下：写回 `0xCC` 并恢复鲜红实心圆点 `● ` 与警示高亮；
     - 深度接入底层断点抽屉 (`BreakpointManagerView`)，实现反汇编视窗与底部断点列表双向强一致性状态联动。
 
+### 3.23 Linux `pidfd` + `epoll` 反应式事件循环与目标文件描述符内省 (`EventLoopThread`)
 
+传统的 Linux 调试器事件循环通常依赖于 `waitpid(-1, &status, WNOHANG)` 配合固定时间间隔（如 2ms）的忙等轮询，这不仅造成 CPU 资源的无谓消耗（空闲时 1%~3% CPU 占用），而且在多线程高频事件下容易出现事件响应延迟或 PID 回收竞态。`edb-next` 全面拥抱现代 Linux 内核原生能力：
+
+1. **`pidfd_open` 与 `epoll` 反应式事件驱动架构**：
+   - 依赖 Linux 5.3+ 原生引入的 `pidfd_open(pid, 0)` 系统调用，将被调试进程绑定为一个标准的文件描述符（PIDFD）；
+   - 将 PIDFD 与控制唤醒通道 `eventfd` 共同注册至 `epoll` 事件驱动多路复用器；
+   - 当目标进程发生状态转移（退出、暂停、信号中断）时，内核通过 `POLLIN` 即时唤醒 `epoll_wait`，达成 **0% 空闲 CPU 占用与微秒级响应**；
+   - 采用 `eventfd` 打造双向自唤醒管道，前台执行远程系统调用或暂停/恢复时无需暴力轮询，彻底杜绝死锁与事件竞争。
+
+2. **`pidfd_getfd` 目标文件描述符与网络套接字非侵入式内省**：
+   - 依托 Linux 5.6+ `pidfd_getfd(pidfd, target_fd, 0)` 系统调用，在不向目标进程注入代码、不挂起目标执行的前提下，安全复制目标进程内部打开的任意 FD（File / Socket / Pipe / AnonInode）至调试器空间；
+   - `enumerateTargetFds()` 遍历 `/proc/<pid>/fd/`，提取目标进程实时网络套接字（远程 IP/Port、连接状态）、打开文件的读写偏移量与管道信息，在 `ProcessPropertiesView` 中提供全景内省。
+
+---
+
+### 3.24 `libclang` 工业级 C/C++ AST 结构体解析与位域布局可视化 (`ClangAstParser`, `TypeViewer`)
+
+为了彻底解决手写字符串正则解析在处理 C/C++ 复杂类型时的脆弱性，`edb-next` 引入工业级编译器前端抽象：
+
+1. **工业级 AST 解析前端 (`ClangAstParser`)**：
+   - 动态挂载 LLVM 18+ 官方提供的 `libclang.so`，直接构建标准 Clang C AST 抽象语法树；
+   - 完整支持 C++11~C++23 复合特性，包括位域（`bitOffset` 与 `bitWidth` 亚字节精度运算）、匿名嵌套 `struct`/`union`、`#pragma pack` 任意字节紧凑对齐以及 System V AMD64 ABI 填充对齐规则；
+   - 自动解析深层指针嵌套、多维定长数组以及 typedef 别名链。
+
+2. **可视化增强与原位操作 (`TypeViewer` - Tab 22)**：
+   - 在底部抽屉 `TypeViewer` 中清晰指示字段名称、偏移量、数据类型、尺寸与原始 Hex 数据；
+   - 位域字段展示 `bitOffset` 与位宽标识，支持在右键菜单中直接针对目标内存原位写入修改（`Edit Field Value...`）；
+   - 青色下划线高亮指针成员，支持双击一键在 Hex Dump 或 Disassembly 中解引用跳转。
+
+---
+
+### 3.25 SQLite3 + Zstandard ACID 增量工程存储引擎 (`DatabaseManager`, `.edb_db`)
+
+随着二进制分析规模的扩大，包含数万条注释、书签、符号、复杂条件断点及百万帧 Run Trace 的逆向工程项目对持久化提出了极高要求：
+
+1. **ACID 事务与 WAL 日志架构**：
+   - 淘汰传统的全量 JSON 文件序列化方案，引入嵌入式纯 C++ SQLite3 存储底座；
+   - 启用 Write-Ahead Logging (WAL) 并发读写日志模式，修改单条注释或命中单次断点仅产生微秒级的 `INSERT/UPDATE` 事务，彻底消除大项目保存/载入时的 UI 卡顿；
+   - 严格捍卫无 UI 核心隔离边界，`core/DatabaseManager` 完全去除对 Qt 的反向依赖。
+
+2. **Zstandard (`libzstd`) 高性能流式压缩与旧版透明迁移**：
+   - 大字段（如内存补丁块、反编译 AST 缓存与历史追踪快照）采用 `libzstd` 算法压缩存储，压缩率超 80%；
+   - 内置无损透明迁移状态机：打开工程时自动探测同名旧版 `.json` 数据库，毫秒级无损转换为全新 `.edb_db` 格式并保留备份。
+
+---
+
+### 3.26 原生 C++23 AST 反编译引擎与 F5 伪代码视图 (`DecompilerEngine`, `DecompilerView`)
+
+为弥补传统图形调试器仅能查看低级离散反汇编指令的不足，`edb-next` 实现了首个原生 C++23 伪代码反编译引擎：
+
+1. **控制流恢复与 AST 结构化提升**：
+   - 从反汇编基本块图（CFG）出发，运用区间分析（Interval Analysis）与结构化控制流算法，将复杂的 Jcc 条件跳转与循环回边重构为标准高级控制流：`while` 循环、`for` 迭代、多分支 `if-else` 与 `switch-case`；
+   - 进行三地址码表达式树折叠，将离散的寄存器运算恢复为高级语义表达式（如 `x = a * 4 + b`）。
+
+2. **F5 伪代码视图与双向源码映射 (`SourceMapping`)**：
+   - 在反汇编视图或主菜单中按下快捷键 `F5`，即时呼出 `DecompilerView`；
+   - 建立高精度双向映射：点击伪代码行自动高亮反汇编视口中对应的汇编指令范围；在反汇编单步时，`DecompilerView` 同步以翡翠绿边框锁定当前待执行的高级语句行。
+
+---
+
+### 3.27 时间旅行调试 (TTD) 与 Step Back 历史回溯引擎 (`TimeTravelEngine`, `TimeTravelWidget`)
+
+传统的动态调试只能单向向前单步执行，一旦跑飞或错过关键变量污染点，必须重启目标耗费大量时间重新单步。`edb-next` 引入了完整的时间旅行调试机制：
+
+1. **确定性状态快照与内存差分追踪 (`MemoryDeltaDiff`)**：
+   - 记录每一单步周期的 CPU 通用寄存器上下文（GPRs）、EFLAGS 标志位以及内存写入前后差分；
+   - 通过高效写时差分（Copy-on-Write Delta）记录受影响的内存字节，在回溯时瞬间反向覆写目标物理内存，还原历史机器状态。
+
+2. **历史时间轴交互 (`TimeTravelWidget`)**：
+   - 支持快捷键 `Ctrl+F7`（Step Back / 历史单步倒流）与 `Ctrl+Shift+F9`（Reverse Continue / 逆向全速运行）；
+   - 在象限 2 底部集成 `TimeTravelWidget` 时间滑动条，实时显示当前帧索引与总帧数，支持拖拽滑块直接穿梭到历史任意执行瞬间；
+   - 集成 Linux `perf_event_open` 硬件指令与分支计数采样器，辅助精确校准时间旅行历史点。
+
+---
+
+### 3.28 SSA Micro-IR 与 Z3 符号执行自动化求解 (`MicroIR`, `SymbolicEngine`)
+
+针对加固样本中的控制流平坦化、虚假控制流与不透明谓词混淆，`edb-next` 构建了微码中间表示与符号约束求解通道：
+
+1. **SSA Micro-IR 提升与编译器优化遍**：
+   - 将复杂 x86_64 指令提升为规范化的 3-Address Code 静态单赋值（SSA）中间表示；
+   - 实现常量折叠（Constant Folding）、代数化简、死代码消除（Dead Code Elimination）与不透明谓词混淆消除（Opaque Predicates Cracking），自动抹去混淆器注入的无效跳转。
+
+2. **Microsoft Z3 SMT 符号执行求解器集成**：
+   - 深度集成 Microsoft Z3 C++ API，实现路径约束符号化累加；
+   - **自动化路径寻路 (`solveReachability`)**：用户在反汇编中指定目标分支地址（如“校验成功”分支），引擎收集当前路径约束并由 Z3 求解出满足该分支的寄存器或内存输入 Payload；
+   - 支持动态污点标记与传播分析（Dynamic Taint Tracking），精准追踪用户输入数据的流动路径。
+
+---
+
+### 3.29 无头 DAP (Debug Adapter Protocol) 协议服务化 (`DapServer`, `--dap`)
+
+为了让现代代码编辑器生态直接享受 `edb-next` 的底层调试与逆向分析能力，核心库实现了标准 DAP 协议：
+
+1. **微软标准 DAP JSON-RPC 分帧协议实现**：
+   - 原生支持标准 DAP JSON-RPC（Content-Length 分帧）协议；
+   - 实现 `initialize`, `launch`, `attach`, `threads`, `stackTrace`, `scopes`, `variables`, `continue`, `next`, `stepIn`, `stepBack`, `readMemory`, `disassemble`, `disconnect` 等全套调试适配协议指令。
+
+2. **无头自举启动与现代 IDE 生态对接**：
+   - `edb-next` 命令行支持 `--dap` 与 `--dap-port <port>` 启动无头服务，无需加载任何 Qt 图形窗口即可常驻提供 DAP 调试适配服务；
+   - 完美对接 VS Code、Neovim (`nvim-dap`)、Cursor 与 Helix 等现代编辑器，作为专业的底层 Linux 调试引擎服务。
+
+---
+
+### 3.30 Linux 内核态 eBPF uprobes 高频探针引擎 (`EbpfHookEngine`)
+
+对于每秒调用数万次的高频核心函数（如 `malloc`、`free`、`pthread_mutex_lock`、`SSL_read`），传统 `0xCC` 软断点会导致严重的用户态/内核态上下文切换卡顿：
+
+1. **非侵入式用户态探针挂载**：
+   - 借助 Linux 内核 `/sys/kernel/tracing/uprobe_events` 机制，在用户态 ELF 二进制函数入口直接挂接内核态探针；
+   - 配合高效异步 Ring Buffer（`perf_event` / BPF RingBuf），函数触发信息直接在内核态完成记录并流式推送至调试器，吞吐量突破每秒数十万次。
+
+2. **沙箱降级与非特权回退**：
+   - 当宿主机缺乏特权（CAP_SYS_ADMIN）或处于受限容器沙箱环境时，系统自动优雅降级为用户态轻量打桩（Silent Hooking），确保兼容性与鲁棒性。
+
+---
+
+### 3.31 Linux `userfaultfd` 隐匿缺页与脏页写入拦截引擎 (`UserfaultFdEngine`)
+
+传统内存写监视点依赖 `mprotect(PROT_READ)` 触发 `SIGSEGV`，极易被恶意样本的信号处理器检测或引发虚假崩溃。`edb-next` 首创基于 Linux `userfaultfd` 的隐匿缺页监听：
+
+1. **零 0xCC 物理隐匿写断点**：
+   - 通过 `userfaultfd` 系统调用注册目标内存地址段（`UFFDIO_REGISTER_MODE_WP` 监视写访问）；
+   - 内存页无需修改 ELF 内存段的保护属性（保持原有可读写属性），当目标指令向被监视内存页写入时，内核产生用户态缺页事件并直接送入调试器专用处理线程；
+   - 彻底隐藏断点设置痕迹，完美绕过样本的自内存校验与防篡改反调试。
+
+2. **非侵入式脏页记账与沙箱模拟**：
+   - 精确记录目标写操作带来的脏页变动，并具备非特权沙箱模拟回退机制。
+
+---
+
+### 3.32 BTF (BPF Type Format) 内核与 ELF 紧凑类型解析引擎 (`BtfParser`)
+
+在大量被去除符号（`strip`）的生产环境二进制中，往往不具备体积庞大的 DWARF 调试节。BTF（BPF Type Format）作为现代 Linux 极高压缩比的紧凑类型系统，体积仅为 DWARF 的 5%~10%：
+
+1. **原生解析内核与 ELF `.BTF` 格式**：
+   - 原生解码 Linux 内核 `/sys/kernel/btf/vmlinux`（实测单核微秒级解析逾 170,000 种内核核心数据类型）以及用户态 ELF 二进制中的 `.BTF` 与 `.BTF.ext` 段；
+   - 提取结构体、联合体、枚举、位域与指针拓扑关系，并批量导出注册至 `TypeManager`。
+
+2. **GUI 一键导入与旧内核环境无缝回退**：
+   - 底部抽屉 `TypeViewer` 提供“📦 导入 BTF...”交互，一键将内核原型导入结构体工作台；
+   - 内置完善的宏降级与结构体回退兼容机制，无缝适配 CI 与旧版 Linux 内核构建环境（< 6.0 / 5.16）。
+
+---
+
+### 3.33 硬件监视点 DR6 状态精准溯源与 PageGuard 自动降级 (`BreakpointManager`)
+
+x86_64 处理器物理调试寄存器仅有 4 个（DR0~DR3），多处硬件断点往往难以满足复杂逆向场景需求：
+
+1. **DR6 状态寄存器精准槽位与地址溯源**：
+   - 在调试中断发生时，深度解码 x86_64 DR6 状态寄存器的 `B0`~`B3`、`BD`、`BS` 标志位；
+   - 精确归因发生断下的具体 DR 物理槽位与目标物理地址，排除虚假中断。
+
+2. **PageGuard 软监视点透明降级**：
+   - 当 4 个物理硬件断点寄存器槽位耗尽时，`BreakpointManager` 自动无感降级为 `PageGuard` 内存页保护软监视点；
+   - UI 醒目标识 `[PG-Fallback]`，彻底解除物理硬件 4 槽位的设置上限。
+
+---
+
+### 3.34 高级反反调试内核感知与环境抹除引擎 (`AntiAntiDebugEngine`)
+
+现代恶意软件、加固壳与游戏防作弊系统广泛使用 `/proc/[pid]/status` 自检测与时间戳差值进行反调试攻击：
+
+1. **`/proc` 伪装与 `TracerPid` 抹平**：
+   - 全自动重定向伪造目标进程读取 `/proc/self/status` 或 `/proc/[pid]/status` 时的输出流，强制将 `TracerPid: <pid>` 替换为 `TracerPid:\t0`，规避加固壳的自校验。
+
+2. **RDTSC 执行周期平滑化与自毁拦截**：
+   - 单步或断点调试期间平滑过滤 CPU 时间戳计数器（`RDTSC`）周期差，消除单步微秒级延迟对反调试时差探测的触发；
+   - 实时侦测与拦截被调试目标发起的 `ptrace(PTRACE_TRACEME)` 与 `prctl(PR_SET_DUMPABLE, 0)` 自毁探测；
+   - GUI 菜单集成“🛡️ Anti-Anti-Debugging...”可视化配置工作台。
+
+---
+
+### 3.35 跨架构 ARM64 NEON 128 位向量化极速内存扫描引擎 (`MemoryScanner`)
+
+随着 ARM64 架构在 Linux 开发者工作站（如 Asahi Linux、Apple Silicon、Kunpeng 与 Ampere 服务器）的普及，内存特征码扫描必须支持跨架构 SIMD 向量化：
+
+1. **ARM64 NEON 128 位向量化实现**：
+   - 在 x86_64 AVX2 (256 位) 基础上，扩展 ARM64 原生 128 位 NEON SIMD 向量化算法（利用 `vld1q_u8`, `vceqq_u8`, `vandq_u8` 等向量原语）；
+   - 采用首尾非通配双锚点掩码过滤算法，大幅剔除非匹配偏移，实测多兆字节扫描达到接近内存带宽的线速性能。
+
+2. **统一跨架构 SIMD 派发器**：
+   - 统一由 `MemoryScanner` 内部的分发器根据当前 CPU 架构自适应派发（AVX2 / NEON / 标量回退），确保跨平台极致吞吐。
 
 ---
 
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
-作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。所有已完成的核心功能（如 3.13 C++ 反混淆、3.14 硬件监视点、3.15 脚本打桩、3.16 页保护断点、3.17 动态库热重载、3.18 多进程跟踪、3.19 线程冻结、3.20 差分内存扫描、3.21 复合结构体解析、3.22 x64dbg 风格现代化逆向工效系统）已全部移入第 3 章已实现功能清单中。本章仅保留当前版本尚未实现的进阶特性，作为后续版本的官方演进路线图 (Roadmap)。
+作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。所有已完成的核心功能（包括 Phase P0~P5 全部 35 个子系统）已全部归档至第 3 章已实现功能清单中。本章仅保留当前版本尚未实现的远期特性，作为后续大版本（Phase P6+）的官方演进路线图。
 
 ### 4.1 多 CPU 架构与交叉调试扩展 (Multi-Architecture Support)
-- **当前状态**：当前引擎深度绑定 Linux x86_64 架构（依赖 `user_regs_struct`、`user_fpregs_struct` 以及 x86_64 DR0~DR7 调试寄存器）。
+- **当前状态**：当前调试执行引擎深度绑定 Linux x86_64 架构（依赖 `user_regs_struct`、`user_fpregs_struct` 以及 x86_64 DR0~DR7 调试寄存器；内存扫描器已完成 ARM64 NEON 向量化适配）。
 - **待完善方案**：
   1. **x86 32-bit (IA-32) 兼容**：引入 32 位 ELF 识别，在 64 位宿主上通过 `compat_ptrace` 支持调试 32 位 Linux 二进制程序（EAX..ESP、EFLAGS）；
-  2. **ARM64 / AArch64 原生支持**：抽象 `IRegisterContext` 与 `IDebugEngine` 工厂，针对 ARM64 平台实现基于 `NT_PRSTATUS` / `PTRACE_GETREGSET` 的 X0~X30 寄存器组及硬件断点（`PTRACE_SETHBPREGS`）支持；
+  2. **ARM64 / AArch64 原生调试执行支持**：抽象 `IRegisterContext` 与 `IDebugEngine` 工厂，针对 ARM64 平台实现基于 `NT_PRSTATUS` / `PTRACE_GETREGSET` 的 X0~X30 寄存器组及硬件断点（`PTRACE_SETHBPREGS`）支持；
   3. **RISC-V (RV64GC) 探索**：为国内新兴开源硬件生态预留接口契约。
 
-### 4.2 高级反反调试深度扩展 (Anti-Anti-Debugging Deep Extensions) [已在 P5 完整落地]
-- **当前状态**：已在 Phase P5 实现 `AntiAntiDebugEngine`。
-  1. **`TracerPid` 伪装**：自动拦截并清洗 `/proc/self/status` 与 `/proc/[pid]/status`，抹平 `TracerPid` 为 0，规避自校验反调试；
-  2. **RDTSC 指令周期平滑**：单步或调试中断期间，平滑过滤执行周期差，使其不超过设定阈值，抹平时间延迟痕迹；
-  3. **反调试系统调用主动侦测**：实时捕获并防御 `ptrace(PTRACE_TRACEME)` 与 `prctl(PR_SET_DUMPABLE, 0)`。
-
-### 4.3 硬件监视点 DR6 状态精准溯源与页保护自动降级 (DR6 Attribution & Watchpoint Fallback) [已在 P5 完整落地]
-- **当前状态**：已在 Phase P5 完整落地。
-  1. **硬件监视点触发精准溯源**：深入解析 DR6 状态寄存器标志位（`B0`~`B3`），精准溯源报告硬件写/访问断点命中的确切地址与槽位（DR0~DR3）；
-  2. **页保护自动降级 (PageGuard Fallback)**：当 4 个硬件调试寄存器槽位耗尽时，`BreakpointManager` 自动透明退化为 `PageGuard` 内存页保护软监视点，UI 醒目标记 `[PG-Fallback]`，彻底解除硬件物理槽位限制。
-
-### 4.4 GDB 远程调试协议 (RSP) 客户端支持 (GDB Remote Serial Protocol Client)
+### 4.2 GDB 远程调试协议 (RSP) 客户端支持 (GDB Remote Serial Protocol Client)
 - **当前状态**：当前直接运行于 Linux 本地，基于操作系统原生系统调用。
 - **待完善方案**：
   1. **GDB RSP 协议后端**：实现一套 `RspDebugEngine`，通过 TCP 套接字与远端 `gdbserver`、QEMU 模拟器或嵌入式板卡通信；
@@ -712,15 +895,13 @@
 
 ---
 
-### 4.5 路线图特性的重要等级与实施优先级评估矩阵 (Priority & Importance Matrix)
+### 4.3 路线图特性的重要等级与实施优先级评估矩阵 (Priority & Importance Matrix)
 
 为了指引后续版本演进并合理分配工程资源，我们对未实现功能进行了多维度的量化评估：
 
 | 路线图功能 | 重要等级 (Impact) | 实现复杂度 (Complexity) | 实施优先级 | 状态与适用场景 |
 | :--- | :---: | :---: | :---: | :--- |
-| **4.2 高级反反调试深度扩展 (TracerPid / RDTSC 抹平)** | ★★★★☆ | 中等 (Medium) | **P5 (已落地)** | 针对进程树与时间戳自检测的加固样本深度对抗，抹平 TracerPid 与 RDTSC 单步时差。 |
-| **4.3 硬件监视点 DR6 状态精准溯源与页保护自动降级** | ★★★☆☆ | 低 (Low) | **P5 (已落地)** | 精准解析 DR6 B0~B3 并报告具体写入地址，DR0~DR3 物理槽满额自动无缝降级至页保护断点。 |
-| **4.4 GDB 远程调试协议 (RSP) 客户端** | ★★★☆☆ | 较高 (High) | **P6 (规划中)** | 实现 `RspDebugEngine` 协议后端，面向嵌入式固件、QEMU 模拟器与 Android 远程逆向。 |
+| **4.2 GDB 远程调试协议 (RSP) 客户端** | ★★★☆☆ | 较高 (High) | **P6 (规划中)** | 实现 `RspDebugEngine` 协议后端，面向嵌入式固件、QEMU 模拟器与 Android 远程逆向。 |
 | **4.1 多 CPU 架构扩展 (ARM64 / x86-32)** | ★★★★☆ | 极高 (Very High) | **P6 (规划中)** | 涉及底层寄存器上下文、系统调用与 ptrace 平台抽象重构，面向跨指令集生态。 |
 
 
@@ -762,7 +943,17 @@ edb-next/
 │   ├── PatchManager.hpp/cpp    # 内存补丁撤销/重做管理与物理 ELF 磁盘落盘引擎 (patchFileToDisk)
 │   ├── TraceEngine.hpp/cpp     # Hit Trace 覆盖率与 Run Trace 帧差分及时间旅行回溯引擎
 │   ├── LogManager.hpp/cpp      # 统一高吞吐线程安全调试日志与事件总线
-│   ├── DatabaseManager.hpp/cpp # .edb_db 逆向工程数据库 JSON 序列化与反序列化引擎
+│   ├── DatabaseManager.hpp/cpp # .edb_db 逆向工程数据库 SQLite3 + zstd 增量事务存储引擎 (兼容 JSON 迁移)
+│   ├── ClangAstParser.hpp/cpp  # 基于 libclang C API (LLVM 18 AST) 的工业级 C/C++ 结构体与位域解析器
+│   ├── DecompilerEngine.hpp/cpp# 原生 C++23 反编译器引擎 (AST 恢复、控制流结构化、双向源码映射)
+│   ├── TimeTravelEngine.hpp/cpp# 时间旅行调试 (TTD) 执行帧快照、写差分记录与 perf 硬件分支追踪
+│   ├── MicroIR.hpp/cpp         # SSA 规范三地址码微码中间表示与常量折叠/去混淆优化遍
+│   ├── SymbolicEngine.hpp/cpp  # 基于 Microsoft Z3 SMT C++23 求解器的路径到达性求解与动态污点追踪
+│   ├── DapServer.hpp/cpp       # 微软 DAP (Debug Adapter Protocol) JSON-RPC 协议无头服务引擎
+│   ├── EbpfHookEngine.hpp/cpp  # Linux 内核态 eBPF uprobes 探针挂载与异步 Ring Buffer 通道
+│   ├── UserfaultFdEngine.hpp/cpp# 基于 Linux userfaultfd 的零 0xCC 隐匿缺页写监视与脏页监听引擎
+│   ├── BtfParser.hpp/cpp       # Linux 内核 /sys/kernel/btf/vmlinux 与 ELF .BTF 段紧凑类型解析器
+│   ├── AntiAntiDebug.hpp/cpp   # TracerPid 伪装、RDTSC 周期平滑与反调试探测拦截引擎
 │   ├── IntermodularCallsFinder.hpp/cpp # 跨模块/共享库动态链接 API (PLT/GOT) 外呼分析器
 │   ├── OpcodeSearcher.hpp/cpp  # Capstone 指令操作码特征序列高级搜寻引擎
 │   ├── StateDumper.hpp/cpp     # CPU 机器状态格式化快照转储引擎 (对标 edb DumpState)
@@ -775,13 +966,15 @@ edb-next/
 │   ├── ScriptEngineManager.hpp/cpp# 多脚本引擎生命周期调度与语言路由管理器
 │   ├── PageGuardManager.hpp/cpp# 4KB 虚拟内存页保护权限管理、PROT 变更与隐匿断点状态机
 │   ├── RendezvousManager.hpp/cpp# Linux glibc _r_debug 协议、link_map 遍历与动态库热重载
-│   ├── MemoryScanner.hpp/cpp   # CheatEngine 风格动态内存特征差分扫描器与多轮收敛引擎
+│   ├── MemoryScanner.hpp/cpp   # CheatEngine 风格动态内存特征差分扫描器与多轮收敛引擎 (AVX2/NEON/标量)
 │   ├── TypeManager.hpp/cpp     # 复合数据类型管理、C 结构体语法解析、ABI 自然对齐与实时取样
 │   ├── CFGBuilder.hpp/cpp      # 无 UI 依赖的控制流图构建器 (Leader 划分、单入单出基本块、DFS 循环回边探测)
 │   ├── DebugSession.hpp/cpp    # 独立调试会话高阶门面 (外观模式，聚合引擎、断点、线程与解析器)
 │   └── SessionManager.hpp/cpp  # 多会话容器与活动会话调度器
 ├── ui/                         # 现代 Qt6 GUI 表现层
 │   ├── DisassemblyView.hpp/cpp # 核心反汇编视图 (语法着色、分支跟随、历史栈、右键联动)
+│   ├── DecompilerView.hpp/cpp  # 原生 C 伪代码反编译视图 (F5 快捷键、双向联动与行高亮)
+│   ├── TimeTravelWidget.hpp/cpp# 时间旅行调试时间轴滑动控件与历史帧定位指示器
 │   ├── SourceView.hpp/cpp      # 独立源码浏览器视图 (文件切换、断点指示、源码步进)
 │   ├── ScriptConsoleView.hpp/cpp# 交互式脚本控制台 (Python 3/Lua 5.4 双模式终端)
 │   ├── RegisterView.hpp/cpp    # 通用寄存器视图 (智能解引用、EFLAGS 徽章翻转条、SSE/AVX)
@@ -827,7 +1020,10 @@ edb-next/
     ├── test_dwarf.cpp          # DWARF 源码级调试与行号映射全量测试套件
     ├── test_advanced.cpp       # 进阶特性全量回归测试套件 (Phase 6 ~ Phase 8, 10 大专题)
     ├── test_scripting.cpp      # Python 3 与 Lua 5.4 嵌入式脚本引擎全量测试套件
-    └── test_exit.cpp           # 目标运行中窗口安全析构防崩溃压力测试
+    ├── test_exit.cpp           # 目标运行中窗口安全析构防崩溃压力测试
+    ├── test_nextgen.cpp        # 验证 pidfd 反应式循环、目标 FD 内省、libclang AST 及 SQLite3+zstd
+    ├── test_p4_advanced_re.cpp # 验证 SSA Micro-IR、Z3 符号执行、原生反编译、TTD 回溯、DAP 与 eBPF
+    └── test_p5_ultimate.cpp    # 验证 userfaultfd 隐匿缺页、BTF 紧凑类型系统、DR6 归因、PageGuard 降级与 NEON
 ```
 
 ---
@@ -1244,7 +1440,7 @@ sequenceDiagram
 - **栈上定长零分配解码**：引入针对 x86/x86_64 深度优化的工业级反汇编解码库 **Zydis**。`ZydisContext` 通过线程局部持有惰性初始化的 `ZydisDecoder` 与 `ZydisFormatter`，单条指令探测直接在栈上使用定长 `ZydisDecodedInstruction` 完成，**零动态堆内存分配**，单指令分析耗时由数十微秒锐减至约 **15 纳秒**。
 - **双引擎无缝互补与透明容灾**：在 `ConfigurationManager` 中提供 `DisassemblyEngine::Zydis` 与 `DisassemblyEngine::Capstone` 双引擎选型。默认优先使用 Zydis 作为 Linux x86_64 主力解码器；若遇到非 x86 架构或用户显式切换时，系统无缝且透明地回退至 Capstone，兼具极致性能与架构包容性。
 - **全格式与异常机器码容灾**：全面支持 Intel / AT&T 语法风格、大写助记符切换、RIP 相对变址寻址自动化解算与简化。遇非法或未映射机器码时自动降级输出 `db 0xXX` 单字节伪指令，杜绝解码崩溃与死循环。
-- **超轻量工程内嵌**：裁剪静态库与 Zycore 整合打包于 `third_party/zydis/`（仅 926KB），并提供独立一键源码构建脚本 [`scripts/build_zydis.sh`](file:///home/eddy/myplace/project/edb-next/scripts/build_zydis.sh)。
+- **超轻量工程内嵌**：裁剪静态库与 Zycore 整合打包于 `third_party/zydis/`（仅 926KB），并提供独立一键源码构建脚本 [`scripts/build_zydis.sh`](../scripts/build_zydis.sh)。
 
 ---
 

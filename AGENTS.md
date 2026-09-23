@@ -9,7 +9,7 @@ Mandatory instructions for AI agents and developers. Follow by default without u
 ### 1.1 Autonomous Execution Cycle
 On feature, bug fix, or code update:
 1. **Implement & Test**: Write code and unit tests.
-2. **Synchronize Docs**: Update [README.md](file:///home/eddy/myplace/project/edb-next/README.md), [README_zh.md](file:///home/eddy/myplace/project/edb-next/README_zh.md), and `doc/` to document the new feature/fix.
+2. **Synchronize Docs**: Update design documents (`doc/DESIGN_*.md`) and user manuals/tutorials (`doc/TUTORIAL_*.md`) for new features, architectural changes, or usage instructions. Keep `README.md` and `README_zh.md` concise as high-level project introductions—never pile granular feature lists into the README unless it is a major milestone overview. Use relative markdown links only; never expose local machine paths.
 3. **Build & Verify (Code Changes Only)**: When C++ code or build scripts are modified, compile (`make -C build -j8`) and run relevant/all test suites (`test_core`, `test_advanced`, `test_dwarf`, `test_exit`, `test_scripting`). **Skip compilation and tests for documentation-only (`docs:`) or non-code updates.**
 4. **Commit Together**: Stage and commit code, tests, and documentation together in a single logical commit. Never ask user permission to commit or update docs.
 

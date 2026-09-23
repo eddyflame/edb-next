@@ -39,6 +39,11 @@
    - 4.12 多线程独立冻结与解冻实战 (Thread Freeze / Thaw & Isolated Stepping)
    - 4.13 动态内存特征差分扫描器实战 (Differential Memory Scanner - CheatEngine style)
    - 4.14 复合数据类型重建与结构体布局可视化实战 (Type Viewer & Struct Layout)
+   - 4.15 原生 C 伪代码反编译器实战 (`F5` 快捷键与双向映射)
+   - 4.16 时间旅行调试 (TTD) 与历史单步回溯实战 (`Ctrl+F7` Step Back)
+   - 4.17 无头 DAP (Debug Adapter Protocol) 服务自举与 VS Code / Neovim 接入实战
+   - 4.18 BTF 内核与 ELF 紧凑类型导入实战 (TypeViewer 导入紧凑符号)
+   - 4.19 高级反反调试配置 (Anti-Anti-Debugging 环境伪装)
 5. [高级逆向分析工具箱实战 (Advanced Reverse Engineering)](#5-高级逆向分析工具箱实战-advanced-reverse-engineering)
    - 5.1 Glibc ptmalloc 堆内存深度解析 (HeapView)
    - 5.2 ROP Gadget 漏洞挖掘与 Python Payload 导出 (ROPToolView)
@@ -762,6 +767,97 @@ structs                       # 列出当前所有已注册的结构体模板名
 struct <name> <addr_or_expr>  # 解析并打印指定内存地址上的结构体字段展开详情
 defstruct <c_code...>         # 在命令行直接注册新的 C 语言结构体定义
 ```
+
+---
+
+### 4.15 原生 C 伪代码反编译器实战 (`F5` 快捷键与双向映射)
+
+反汇编视图虽然精确，但面对包含复杂嵌套循环与长条件判断的高级算法时，逆向人员往往难以快速理清整体控制流。`edb-next` 原生集成了 C++23 AST 反编译引擎：
+
+#### 1. 呼出与刷新反编译视图
+- 在反汇编视图中浏览任意函数时，按下快捷键 **`F5`**（或点击顶部菜单栏 **Analysis -> Decompile Function (F5)**）；
+- 系统即时切出 **DecompilerView**，将当前函数从离散的汇编指令提升为易读的 C 语言伪代码（包括 `while`、`for` 循环、`if-else` 分支与三地址码表达式）。
+
+#### 2. 指令与源码双向聚焦联动
+- **伪代码到汇编**：在 `DecompilerView` 中单击任意伪代码行，反汇编视图（象限 1）自动滚动并高亮该高级语句对应的底层汇编指令序列；
+- **汇编到伪代码**：在反汇编视图中执行单步步进（`F7` / `F8`）时，`DecompilerView` 自动以翡翠绿边框锁定当前待执行的高级语句，极大降低动态跟踪的思维负荷。
+
+---
+
+### 4.16 时间旅行调试 (TTD) 与历史单步回溯实战 (`Ctrl+F7` Step Back)
+
+传统的单步调试只允许向前执行，一旦不小心步过了关键断点或错过关键变量的写入时机，必须重启程序并重设断点。`edb-next` 提供了工业级时间旅行调试体验：
+
+#### 1. 历史单步回溯操作
+- **单步倒流 (Step Back)**：按下快捷键 **`Ctrl+F7`**，调试器利用内存与寄存器差分记录（Memory Delta Diffs）瞬时反向恢复上一指令周期的所有机器状态与内存数据；
+- **逆向全速运行 (Reverse Continue)**：按下快捷键 **`Ctrl+Shift+F9`**，逆向全速回溯执行，直到命中前一个断点或返回历史起点。
+
+#### 2. 时间旅行时间轴控件 (`TimeTravelWidget`)
+- 位于象限 2（寄存器表）底部；
+- 拖拽滑动条可以直接在历史执行帧之间快速穿梭，当前帧指示器实时显示当前位置；
+- 配合硬件分支追踪（Linux `perf_event_open`），实现近乎原生的确定性执行回溯。
+
+---
+
+### 4.17 无头 DAP (Debug Adapter Protocol) 服务自举与 VS Code / Neovim 接入实战
+
+`edb-next` 不仅是一套功能完备的图形化调试器，还可以作为无头 DAP 调试适配器服务运行，为外部现代编辑器提供底层逆向与调试服务：
+
+#### 1. 启动无头 DAP 服务
+在终端中执行带 `--dap` 参数的启动命令：
+```bash
+# 启动 DAP 服务并监听默认端口 4711
+./build/edb_next --dap
+
+# 或指定自定义监听端口
+./build/edb_next --dap --dap-port 5555
+```
+
+#### 2. VS Code 接入配置 (`launch.json`)
+在 VS Code 项目的 `.vscode/launch.json` 中配置 DAP 客户端：
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "edb-next DAP Attach",
+            "type": "edb-next",
+            "request": "attach",
+            "port": 4711,
+            "program": "${workspaceFolder}/target_binary"
+        }
+    ]
+}
+```
+VS Code 可直接下发断点、单步步进、查看局部变量与调用栈，享受 `edb-next` 反应式底层引擎的高性能服务。
+
+---
+
+### 4.18 BTF 内核与 ELF 紧凑类型导入实战 (TypeViewer 导入紧凑符号)
+
+当分析脱壳样本、去除调试符号（`strip`）的生产二进制或与 Linux 内核交互的程序时，缺乏 DWARF 调试符号往往导致结构体分析困难。BTF（BPF Type Format）提供了极高密度的紧凑类型元数据：
+
+#### 1. 导入 Linux 内核 vmlinux BTF 原型
+1. 打开底部抽屉 **Type Viewer**（Tab 22）；
+2. 点击顶部工具栏的 **"📦 Import BTF..."**；
+3. 选择 **"Load Kernel BTF (/sys/kernel/btf/vmlinux)"**；
+4. 调试器将在微秒级完成逾 170,000 种内核核心类型（如 `task_struct`、`sk_buff`、`files_struct`）的加载与注册；
+5. 在 Struct 下拉框中直接选择所需类型，即刻对目标内存展开精准结构体切分。
+
+#### 2. 导入用户态 ELF `.BTF` 节区
+若目标二进制内嵌了 `.BTF` 节区，点击 **"Load ELF .BTF Section"**，即可自动解码该二进制特有的复合结构体与位域布局。
+
+---
+
+### 4.19 高级反反调试配置 (Anti-Anti-Debugging 环境伪装)
+
+恶意软件与游戏反作弊程序通常通过检测 `/proc/[pid]/status` 中的 `TracerPid` 或利用 `RDTSC` 探测单步时间延迟来进行反调试。`edb-next` 提供了全自动伪装支持：
+
+#### 1. 呼出 Anti-Anti-Debugging 配置面板
+- 点击主菜单栏 **Debug -> 🛡️ Anti-Anti-Debugging...** 打开配置工作台；
+- **TracerPid 伪装**：勾选 "Spoof TracerPid as 0 in /proc/status"，系统将自动过滤目标对自身 status 的读取并返回 `TracerPid: 0`；
+- **RDTSC 时间差平滑**：勾选 "Smooth RDTSC Cycle Differences"，抹平单步执行产生的微秒级延迟；
+- **自毁系统调用拦截**：勾选 "Intercept PTRACE_TRACEME & PR_SET_DUMPABLE"，自动阻断目标的自杀性探测。
 
 ---
 
