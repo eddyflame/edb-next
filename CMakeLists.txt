@@ -210,6 +210,7 @@ set(UI_SOURCES
     ui/DecompilerView.cpp
     ui/TimeTravelWidget.cpp
     ui/MainWindow.cpp
+    res/resources.qrc
 )
 
 add_executable(edb_next ${UI_SOURCES} main.cpp)

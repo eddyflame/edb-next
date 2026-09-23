@@ -37,6 +37,7 @@
 #include <QKeyEvent>
 #include <sys/mman.h>
 #include <QApplication>
+#include <QIcon>
 #include <QFileInfo>
 #include <iostream>
 #ifdef NDEBUG
@@ -2060,6 +2061,17 @@ void test_command_registry() {
     std::cout << "[PASS] P2-B CommandRegistry architecture and CommandBarView integration verified." << std::endl;
 }
 
+void test_app_icon_resource() {
+    std::cout << "\n[TEST] Testing application icon resource availability..." << std::endl;
+    QIcon icon(":/res/edb-next.png");
+    assert(!icon.isNull() && "Application icon resource :/res/edb-next.png should be valid and loaded");
+    QIcon aliasIcon(":/edb-next.png");
+    assert(!aliasIcon.isNull() && "Application icon resource :/edb-next.png alias should be valid");
+    MainWindow w;
+    assert(!w.windowIcon().isNull() && "MainWindow should have an active window icon set");
+    std::cout << "[PASS] Application icon resource properly loaded and set on MainWindow." << std::endl;
+}
+
 void test_titlebar_double_click_maximize() {
     std::cout << "\n[TEST] Starting Title Bar & Menu Bar Double-Click Maximize/Restore test..." << std::endl;
 
@@ -2207,6 +2219,7 @@ int main(int argc, char* argv[]) {
     test_navigation_bus();
     test_command_registry();
     test_titlebar_double_click_maximize();
+    test_app_icon_resource();
 
     std::cout << "\n>>> ALL ADVANCED TESTS PASSED CLEANLY! <<<" << std::endl;
     return 0;
