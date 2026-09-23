@@ -201,14 +201,22 @@ void TypeViewer::refresh() {
         // Col 0: Offset (+0x00)
         std::ostringstream offOss;
         offOss << "+0x" << std::hex << std::setw(2) << std::setfill('0') << f.offset
-               << " (" << std::dec << f.offset << ")";
+               << " (" << std::dec << f.offset;
+        if (f.isBitfield) {
+            offOss << "b" << f.bitOffset;
+        }
+        offOss << ")";
         auto* offItem = new QTableWidgetItem(QString::fromStdString(offOss.str()));
         offItem->setForeground(QColor(148, 163, 184));
         offItem->setFont(monoFont);
         fieldTable_->setItem(static_cast<int>(i), 0, offItem);
 
         // Col 1: Field Name
-        auto* nameItem = new QTableWidgetItem(QString::fromStdString(f.name));
+        QString displayName = QString::fromStdString(f.name);
+        if (f.isBitfield) {
+            displayName += QString(" : %1").arg(f.bitWidth);
+        }
+        auto* nameItem = new QTableWidgetItem(displayName);
         nameItem->setFont(QFont(font().family(), -1, QFont::Bold));
         nameItem->setForeground(QColor(241, 245, 249));
         fieldTable_->setItem(static_cast<int>(i), 1, nameItem);
@@ -219,7 +227,8 @@ void TypeViewer::refresh() {
         fieldTable_->setItem(static_cast<int>(i), 2, typeItem);
 
         // Col 3: Size
-        auto* sizeItem = new QTableWidgetItem(QString("%1 B").arg(f.size));
+        QString sizeStr = f.isBitfield ? QString("%1 b").arg(f.bitWidth) : QString("%1 B").arg(f.size);
+        auto* sizeItem = new QTableWidgetItem(sizeStr);
         sizeItem->setForeground(QColor(156, 163, 175));
         fieldTable_->setItem(static_cast<int>(i), 3, sizeItem);
 

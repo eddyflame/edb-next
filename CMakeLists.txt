@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(edb-next VERSION 1.0.0 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -15,6 +15,7 @@ add_compile_options(-Wall -Wextra -pedantic -Wno-unused-parameter -g)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CAPSTONE REQUIRED capstone)
+pkg_check_modules(ZSTD REQUIRED libzstd)
 
 find_library(LIBDW_LIBRARIES NAMES dw libdw.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
 find_library(LIBELF_LIBRARIES NAMES elf libelf.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
@@ -88,6 +89,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/keystone/include
     ${ZYDIS_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zydis/include
+    ${ZSTD_INCLUDE_DIRS}
 )
 
 # Core Library
@@ -131,6 +133,7 @@ set(CORE_SOURCES
     core/ZydisContext.cpp
     core/CFGBuilder.cpp
     core/ScriptApiBridge.cpp
+    core/ClangAstParser.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -145,6 +148,8 @@ target_link_libraries(edb_core
     ${LUA_LIBRARIES}
     ${KEYSTONE_LIBRARIES}
     ${ZYDIS_LIBRARIES}
+    ${ZSTD_LIBRARIES}
+    ${CMAKE_DL_LIBS}
     pthread
 )
 
@@ -285,6 +290,19 @@ target_link_libraries(test_scripting
     pthread
 )
 add_dependencies(test_scripting build_test_target)
+
+# Next-Gen (P3) test executable (pidfd, ClangAstParser, SQLite3+zstd, C++23)
+add_executable(test_nextgen tests/test_nextgen.cpp)
+target_link_libraries(test_nextgen
+    PRIVATE
+    edb_core
+    Qt6::Core
+    ${CAPSTONE_LIBRARIES}
+    ${ZSTD_LIBRARIES}
+    ${CMAKE_DL_LIBS}
+    pthread
+)
+add_dependencies(test_nextgen build_test_target)
 
 # ==============================================================================
 # Installation Rules (Standard FHS & AppImage Packaging Support)

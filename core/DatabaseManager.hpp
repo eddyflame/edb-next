@@ -47,6 +47,7 @@ struct DatabaseProject {
     std::vector<DatabasePageGuardData> pageGuards;
     std::vector<std::string> watches;
     std::vector<DatabasePatchData> patches;
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> blobs;
 };
 
 class DatabaseManager {
@@ -55,6 +56,11 @@ public:
 
     bool saveToFile(const std::string& filepath, const DatabaseProject& project);
     bool loadFromFile(const std::string& filepath, DatabaseProject& project);
+
+    // Incremental SQLite transactions
+    bool saveProjectIncremental(const std::string& filepath, const DatabaseProject& project);
+    [[nodiscard]] bool isSqliteDatabase(const std::string& filepath) const;
+    [[nodiscard]] bool isSqliteAvailable() const noexcept;
 
     // Auto-save database path calculation based on binary path
     [[nodiscard]] std::string defaultDatabasePath(const std::string& binaryPath) const;

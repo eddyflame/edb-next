@@ -30,6 +30,8 @@ public:
 
     void addDetachedChild(Pid pid);
 
+    [[nodiscard]] bool isUsingPidfd() const noexcept { return pidFd_.load() >= 0; }
+
 Q_SIGNALS:
     void eventReceived(const edb_next::DebugEvent& event);
 
@@ -38,6 +40,9 @@ protected:
 
 private:
     DebugEvent processWaitStatus(int status, Pid pid);
+    void initEpoll(pid_t target);
+    void cleanupEpoll();
+    void notifyWake();
 
     IDebugBackend& engine_;
     BreakpointManager& bpMgr_;
@@ -46,6 +51,10 @@ private:
     std::atomic<bool> isSuspended_{false};
     std::mutex suspendMutex_;
     std::condition_variable suspendCv_;
+
+    std::atomic<int> pidFd_{-1};
+    std::atomic<int> epollFd_{-1};
+    std::atomic<int> wakeFd_{-1};
 
     std::mutex childMutex_;
     std::unordered_set<Pid> pendingForkChildren_;

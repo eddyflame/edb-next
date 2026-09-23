@@ -77,6 +77,18 @@ public:
     [[nodiscard]] virtual std::vector<Tid> enumerateTids() const = 0;
 
     // Introspection
+    struct TargetFdInfo {
+        int targetFd{-1};
+        std::string path;
+        std::string type; // "file", "socket", "pipe", "anon_inode", etc.
+        off_t offset{0};
+        int flags{0};
+        std::string extraInfo;
+    };
+
+    virtual Result<int> getTargetFd(int targetFd) = 0;
+    virtual std::vector<TargetFdInfo> enumerateTargetFds() = 0;
+
     [[nodiscard]] virtual std::vector<MemoryRegion> getMemoryRegions() const = 0;
     [[nodiscard]] virtual std::vector<ThreadInfo>   getThreads() const = 0;
     [[nodiscard]] virtual Pid  pid()       const noexcept = 0;

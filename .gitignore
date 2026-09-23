@@ -36,7 +36,10 @@ qrc_*.cpp
 *.user.*
 
 # edb-next specific runtime and database outputs
-*.edb_db
+*.edb_db*
+*-shm
+*-wal
+test_pg_db*
 *.bin
 test_target
 test_target_patched
