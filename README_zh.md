@@ -4,7 +4,7 @@
 
 <h3>下一代 Linux 原生图形化二进制逆向工程与动态调试平台</h3>
 
-[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/20)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/23)
 [![Qt](https://img.shields.io/badge/Qt-6.4%2B-brightgreen.svg?style=flat-square&logo=qt)](https://www.qt.io/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-orange.svg?style=flat-square&logo=linux)](https://www.kernel.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-green.svg?style=flat-square)](LICENSE)
@@ -21,7 +21,7 @@
 
 **edb-next** 是一套专为 Linux x86_64 平台设计的现代化、高性能图形化二进制逆向分析与动态调试工具。
 
-基于 **C++23**、**Qt 6.4+** 与 **Capstone 反汇编引擎** 从零重构构建，`edb-next` 旨在终结 Linux 生态长期缺少顶级原生 GUI 调试器的痛点。它不仅深度吸收了 Windows 平台逆向标杆 **x64dbg** 备受好评的四象限工作流与极客操作手感，更立足于 Linux 内核特性，创新实现了目标空间远程系统调用注入、ELF 物理磁盘二进制落盘、异步非阻塞事件驱动循环、原生 C 伪代码反编译、时间旅行调试、Z3 符号执行以及无头 DAP 协议服务。
+基于 **C++23**、**Qt 6.4+** 与 **Capstone / Zydis 双反汇编引擎** 构建，`edb-next` 深度吸收了 Windows 平台逆向标杆 **x64dbg** 备受好评的四象限工作流与极客操作手感，并立足 Linux 内核特性，打造了反应式事件循环、原生 C 伪代码反编译、时间旅行调试、Z3 符号执行、无头 DAP 协议服务与物理 ELF 补丁落盘等现代化特性。
 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
@@ -40,90 +40,29 @@
 
 ---
 
-## 核心架构特色与创新亮点
+## 核心亮点 (Key Highlights)
 
-- 🚀 **零死锁与永不冻结的反应式内核事件循环 (`pidfd` + `epoll`)**：独立后台线程 `EventLoopThread` 采用 Linux 5.3+ 原生 `pidfd_open` 与 `epoll` 架构，配合 `eventfd` self-pipe 唤醒机制，达成 **0% 空闲 CPU 占用与微秒级内核即时唤醒**；利用 Linux 5.6+ `pidfd_getfd` 与 `enumerateTargetFds()` 创新实现目标进程文件描述符与套接字（Socket/Pipe/File/AnonInode）非侵入式零死锁内省。
-- ⚡ **目标地址空间远程系统调用注入 (`executeRemoteSyscall`)**：通过原子置换临时 `0x0F 0x05` (`syscall`) 指令，直接在被调试目标内部原生执行 `SYS_mprotect`（修改任意虚拟页为 RWX 读写执行）、`SYS_mmap`（动态分配独立内存供 Shellcode / Trampoline 注入）与 `SYS_munmap`。
-- 💾 **一键物理 ELF 磁盘文件落盘 (`patchFileToDisk`)**：自动解算虚拟内存地址到 ELF 物理段文件偏移（$VAddr \to FileOffset$），将内存补丁直接覆写生成可独立运行的脱壳/破解版 ELF 二进制，赋予 `0755` 执行权限。
-- 🗄️ **工业级 SQLite3 + Zstandard 增量工程存储引擎 (`.edb_db`)**：升级为嵌入式 ACID 事务型 SQLite3 数据库，启用 WAL 高并发日志与 `libzstd` 极速压缩算法（压缩率超 80%），毫秒级持久化/加载海量注释、书签、条件断点、监视表与补丁，并实现对旧版 JSON 项目工程的 100% 透明无感迁移与升级。
-- 🧩 **原生 C 语言伪代码反编译引擎与 F5 视图 (`DecompilerEngine`)**：现代化 C++23 原生反编译器，将反汇编指令提升为 AST 结构化控制流（`while`、`if-else`、多分支循环）与表达式树。配备双向 `SourceMapping` 行-指令精准映射，并在 `DecompilerView`（快捷键 `F5`）提供语法着色与实时就地刷新。
-- ⏳ **时间旅行调试 (TTD) 与 Step Back 历史回溯引擎 (`TimeTravelEngine`)**：确定性执行状态快照与寄存器/内存差分追踪（`MemoryDeltaDiff`）。支持 `stepBack()` 单步倒流（`Ctrl+F7`）、`stepForward()`、`reverseContinue()` 逆向全速运行（`Ctrl+Shift+F9`）与时间轴拖拽定位（`TimeTravelWidget`），辅以 `perf_event_open` 硬件级分支追踪探针。
-- ⚡ **SSA Micro-IR 与 Z3 符号执行自动化求解 (`MicroIR`, `SymbolicEngine`)**：将 x86_64 指令提升为 SSA 规范三地址码微码中间表示；支持常量折叠、不透明谓词混淆消除与死代码消除；深度集成 Z3 SMT C++23 求解器，实现分支目标到达性条件输入自动生成（`solveReachability`）与寄存器/内存动态污点追踪。
-- 🔌 **无头 DAP (Debug Adapter Protocol) 协议服务 (`DapServer`, `--dap`)**：原生实现微软 DAP JSON-RPC 协议标准（Content-Length 分帧），支持 initialize, launch, attach, threads, stackTrace, scopes, variables, continue, next, stepIn, stepBack, readMemory, disassemble 等全套指令，命令行支持 `--dap` 启动无头服务，无缝接入 VS Code 与 Neovim (`nvim-dap`) 等现代编辑器生态。
-- 🪝 **Linux 内核态 eBPF uprobes 探针引擎 (`EbpfHookEngine`)**：通过 `/sys/kernel/tracing` 实现用户态 ELF 二进制函数探针非侵入式挂载，具备异步 Ring Buffer 事件通道与优雅的非特权沙箱降级机制。
-- 🌀 **Linux `userfaultfd` 零 0xCC 隐匿缺页与脏页写入拦截引擎 (`UserfaultFdEngine`)**：基于 Linux 原生 `userfaultfd` 系统调用注册目标内存地址段（`UFFDIO_REGISTER_MODE_WP` 监视写访问）；实现完全无需篡改 ELF 内存段读写属性（`PROT_READ`）与免反复调用 `mprotect` 的物理写监视点与脏页记账，完美隐藏断点痕迹并具备非特权沙箱模拟回退。
-- 📦 **内核与 ELF 紧凑 BTF (BPF Type Format) 类型系统解析器 (`BtfParser`)**：原生解析 Linux 内核 `/sys/kernel/btf/vmlinux`（单核解析超 170,000 种内核核心类型仅需微秒级）与用户态 ELF `.BTF` 段；自动解码结构体、联合体、枚举、指针与位域，直通导出至 `TypeManager`，赋能无 DWARF 符号脱壳样本的结构体逆向分析；`TypeViewer` 面板提供“📦 导入 BTF...”交互；内置完善的宏降级与结构体回退兼容机制，无缝适配 CI 与旧版 Linux 内核构建环境（< 6.0 / 5.16）。
-- 🎯 **反汇编上下文平滑跟踪与待执行行高亮锁定 (Context-Preserving Follow RIP & Selection Lock)**：在单步步入（Step Into `F7`）、单步步过（Step Over `F8`）以及执行到返回/步出（Step Out `Shift+F11`）等调试操作中，反汇编窗口自动跟随执行流，将选中行与键盘焦点坚决锁定在待执行指令（`isCurrentRip`），并在左侧绘制 3px 翡翠绿重高亮条；引入平滑视口锚定策略——当 RIP 在当前可见指令流内部推进且未逼近视口边缘时，智能保留视口基址避免每步全表剧烈跳变；当用户使用滚轮浏览时优雅解除跟随，再次步进时无缝恢复聚焦。
-- 🎯 **x86_64 DR6 状态寄存器精准硬件归因与 PageGuard 自动降级回退**：精准解析 DR6 `B0~B3`、`BD`、`BS` 标志位，精准归因发生断下的具体 DR 槽位与目标物理地址；当 4 个物理硬件断点寄存器槽位耗尽时，`BreakpointManager` 透明无感降级为 `PageGuard` 软监视点（UI 醒目高亮指示 `[PG-Fallback]`），消除断点设置上限。
-- 🛡️ **深层反反调试内核感知与环境抹除引擎 (`AntiAntiDebugEngine`)**：全自动重定向伪造 `/proc/[pid]/status` 中的 `TracerPid: 0`；单步执行 `RDTSC` 周期差值平滑化，消除单步微秒级延迟对反调试时间差探测的触发；实时侦测与拦截被调试目标的 `ptrace(PTRACE_TRACEME)` 与 `prctl(PR_SET_DUMPABLE, 0)` 自毁探测；GUI 菜单集成“🛡️ Anti-Anti-Debugging...”配置工作台。
-- ⚡ **跨架构 ARM64 NEON 128 位向量化极速内存扫描引擎**：在 AVX2 (256 位) 基础上扩展 ARM64 原生 128 位 NEON SIMD 向量化算法（`vld1q_u8`, `vceqq_u8`, `vandq_u8`），统一跨架构双锚点极速扫描派发，赋能 Linux ARM64 与 Apple Silicon 高性能模式匹配。
-- 🎯 **经典 4 象限黄金工作台**：反汇编、寄存器、4路独立转储（Dump 1~4）以及专有 64 位 QWORD 栈视图四维同屏联动。
-- 🔍 **原生 Linux 深度内省与漏洞利用工具**：内置 Glibc ptmalloc 堆链解析器（`malloc_chunk` 与 `A|M|P` 标志）、ROP Gadget 滑动窗口搜寻与 Python `p64(...)` 利用脚本导出、交互式基本块控制流图 (CFG)、跨模块动态库 API 外呼搜索、以及 `/proc/<pid>/fd/` 句柄分类。
-- 📖 **DWARF 源码级调试与反汇编混合渲染**：基于 `libdw` 原生解析 `.debug_info` 与 `.debug_line`，实现地址与源码行号双向瞬时映射；支持反汇编与原始 C/C++ 源码混合排版（`Ctrl+Shift+S`），内置独立源码浏览器 `SourceView`（`Alt+S`），支持源码行双击断点与源码级单步。
-- 🐍 **嵌入式 Python 3 & Lua 5.4 双脚本自动化引擎**：原生嵌入 CPython 3 与 Lua 5.4 解释器，统一由 `ScriptEngineManager` 调度；内置 `edb` 模块向脚本全面暴露内存读写、寄存器控制、断点管理、单步执行与表达式求值，配备独立暗黑极客 Script Console（`Alt+P`）与 CommandBar 行内执行（`py <code...>` / `lua <code...>`）；支持在任意断点绑定脚本动作，结合 `return False` / `return false` 契约实现微秒级无感动态打桩（Silent Hooking）。
-- 🏷️ **C++ 符号智能反混淆 (Demangling)**：原生集成 Itanium ABI `abi::__cxa_demangle`，全局符号浏览器、调用栈、反汇编行指示、寄存器与栈区智能解引用全线呈现清晰的 `calculate_fib(int)`，搜索过滤双向匹配，悬停保留原始 Mangled 名。
-- 🎯 **转储区细粒度硬件读写监视点 (Hardware Watchpoints Context Menu)**：在 HexDump 单元格右键一键部署 1/2/4/8 字节硬件写监视点（Write Watchpoint）、硬件读写监视点与硬件执行断点，单元格深红背景醒目高亮指示活动断点。
-- 🛡️ **内存页保护断点与零 0xCC 隐匿执行断点 (Page-Guard / Anti-Anti-Debugging)**：突破 x86_64 硬件寄存器仅 4 处的物理极限，基于 `PROT_NONE` / `PROT_READ` 虚拟页保护提供无限槽位软监视点；对代码段实施零 `0xCC` 注入的纯内存断点，完美绕过加固壳与混淆样本的 CRC32/Hash 代码段自检测反调试；内置内核级假阳性透明放行状态机，微秒级越过同页其他变量访问。
-- 📦 **动态库加载全自动拦截与热重载 (_r_debug Rendezvous & Pending Breakpoints)**：深度接入 Linux glibc `_r_debug` Rendezvous 协议与 `_dl_debug_state` 内部陷阱，全自动捕获运行时 `dlopen()` 与 `dlclose()` 共享库装载事件；动态差分 `link_map`、合并 ELF 符号表并扩展 DWARF 源码映射；提供待决延迟断点（Pending Breakpoints，`bpp <symbol>`），在新模块装载瞬间自动绑定物理断点，支持 `catch load` / `catch dlopen` 模块加载中断与 `BinaryInfoView` 动态库实时面板。
-- 🌿 **多进程 Follow-Fork 与子进程会话树 (Follow-Fork & Multi-Process Debugging)**：基于 Linux 内核 `PTRACE_O_TRACEFORK`/`TRACEVFORK` 与 Tracer 亲和性机制，支持 `Parent`（保持父进程）、`Child`（切换至子进程）与 `Both`（父子多进程独立会话树同屏协同）三态跟踪策略；支持 `catch fork` 物理断下拦截；底栏集成 `inferiors` 与 `inferior <id|pid>` 指令，无缝管理多进程工作区标签页。
-- ❄️ **多线程独立冻结与解冻及隔离单步步进 (Thread Freeze / Thaw & Isolated Stepping)**：支持单个或批量轻量级线程（TID）独立冻结与解冻，在 `ThreadsView`（Tab 10）全景呈现 8 列信息与冰蓝 `❄ FROZEN` 状态高亮；提供 `❄ Freeze Others` 与 `🔥 Thaw All` 快捷控制；支持隔离单步（Isolated Stepping），彻底消除高并发 Worker 线程干扰；CLI 支持 `freeze <tid|all>` 与 `thaw <tid|all>`。
-- 🔍 **CheatEngine 级动态内存特征差分扫描器 (Differential Memory Scanner)**：专为动态密钥定位与外挂变量收敛打造，在底部抽屉提供专属 **Memory Scanner** 面板（Tab 21）；原生支持 8 种数据类型（Int8~64、Float、Double、String、Hex 通配符）；支持多轮差分收敛（增大、减小、变动、未变、增减指定 Delta）；聚焦可读写段流式扫描，单轮耗时仅数十毫秒；候选列表支持增绿减红变动指示、双击联动 Hex Dump 以及原位直接修改目标内存；CLI 全面支持 `scan`, `nextscan`, `scanresults`, `scanreset`。
-- 🧬 **工业级 `libclang` 复合类型重构与结构体布局可视化 (Type Viewer & Struct Layout)**：专为复杂对象反向解析与网络协议还原设计，在底部抽屉提供专属 **Type Viewer** 工作台（Tab 22）；深度挂载 `libclang.so` (LLVM 18) 工业级 C/C++ AST 解析引擎；完整支持位域（`bitOffset`、`bitWidth` 精确计算与 UI 标记）、匿名嵌套结构/联合体、`#pragma pack` 任意字节对齐与 System V AMD64 ABI 填充计算；覆盖 14 种基础数据类型与定长数组；预置 Linux 核心结构体，支持原位编辑与直达 Hex Dump / Disassembly 解引用跳转；CLI 支持 `structs`、`struct <name> <addr>`、`defstruct <c_code...>`。
-- 🎨 **x64dbg 风格现代化逆向工效与语法着色系统**：定制指令重绘委托 `InstructionHighlightDelegate`，提供 CALL/JMP/Jcc/RET/SYSCALL/PUSH/POP/CMP/TEST/NOP/寄存器/寻址括号/立即数细粒度语义高亮；富文本动态分支预测（`Branch Taken: YES / NO`）与内存操作数链式求值预览（`[rbp - 0x14] => 0x... => val`）；专有栈视图函数返回地址智能识别与亮琥珀金标签（`[Return Address] <symbol>`）；寄存器极速 `+1`/`-1` 微调、`Follow in Stack` 与多格式复制子菜单；Hex Dump 历史导航栈（`Alt+Left` / `Backspace` / `Alt+Right`）、多维 QWORD 穿梭与一键直达结构体解析（`View as Struct...`）；`Ctrl+*` Set Origin (Set RIP)。
-- ⚡ **x64dbg / edb 风格反汇编 Mark 列控制流与调用关系线系统**：在反汇编视口 Mark 列（宽 75px）集成 5 轨贪心多通道避让控制流连线。多维度色系标识：函数调用（CALL）采用**霓虹青蓝（Neon Cyan `#00e5ff`）**、无条件跳转（JMP）采用**明亮金黄（Golden Yellow `#ffd54f`）**、向后循环分支（Loop）采用**珊瑚红（Coral Red `#ff5252`）**、向前条件分支（Jcc）采用**琥珀橙（Amber Orange `#ff9800`）**，结合当前 RIP 动态分支预测评估（成立呈现翡翠绿，不成立呈现沉着灰蓝）。纵向线沿独立轨道完整贯通至视口边界（越界指示箭头 `▲` / `▼`），智能视口可见性过滤杜绝离屏虚影杂线；双通道选中高亮发光光晕（Pass 2 Glow Aura）与目标落点边框；Mark 列单元格富文本悬停解析提示，支持 `Enter` 或双击即刻追踪分支调用与历史栈快速返回。
-- ⌨️ **常驻 x64dbg 风格 CommandBar 命令行**：底栏极客 CLI 控制台，内置 `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct` 等指令，并向插件全面开放扩展接口。
-- 🧩 **现代 C++23 解耦插件网关**：基于纯虚契约 `IPlugin` 与网关 `IPluginContext`，支持动态 `.so` 热加载、菜单注入、命令行扩展与断点监听钩子。
-- 🚀 **`IRefreshable` 惰性视图刷新与状态机解耦**：引入 `IRefreshable` 抽象契约与脏位追踪机制，彻底根治单步步进与高频跟踪时 22 个抽屉标签页的无序刷新风暴；非活动标签页仅标记脏位，切换激活时按需惰性刷新，削减逾 80% 的无效 ptrace/proc 查询开销。重构解耦 `DebugSession::handleEvent()` 状态机为单一职责独立子例程。
-- 🔄 **全线程硬件断点同步机制**：调试会话硬件断点（DR0~DR7）在配置与清除时全自动同步至所有存活线程，并在子线程创建事件（`handleThreadCreatedEvent`）中由系统无感补齐父线程已激活的硬件断点，彻底根治多线程并发场景下的硬件断点脱靶与漏报。
-- ⚡ **纯内存超高速汇编引擎 (In-Memory Keystone Assembler)**：深度集成 Keystone 汇编引擎（LLVM MC），替代传统外部 `as`/`ld`/`objcopy` 多进程与磁盘 I/O 链路，1000 条汇编指令压测仅需 1.2ms（单条 1.2μs，性能提升逾 10,000 倍），原生支持基址与相对跳转重定位，保留外部工具链无缝回退能力。
-- ⚡ **线程局部 Capstone 句柄池与 8 窗口 LRU 反汇编缓存 (`CapstoneContext` & `DisasmCache`)**：引入 RAII `CapstoneLease` 与线程局部双模式（Basic/Detail）句柄池，全域消除 8 大分析模块高频 `cs_open`/`cs_close` 初始化开销与堆内存抖动；升级 8 槽位 LRU 指令缓存，多视口与单步动画如丝般顺滑。
-- ⚡ **Zydis x86_64 高速指令解码引擎与双引擎架构 (`ZydisContext`)**：原生集成工业级 Zydis x86_64 解码器，采用栈上定长结构与零堆内存分配，吞吐超 380 万指令/秒；重构 `stepOver` 实现 ~15ns 极速控制流判定；在 `ConfigurationManager` 中提供 Zydis 与 Capstone 双引擎选型与透明回退，兼具极致性能与多架构兼容性。
-- ⚡ **AVX2 向量化多线程内存搜索与 16MB 截断 Bug 彻底修复 (`PatternSearcher` & `MemoryScanner`)**：以 2MB 步长流式分块扫描彻底根除历史版本 16MB 内存截断 Bug，恒定 2MB 内存占用轻松检索 GB 级大内存空间；首创首尾非通配双锚点 AVX2 SIMD 掩码过滤算法，256 位宽并行排除候选位，实测 64MB 检索耗时由 833ms 锐降至 21.8ms（**38.27 倍极速提速，吞吐量 ~2.87 GB/s**）；配合多段并行并发工作窃取调度与原子早停，并在老旧 CPU 上透明平滑降级至标量算法。
-- 🪜 **DWARF CFI 深度调用栈回溯与双轨 RBP 容灾展开 (`CallStackUnwinder`)**：基于 `libdwfl` 深度解析 `.eh_frame` 与 `.debug_frame` CFI 状态机，结合稳健的 RBP 栈帧链遍历；自适应对比双轨展开深度并优先选取完整调用栈，修复被裁切共享库（如系统 `libc.so`）省略帧指针时的边界截断问题，确保跨模块调用栈无损呈现。
-- 🧮 **现代递归下降全功能表达式与条件断点引擎 (Enhanced Expression Evaluator)**：全新重写 13 级运算符优先级的现代 C++20 词法与语法分析器，支持基址变址乘除缩放寻址（`[rax + rcx * 8 + 0x20]`）、位操作符（`&`、`|`、`^`、`~`、`<<`、`>>`）、复合逻辑表达式（`rax == 0x100 && rdi != 0`）、圆括号嵌套以及全架构寄存器（64/32/16/8位）与指定尺寸内存解引用，令高级条件断点与 CommandBar `eval` 表达能力达到工业级。
-- 🔌 **可插拔调试引擎抽象接口（`IDebugBackend`）**：将 `DebugSession`、`EventLoopThread` 与 `TypeManager` 等核心模块基于纯虚接口 `IDebugBackend` 与底层 Linux 内核实现完全解耦，支持零真实进程依赖的 `MockDebugBackend` 离线单元测试，并为后续适配 GDB/LLDB RSP 远程调试协议确立清晰的架构契约。
-- 🚌 **中心化多视图跨界路由总线（`NavigationBus`）**：彻底消除 22+ 个视图组件间繁复且脆弱的点对点 Qt 信号插槽网状强耦合；统一由 `NavigationBus` 集中分发反汇编跳转、内存转储、调用栈帧、结构体查看器、字符串交叉引用与模块间调用的导航请求。
-- 🗂️ **模块化命令注册与分发引擎（`CommandRegistry`）**：彻底重构解耦 1100+ 行的单体 `CommandBarView`，将命令按职责域模块化分区注册（`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`）；支持前缀命令补全、别名解析（`g` -> `run`, `libs` -> `modules`）、分类帮助与插件动态命令注入。
-- 🏛️ **纯粹无 UI 核心架构与插件分层解耦（`IUIPlugin`）**：严格捍卫核心模块隔离边界（AGENTS.md 准则 3.1）。静态库 `edb_core` 彻底剥离对 `QtWidgets` 的编译链接，确保核心层 100% 独立且支持纯命令行/无头单元测试。GUI 扩展接口（`createMenu`、`contextMenuItems`、`createOptionsPage`、`addDockWidget`）统一收敛至 `ui/IUIPlugin.hpp`。
-- 🛡️ **StepOver 软断点指令掩膜与 Fork 孤儿进程字节清洗**：单步步过反汇编实时叠加内存覆盖原始字节，杜绝软断点 `0xCC` 污染对 `CALL` 与 `REP` 重复前缀指令的判定退化；Follow-Fork 模式下父进程在脱离跟踪子进程前自动将注入的软断点字节无损写回子进程物理内存，避免子进程因 `0xCC` 非法指令崩溃。
-- 🔒 **无死锁动态系统调用握手机制**：重构 `EventLoopThread` 挂起与恢复流程，采用双向条件变量握手（Condition Variable Handshake），彻底消除前台远程系统调用内存申请/保护与后台事件循环收集时的竞态死锁。
-- 🗺️ **ASLR/PIE 项目数据动态重定位与二进制离线打补丁**：`.edb_db` 工程数据库引入基址动态重构，在多次运行或跨 ASLR 启动时自适应重映射注释、标签、书签与断点；`PatchManager::patchFileToDisk` 引入运行时基址与动态基地址推导算法，全面支持 PIE/ASLR 二进制物理文件补丁导出。
-- ⚡ **高频单步控件单元格对象池复用与无缝滚轮滚动**：在 `DisassemblyView` 与 `MemoryHexView` 中以 `getOrCreateItem` 惰性对象池复用替代每帧全量 `new QTableWidgetItem`，根治单步与跟踪时的内存抖动；重载 `wheelEvent` 实现向前向后无缝反汇编与内存浏览。
-- 🧵 **线程局部脚本引擎并发隔离**：消除 Python 与 Lua 脚本引擎对全局单一静态实例指针的依赖，引入 `thread_local`、RAII 生命周期守卫（`PythonEngineScope`、`GilStateScope`）与 Lua Registry 映射（`kLuaEngineRegistryKey`），实现纯净的多会话并发脚本调试。
-- 📊 **Sugiyama 分层控制流图布局与核心解耦架构 (`CFGBuilder` & `SugiyamaLayout`)**：核心层实现标准编译原理三准则先导指令（Leader）划分基本块，配合三状态 DFS 精准侦测循环回边（Loop Back-Edge），实现纯净无 UI 依赖的控制流图模型。UI 呈现层创新引入经典五阶段 Sugiyama 分层布局算法（去环、最长路径拓扑分层、跨层虚拟占位节点、8 轮双向重心交叉极小化、层次化居中对齐、样条平滑避障与外侧专用通道回边布线），彻底解决连线穿透代码块与遮挡问题；支持滚轮无级缩放与双击基本块一键联动反汇编。
-- 🧬 **现代 C++23 类型安全脚本绑定体系与单子架构 (`ScriptApiBridge`, `Result<T, E>`)**：全面重构解耦 Python 3 与 Lua 5.4 嵌入式脚本引擎。通过独立领域层 `ScriptApiBridge` 集中管理 18 大调试器 API 与寄存器不区分大小写读写，彻底消除 620+ 行跨语言重复样板代码；引入零开销 RAII `PyRef` 智能句柄、现代变长参数解包分发器与类型萃取系统，100% 杜绝 Python 引用泄漏与 Lua 堆栈偏移错位异常。
+- 🚀 **四象限黄金工作流与现代化工效**：反汇编、寄存器、多路独立转储 (Dump 1~4) 与 64 位栈区同屏四维联动；提供 x64dbg 风格语法高亮、动态分支预测与解引用预览条、5 轨调用/跳转控制流关系线，以及连续就地汇编（`Space`）。
+- ⚡ **微秒级反应式内核事件循环 (`pidfd` + `epoll`)**：采用 Linux 5.3+ 原生 `pidfd` 与 `epoll` 架构，配合 `eventfd` 自唤醒机制，达成 0% 空闲 CPU 占用与微秒级响应；利用 `pidfd_getfd` 实现对目标进程文件描述符与套接字的非侵入式零死锁内省。
+- 🧩 **原生 C 语言伪代码反编译与符号分析**：现代化 C++23 原生反编译器 (`DecompilerEngine`)，将反汇编提升为 AST 结构化控制流并在 `F5` 视图呈现双向映射；集成 SSA Micro-IR 与 Z3 SMT 求解器，支持分支到达性自动求解与污点追踪。
+- ⏳ **时间旅行调试 (TTD) 与隐匿内存监控**：确定性执行帧回溯与寄存器/内存写差分追踪，支持单步倒流（`Ctrl+F7`）、逆向全速运行（`Ctrl+Shift+F9`）与时间轴拖拽；基于 Linux `userfaultfd` 实现零 `0xCC` 隐匿写监视点与脏页监听。
+- 💾 **远程系统调用注入与物理 ELF 补丁落盘**：突破只读内存限制，在目标进程内部原子注入执行 `SYS_mprotect`（修改内存保护为 RWX）与 `SYS_mmap`；一键解算虚拟地址到 ELF 物理段偏移，直接覆写导出可独立执行的脱壳/修补版 ELF 二进制。
+- 🔌 **双脚本自动化与无头 DAP 协议生态**：原生内嵌 Python 3 与 Lua 5.4 双自动化脚本引擎 (`Alt+P`)，支持断点自动化打桩（Silent Hooking）；内置微软 DAP (Debug Adapter Protocol) 协议服务 (`--dap`)，无缝集成 VS Code 与 Neovim。
+- 🗄️ **ACID 增量工程存储引擎**：基于嵌入式 SQLite3 + Zstandard (`libzstd`) 高压缩率事务数据库 (`.edb_db`)，毫秒级持久化/加载海量注释、标签、书签、断点与补丁，并对旧版 JSON 项目工程提供 100% 透明升级。
+
+> **技术实现细节与系统架构设计**，请参阅完整的设计说明书：[doc/DESIGN_zh.md](doc/DESIGN_zh.md)。
 
 ---
 
-## 功能对比全景矩阵
+## 项目工程文档 (Documentation)
 
-| 特性维度 | 原版 edb (Linux) | x64dbg (Windows) | edb-next (现代化 Linux 重构) |
-| :--- | :---: | :---: | :---: |
-| **语言规范** | C++11 | C++14/17 | **现代 C++23 标准** |
-| **事件循环并发** | 0ms QTimer 轮询 (易死锁假死) | 复杂同步事件 | **Linux `pidfd` + `epoll` 反应式循环 (0% CPU 占用)** |
-| **工作台布局** | 单一底部抽屉 (反复切Tab) | 经典四象限布局 | **4-Quadrant 黄金工作流** |
-| **反汇编与工效着色** | 纯等宽黑白文本 | 丰富色彩与调用/返回高亮 | **x64dbg 风格语法委托 + 5轨调用与跳转控制流关系线 (霓虹青蓝调用 / 金黄跳转 / 珊瑚红循环) + 动态分支预测/解引用预览 + Ctrl+* Set Origin** |
-| **转储与调用栈工效** | 基础线性转储 | 历史栈与返回地址识别 | **转储历史前进/后退 (Alt+Left/Right) + [Return Address] 识别 + 结构体直达** |
-| **寄存器快捷微调** | 弹窗手工输十六进制 | 快捷增减 | **GPR 快捷 +1/-1 + Follow in Stack + 多格式复制子菜单** |
-| **内存转储能力** | 单一 Hex Dump | 标配 Dump 1~5 | **4路独立 MultiDumpWidget (Dump 1~4)** |
-| **只读内存修改** | 报错拒绝写入 | VirtualProtect 模拟 | **原生远程系统调用注入 (`SYS_mprotect`)** |
-| **脱壳补丁落盘** | 无此功能 (仅内存补丁) | 导出 Patched EXE | **创新 `patchFileToDisk` (直接导出 ELF)** |
-| **源码级调试** | 仅纯反汇编 | 需外部工具 | **内置 DWARF 源码映射与混合渲染 (`libdw`)** |
-| **自动化脚本引擎**| 无内嵌脚本 | 需第三方插件 | **原生 Python 3 & Lua 5.4 双脚本引擎 (`Alt+P`)** |
-| **项目成果持久化** | 退出全盘丢失 | 标配 `.dd64` 数据库 | **SQLite3 + Zstandard ACID 数据库 (`.edb_db`)** |
-| **命令行交互** | 无交互 CLI | 标配底栏命令行 | **x64dbg 风格 CommandBar 极客交互栏** |
-| **原生 C 反编译** | 无 | 需插件 / 挂接 Ghidra | **原生 C++23 AST 反编译器 (`F5` 伪代码视图与双向映射)** |
-| **时间旅行调试 (TTD)** | 无 | 无 | **寄存器与内存差分 Step Back 倒流与时间轴 (`Ctrl+F7`)** |
-| **符号执行自动化** | 无 | 无 | **SSA Micro-IR & Z3 SMT 到达性条件求解与污点追踪** |
-| **无头 DAP 协议** | 无 | 无 | **微软 DAP JSON-RPC 协议服务 (`--dap` CLI)** |
-| **Linux eBPF Hook** | 无 | 不适用 (Windows) | **内核态 uprobes 函数探针引擎 (`EbpfHookEngine`)** |
-| **Linux 堆分析** | 插件支持较旧 | 不适用 (Windows) | **原生 Glibc ptmalloc 分析器 (Tab 9)** |
-| **动态库热加载 / dlopen 拦截** | 需手动刷新符号 | 支持 DLL 事件 | **原生 glibc _r_debug 协议自动捕获 + Pending 待决断点** |
-| **多进程 Follow-Fork / 子进程跟踪** | 仅单进程跟踪 | 支持多进程附加 | **原生 PTRACE_EVENT_FORK 捕获 + Parent/Child/Both 三态会话树 + inferiors 穿梭** |
-| **多线程独立冻结 / 隔离单步** | 仅查看线程列表 | 支持暂停/恢复线程 | **原生 SYS_tgkill 信号阻断 + 调度掩码 + 冰蓝高亮 + 隔离单步** |
-| **动态内存差分扫描 (CheatEngine 级)** | 基础静态特征搜索 | 需挂接外部 CE | **原生 8 种数据类型 + 多轮差分收敛 + 增减 Delta + 原位覆写 (Tab 21)** |
-| **复合结构体解析与布局可视化** | 无此功能 | 需复杂插件扩展 | **工业级 `libclang` AST 解析 + 位域 + AMD64 ABI 对齐 + 解引用穿梭 (Tab 22)** |
-| **漏洞利用辅助** | 基础 ROP 插件 | 需第三方插件 | **内置 ROP 工具箱与 Python `p64()` 导出** |
+项目全套文档已统一归档至 `doc/` 目录下：
+
+| 文档名称 | 中文版 (Chinese) | 英文版 (English) | 文档定位与主要内容 |
+| :--- | :--- | :--- | :--- |
+| **软件架构与工程设计说明书 (SDD)** | [doc/DESIGN_zh.md](doc/DESIGN_zh.md) | [doc/DESIGN_en.md](doc/DESIGN_en.md) | 深度梳理底层机制、设计方案、状态机、数据结构与技术演进规划 |
+| **完全使用教程与插件开发指南** | [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) | [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) | 详细功能操作手册、快捷键速查表与现代 C++20 插件开发全流程实战 |
+| **开源贡献规范** | [doc/CONTRIBUTING_zh.md](doc/CONTRIBUTING_zh.md) | [doc/CONTRIBUTING_en.md](doc/CONTRIBUTING_en.md) | 代码风格要求、Git 提交规范与 Pull Request 流程规范 |
 
 ---
 
@@ -156,18 +95,18 @@ sudo apt install -y \
 git clone https://github.com/your-username/edb-next.git
 cd edb-next
 
-# 配置并启用全核并发编译
+# 配置并启用多核并发编译
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
 ### 3. 运行全量验证测试套件
 ```bash
-./build/test_core       # 核心测试 (断点、单步、多线程、ELF解析等)
-./build/test_dwarf      # DWARF 源码级调试与行号双向映射测试
-./build/test_advanced   # 进阶测试 (补丁落盘、Trace、CFG、远程系统调用注入等)
-./build/test_scripting  # Python 3 & Lua 5.4 嵌入式双引擎测试
-./build/test_exit       # 析构安全压力测试
+./build/test_core           # 核心测试 (断点、单步、多线程、ELF解析等)
+./build/test_dwarf          # DWARF 源码级调试与行号双向映射测试
+./build/test_advanced       # 进阶测试 (补丁落盘、Trace、CFG、远程系统调用注入等)
+./build/test_scripting      # Python 3 & Lua 5.4 嵌入式双引擎测试
+./build/test_exit           # 析构安全压力测试
 ./build/test_nextgen        # 验证 pidfd 反应式循环、目标 FD 内省、libclang AST、SQLite3+zstd 及 C++23 单子
 ./build/test_p4_advanced_re # 验证 SSA Micro-IR、Z3 符号执行、原生反编译、TTD 回溯、DAP 服务与 eBPF
 ./build/test_p5_ultimate    # 验证 userfaultfd 隐匿缺页、BTF 紧凑类型系统、DR6 归因与 PageGuard 自动降级、反反调试及 NEON 向量化
@@ -199,22 +138,6 @@ chmod +x edb-next-x86_64.AppImage
 # 或在 Ubuntu 22.04 LTS (glibc 2.35) Docker 容器中打包（获得最高的跨发行版兼容性）
 ./scripts/docker_build_appimage.sh
 ```
-
-#### 桌面集成与原生应用图标
-`edb-next` 通过 Qt 资源系统（`:/res/edb-next.png`）将高分辨率科技风应用图标直接内嵌于可执行二进制中，无论在 Wayland 还是 X11 桌面环境下运行均可即时呈现原生窗口与任务栏图标。桌面规范入口文件（`.desktop`）与 SVG/PNG 矢量/位图资产统一存放于 [`res/`](res/) 目录。
-
----
-
-## 项目工程文档目录 (Documentation)
-
-项目全套双语文档已统一归档至 `doc/` 目录下：
-
-| 文档名称 | 中文版 (Chinese) | 英文版 (English) | 文档定位与主要内容 |
-| :--- | :--- | :--- | :--- |
-| **软件架构与工程设计说明书 (SDD)** | [doc/DESIGN_zh.md](doc/DESIGN_zh.md) | [doc/DESIGN_en.md](doc/DESIGN_en.md) | 深度梳理底层机制、设计方案、状态机、数据结构与技术演进规划 |
-| **完全使用教程与插件开发指南** | [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) | [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) | 详细功能操作手册、快捷键速查表与现代 C++20 插件开发全流程实战 |
-| **次世代架构演进与持续优化路线图 (2026)** | [doc/NEXT_GEN_OPTIMIZATION_zh.md](doc/NEXT_GEN_OPTIMIZATION_zh.md) | - | Linux pidfd+epoll、Intel PT 硬件追踪、eBPF、libclang、SSA-IR 与 Ghidra 反编译持续演进方案 |
-| **开源贡献规范** | [doc/CONTRIBUTING_zh.md](doc/CONTRIBUTING_zh.md) | [doc/CONTRIBUTING_en.md](doc/CONTRIBUTING_en.md) | 代码风格要求、Git 提交规范与 Pull Request 流程规范 |
 
 ---
 
@@ -272,7 +195,7 @@ public:
     void shutdown() override {}
 };
 ```
-完整插件开发步骤详见 [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) 或 [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md)。
+完整插件开发步骤详见 [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md)。
 
 ---
 

@@ -19,9 +19,9 @@
 
 ## Overview
 
-**edb-next** is a modern, high-performance graphical binary debugger and dynamic reverse engineering platform specifically engineered for Linux x86_64. 
+**edb-next** is a modern, high-performance graphical binary debugger and dynamic reverse engineering platform specifically engineered for Linux x86_64.
 
-Built from scratch using **C++23**, **Qt 6.4+**, and the **Capstone Disassembly Engine**, `edb-next` addresses the longstanding absence of an industrial-strength GUI debugger on Linux. It deeply aligns with the tactile, battle-tested reverse engineering workflows of Windows' legendary **x64dbg**, while innovating natively on Linux through in-target remote syscall injection, ELF physical disk patching, non-blocking asynchronous event loops, native C pseudo-code decompilation, time-travel debugging, Z3 symbolic execution, and headless DAP protocol serving.
+Built from scratch using **C++23**, **Qt 6.4+**, and **Capstone / Zydis dual disassembly engines**, `edb-next` deeply adopts the tactile four-quadrant reverse engineering workflow popularized by Windows' **x64dbg**, while innovating natively on Linux through a reactive kernel event loop, native C pseudo-code decompilation, time-travel debugging, Z3 symbolic execution, headless DAP serving, and physical ELF disk patching.
 
 ```text
 ┌───────────────────────────────────────┬───────────────────────────────────────┐
@@ -40,95 +40,35 @@ Built from scratch using **C++23**, **Qt 6.4+**, and the **Capstone Disassembly 
 
 ---
 
-## Key Highlights & Innovations
+## Key Highlights
 
-- 🚀 **Zero-Deadlock Multithreaded Event Loop & Reactive `pidfd`**: A dedicated `EventLoopThread` leverages Linux kernel `pidfd_open` and `epoll` with `eventfd` self-pipe synchronization, achieving **0% idle CPU utilization** and microsecond reactive response. Non-intrusive target file descriptor and socket introspection is enabled via `pidfd_getfd` (`getTargetFd` / `enumerateTargetFds`).
-- ⚡ **In-Target Remote Syscall Injection (`executeRemoteSyscall`)**: Break through read-only memory barriers by dynamically injecting `SYS_mprotect` in the target process (RWX elevation), allocating isolated executable pages (`SYS_mmap`), and freeing memory (`SYS_munmap`).
-- 💾 **One-Click Physical ELF Disk Patching (`patchFileToDisk`)**: Translates Virtual Memory Addresses to ELF Program Header physical offsets ($VAddr \to FileOffset$), exporting standalone executable patched binaries directly to disk.
-- 🗄️ **High-Performance SQLite3 + Zstandard Database Engine (`.edb_db`)**: Modern ACID transactional storage engine with WAL journaling and `libzstd` compressed BLOBs (80%+ compression ratio). Seamlessly preserves comments, bookmarks, conditional breakpoints, watches, and patches, with 100% backward-compatible transparent migration from legacy JSON databases.
-- 🧩 **Native C Pseudo-Code Decompiler & F5 View (`DecompilerEngine`)**: High-performance C++23 native decompiler that lifts disassembled instructions into structured AST control flow (`while`, `if-else`, loops) and expression trees. Bidirectional `SourceMapping` provides line-to-instruction and instruction-to-line navigation with syntax-highlighted `DecompilerView` (`F5`) and live refresh.
-- ⏳ **Time-Travel Debugging (TTD) & Step Back Replay Engine (`TimeTravelEngine`)**: Deterministic snapshot and delta tracking capturing register and memory diffs (`MemoryDeltaDiff`). Supports `stepBack()` (`Ctrl+F7`), `stepForward()`, `reverseContinue()` (`Ctrl+Shift+F9`), and arbitrary timeline scrubbing via `TimeTravelWidget`, complemented by hardware branch tracing probes via `perf_event_open`.
-- ⚡ **SSA Micro-IR & Z3 SMT Symbolic Execution (`MicroIR`, `SymbolicEngine`)**: Lifts x86_64 machine code into a clean SSA 3-Address Code Micro-IR. Features constant folding, opaque predicate simplification, and dead code elimination. Deeply integrates the Z3 SMT C++23 solver to automatically compute satisfying concrete inputs for target branch reachability (`solveReachability`) and perform dynamic register/memory taint tracking.
-- 🔌 **Headless DAP (Debug Adapter Protocol) Server (`DapServer`, `--dap`)**: Full Microsoft DAP JSON-RPC protocol implementation for headless automation and native integration with modern IDEs like VS Code and Neovim (`nvim-dap`). Supports initialize, launch, attach, threads, stackTrace, scopes, variables, continue, next, stepIn, stepBack, readMemory, and disassemble.
-- 🪝 **Linux Kernel eBPF & Uprobes Hook Engine (`EbpfHookEngine`)**: High-throughput non-intrusive userspace function probe attachment via kernel `/sys/kernel/tracing` with asynchronous ring buffer and graceful non-privileged fallback.
-- 🌀 **Linux `userfaultfd` Stealth Page-Fault & Dirty-Page Interceptor (`UserfaultFdEngine`)**: Native Linux `userfaultfd` file descriptor event loop registration for memory address ranges; enables zero-`0xCC` stealth write watchpoints (`UFFDIO_REGISTER_MODE_WP`) and dirty-page logging without altering ELF segment permissions or invoking `mprotect`.
-- 📦 **BTF (BPF Type Format) Kernel & Compact Type System (`BtfParser`)**: Native parsing of Linux `/sys/kernel/btf/vmlinux` (over 170,000 types) and ELF `.BTF` sections; instantly extracts compact structures, unions, and bitfields, exporting directly to `TypeManager` for instant reverse engineering in stripped binaries. Features full backward-compatibility macro fallbacks for legacy Linux distro kernels (< 6.0 / 5.16) in CI environments.
-- 🎯 **DisassemblyView Context-Preserving Execution Tracking & RIP Row Locking**: Single-stepping (Step Into `F7`, Step Over `F8`, Step Out `Shift+F11`) automatically follows execution, focusing and locking the selected row and keyboard focus onto the pending instruction (`isCurrentRip`) with an emerald green accent bar. Implements context-preserving viewport stabilization—advancing RIP within visible instruction bounds avoids jarring table re-anchoring, while user mouse wheel scrolling cleanly releases auto-follow and stepping seamlessly re-anchors it.
-- 🎯 **DR6 Precision Hardware Attribution & Automatic PageGuard Fallback**: Decodes x86_64 DR6 status register B0~B3 flags to attribute the exact hit slot and address. When the 4 physical DR0~DR3 registers are exhausted, `BreakpointManager` transparently falls back to `PageGuard` soft watchpoints (`[PG-Fallback]`).
-- 🛡️ **Advanced Anti-Anti-Debugging Deep Stealth Engine (`AntiAntiDebugEngine`)**: Automated `/proc/[pid]/status` `TracerPid: 0` sanitization, microsecond single-step `RDTSC` cycle delta smoothing, and active detection of `ptrace(PTRACE_TRACEME)` and `prctl(PR_SET_DUMPABLE, 0)`.
-- ⚡ **Cross-Architecture ARM64 NEON Vectorized Memory Scanner**: 128-bit NEON SIMD vectorization alongside AVX2 (256-bit) with unified cross-arch dispatching for line-rate pattern matching on ARM64 Linux and Apple Silicon.
-- 📖 **DWARF Source-Level Debugging & Mixed-Mode Disassembly**: Parses `.debug_info` and `.debug_line` with `libdw` for bidirectional address-to-source mapping. Inline source banner rendering in `DisassemblyView` (`Ctrl+Shift+S`), dedicated `SourceView` browser (`Alt+S`), source line breakpoints, and source stepping.
+- 🚀 **4-Quadrant Golden Workflow & Modern Ergonomics**: Synchronous four-way workspace linking Disassembly, Registers, Multi-Dump (Dump 1~4), and 64-bit Stack. Features x64dbg-style syntax highlighting, dynamic branch prediction, memory operand dereferencing previews, 5-track call/jump control flow lines, and continuous in-place assembly (`Space`).
+- ⚡ **Microsecond-Level Reactive Kernel Event Loop (`pidfd` + `epoll`)**: Native Linux 5.3+ `pidfd` and `epoll` architecture with `eventfd` self-pipe wakeups, achieving 0% idle CPU utilization and microsecond response times; non-intrusive target file descriptor and socket introspection via `pidfd_getfd`.
+- 🧩 **Native C Pseudo-Code Decompiler & Symbolic Analysis**: Modern C++23 native decompiler (`DecompilerEngine`) lifting assembly into AST control flow with bidirectional `F5` source mapping; integrated SSA Micro-IR and Z3 SMT solver for automated branch reachability solving and dynamic taint tracking.
+- ⏳ **Time-Travel Debugging (TTD) & Stealth Monitoring**: Deterministic execution frame rewind and delta diff tracking (`Ctrl+F7` Step Back, `Ctrl+Shift+F9` Reverse Continue, timeline scrubber); native Linux `userfaultfd` stealth watchpoints (zero `0xCC` injection) and dirty page tracking.
+- 💾 **Remote Syscall Injection & Physical ELF Disk Patching**: Bypasses read-only memory by injecting `SYS_mprotect` (RWX elevation) and `SYS_mmap` directly inside the target; computes virtual-to-physical ELF offsets and exports standalone patched executables to disk.
+- 🔌 **Dual Scripting & Headless DAP Ecosystem**: Embedded Python 3 and Lua 5.4 scripting engines (`Alt+P`) with silent breakpoint hooking; built-in Microsoft DAP (Debug Adapter Protocol) JSON-RPC server (`--dap`) for native VS Code and Neovim integration.
+- 🗄️ **ACID Transactional Project Database**: Embedded SQLite3 + Zstandard (`libzstd`) transactional database (`.edb_db`), persisting comments, labels, bookmarks, breakpoints, and patches with 100% transparent migration from legacy JSON projects.
 
-- 🐍 **Embedded Dual Scripting Engine (Python 3 & Lua 5.4)**: Native embedded CPython 3 and Lua 5.4 engines managed by `ScriptEngineManager`. Rich `edb` module exposing memory/registers/breakpoints/stepping/eval APIs, dark geek Script Console (`Alt+P`), and inline CommandBar execution (`py <code...>` / `lua <code...>`); supports script-driven breakpoint actions with silent hook bypass (`return False` / `return false`) for non-intrusive microsecond-level runtime instrumentation.
-- 🏷️ **Intelligent C++ Symbol Demangling**: Integrated GNU `<cxxabi.h>` `abi::__cxa_demangle` across global Symbol Viewer, call stack backtraces, disassembly banners, register smart dereferences, and stack memory annotations, displaying clean `calculate_fib(int)` with tooltip mangled string preservation and bidirectional search.
-- 🎯 **Fine-Grained Hardware Watchpoint UI**: Right-click any byte cell in Hex Dumps to instantly set 1/2/4/8-byte hardware write watchpoints, read/write watchpoints, or execution breakpoints, complete with prominent deep red cell highlighting (`QColor(160, 40, 40, 160)`).
-- 🛡️ **Memory Page-Guard Breakpoints & Stealth Execution (Anti-Anti-Debugging)**: Eliminates the 4-register limitation of DR0~DR3 with unlimited soft watchpoints via virtual memory page protection (`PROT_NONE` / `PROT_READ`); zero-`0xCC` stealth execution breakpoints completely defeat CRC32/Hash binary self-integrity checks; kernel-level sub-microsecond false-positive state machine ensures smooth execution without UI stutter.
-- 📦 **Automated Shared Library Interception & Hot-Reloading (`_r_debug` Rendezvous & Pending Breakpoints)**: Seamlessly hooks the Linux glibc `_r_debug` rendezvous protocol and `_dl_debug_state` internal trap to capture runtime `dlopen()` and `dlclose()` events. Dynamically traverses `link_map`, merges newly loaded shared library symbol tables, and extends DWARF line tables on the fly. Introduces pending breakpoints (`bpp <symbol>`) that automatically bind and activate the instant a deferred library is mapped into memory, complete with `catch load` / `catch dlopen` triggers and the real-time `BinaryInfoView` Shared Libraries tab.
-- 🌿 **Follow-Fork Mode & Multi-Process Session Tree**: Robust multi-process tracing backed by Linux kernel `PTRACE_O_TRACEFORK`/`TRACEVFORK` and tracer thread affinity. Features `Parent` (retain parent focus), `Child` (switch to child), and `Both` (hierarchical multi-session trees in synchronized workspace tabs) policies, alongside `catch fork` breakpoints, and `inferiors` / `inferior <id|pid>` CLI commands.
-- ❄️ **Independent Thread Freeze & Thaw with Isolated Stepping**: Fine-grained per-thread freeze and thaw control via `SYS_tgkill(SIGSTOP)` and event-loop scheduler masking; 8-column `ThreadsView` with ice-blue `❄ FROZEN` badges; one-click `❄ Freeze Others` for isolated single-stepping without background worker thread interference; CLI support via `freeze <tid|all>` and `thaw <tid|all>`.
-- 🔍 **CheatEngine-Style Differential Memory Scanner**: High-throughput multi-pass differential memory scanner located in bottom drawer (Tab 21); natively parses 8 data types (Int8~64, Float, Double, String, Hex bytes with wildcards); multi-pass convergence (increased, decreased, changed, unchanged, increased/decreased by delta); default rw-p streaming scan finishes in tens of milliseconds; live candidate table with green/red delta cues, hex dump sync, and in-place memory editing; CLI control via `scan`, `nextscan`, `scanresults`, and `scanreset`.
-- 🧬 **Industrial `libclang` Compound Type Reconstruction & Struct Layout Visualizer**: Dedicated struct analysis workbench in bottom drawer (Tab 22); dynamic binding to `libclang.so` (LLVM 18) for full C/C++ AST parsing; accurately resolves bitfields (`bitOffset`, `bitWidth`), `#pragma pack` alignments, anonymous unions, and System V AMD64 ABI padding; displays relative offsets, raw hex bytes, cyan-underlined pointer fields with double-click dereference navigation to Disassembly or Hex Dump, and in-place memory mutation; CLI integration via `structs`, `struct <name> <addr>`, and `defstruct <c_code...>`.
-- 🎨 **x64dbg-Style Reverse Engineering Ergonomics & Syntax Highlighting**: Fine-grained semantic syntax highlighting delegate (`InstructionHighlightDelegate`) for CALL, JMP, Jcc, RET, SYSCALL/UD2, PUSH/POP, CMP/TEST, NOP, Regs, Brackets, and Immediates; rich HTML dynamic branch prediction (`Branch Taken: YES / NO`) and chained memory operand dereferencing (`[rbp - 0x14] => 0x... => val`); dedicated Stack View return address detection with bright amber tags (`[Return Address] <symbol>`); quick register increment/decrement (`+1` / `-1`), `Follow in Stack`, and multi-format copy submenu; Hex Dump navigation history stack (`Alt+Left` / `Backspace` / `Alt+Right`), cross-view QWORD follows, and direct struct layout visualizer (`View as Struct...`) integration; `Ctrl+*` Set Origin (Set RIP).
-- ⚡ **x64dbg / edb-Style Control Flow & Call Relationship Lines (Mark Column)**: 5-track greedy collision-free control flow line routing in Disassembly Mark column (75px). Distinct color coding: Neon Cyan (`#00e5ff`) for function calls (`CALL`), Golden Yellow (`#ffd54f`) for unconditional jumps (`JMP`), Coral Red (`#ff5252`) for backward loops, and Amber Orange (`#ff9800`) for forward conditional branches (`Jcc`). Continuous vertical rail routing with out-of-viewport indicators (`▲` / `▼`), intelligent viewport visibility filtering, two-pass glowing selection aura, destination focus brackets, rich branch tooltips, and double-click / `Enter` instant branch following with history navigation.
-- ⌨️ **x64dbg-Style Bottom CommandBar**: Interactive bottom CLI supporting `bp`, `bph`, `r`, `d`, `u`, `step`, `eval`, `py`, `lua`, `mprotect`, `alloc`, `dumpstate`, `pageguard`, `guards`, `follow-fork`, `inferiors`, `structs`, `struct`, `defstruct`, and plugin commands.
-- 🧩 **Modern C++23 Decoupled Plugin Gateway**: Pure virtual `IPlugin` and `IPluginContext` contract supporting dynamic `.so` hot-loading, menu injection, CLI registration, and event hooks.
-- 🚀 **`IRefreshable` Lazy View Updates & State Machine Decomposition**: High-performance lazy tab refresh architecture eliminates broadcast storms across 22 drawer tabs during high-frequency stepping or tracing; inactive views are marked dirty and deferred until activated, drastically slashing ptrace traffic. Decomposed `DebugSession::handleEvent()` into clean, single-responsibility event handlers.
-- 🔄 **Multi-Thread Hardware Breakpoint Synchronization**: Synchronizes x86_64 debug registers (DR0~DR7) across all existing threads on breakpoint configuration and automatically replicates them onto newly spawned threads (`handleThreadCreatedEvent`), preventing hardware breakpoint misses in multi-threaded targets.
-- ⚡ **Ultra-Fast In-Memory Keystone Assembler**: Deep integration of the Keystone Engine (LLVM MC backend) replacing legacy external `as`/`ld`/`objcopy` sub-process pipelines and disk I/O. Benchmarked at 1.2ms for 1,000 instructions (~1.2μs/insn, >10,000x speedup), with native origin-relative branch resolution and seamless fallback to GNU binutils.
-- ⚡ **Thread-Local Capstone Handle Pooling & 8-Entry LRU Cache (`CapstoneContext` & `DisasmCache`)**: Introduced zero-allocation RAII `CapstoneLease` with thread-local dual-mode handles (Basic/Detail), completely eradicating repeated `cs_open`/`cs_close` churn across 8 core analysis modules. Upgraded `DisasmCache` to an 8-entry LRU cache for silky-smooth stepping across multiple viewports.
-- ⚡ **Zydis x86_64 Fast Instruction Decoder & Dual-Engine Architecture (`ZydisContext`)**: Integrated industry-standard Zydis decoder for Linux x86_64 featuring zero heap allocations and stack-only fixed-size instruction structs, achieving >3.8 million instructions/second throughput. Refactored `stepOver` for ~15ns control flow analysis and introduced seamless Zydis/Capstone dual-engine switching with automatic fallback.
-- ⚡ **AVX2 Vectorized Multi-Threaded Memory & Pattern Scanner (`PatternSearcher` & `MemoryScanner`)**: Streaming chunk scanner eliminates the legacy 16MB truncation bug with a constant 2MB memory footprint across multi-gigabyte address spaces; novel dual-anchor AVX2 SIMD mask filtering rejects 32 candidate offsets in two vector instructions, accelerating 64MB scans from 833ms down to 21.8ms (**38.27x speedup, ~2.87 GB/s throughput**); multi-VMA work-stealing parallel dispatch with atomic early termination, plus seamless runtime scalar fallback on non-AVX2 hosts.
-- 🪜 **DWARF CFI Deep Call Stack Unwinding & Dual-Track RBP Fallback (`CallStackUnwinder`)**: Full `.eh_frame` / `.debug_frame` CFI state machine traversal powered by `libdwfl` coupled with robust RBP chain unwinding. Intelligently selects the deeper recovered stack trace between CFI and RBP, preserving boundary frames across stripped shared libraries (`libc.so`) even when frame pointer omission is present.
-- 🧮 **Modern Recursive-Descent Expression Evaluator**: Comprehensive 13-level operator precedence parser supporting scale-index dereferences (`[rax + rcx * 8 + 0x20]`), bitwise operations (`&`, `|`, `^`, `~`, `<<`, `>>`), compound logic (`&&`, `||`, `!`), parentheses nesting, and sized memory reads (`byte ptr`, `dword ptr`, `qword ptr`).
-- 🔌 **Pluggable Debug Engine Abstraction (`IDebugBackend`)**: Decoupled `DebugSession`, `EventLoopThread`, and `TypeManager` behind a pure virtual backend interface, allowing headless mock backend unit testing (`MockDebugBackend`) and establishing the architectural gateway for future remote GDB/LLDB RSP servers.
-- 🚌 **Centralized Cross-View Routing (`NavigationBus`)**: Replaces dozens of point-to-point Qt signal-slot bindings across 22+ views with a centralized event bus. Coordinates jumps to disassembly, memory dumps, stack frames, struct viewer, string references, and intermodular calls with zero inter-view dependency leaks.
-- 🗂️ **Modular Command Registry (`CommandRegistry`)**: Decouples the 1100+ line `CommandBarView` into categorized modular command handlers (`Execution`, `Breakpoint`, `Memory`, `Analysis`, `Process`, `System`, `Plugin`). Supports prefix autocompletion, alias resolution (`g` -> `run`, `libs` -> `modules`), category filtering, and seamless third-party plugin command injection.
-- 🏛️ **Strict Headless Core & Decoupled UI Plugin Interface (`IUIPlugin`)**: Fully satisfies architectural isolation boundaries (AGENTS.md Rule 3.1). Static library `edb_core` removes all `QtWidgets` linkages and stays 100% headless-testable. GUI lifecycle methods (`createMenu`, `contextMenuItems`, `createOptionsPage`, `addDockWidget`) are cleanly decoupled into `ui/IUIPlugin.hpp`.
-- 🛡️ **StepOver Software Breakpoint Masking & Fork Detachment Hygiene**: Step-over disassembly automatically overlays original bytes across active software breakpoints (`0xCC`), accurately preserving `CALL` and `REP`-prefixed instruction semantics. Follow-fork parent detachment automatically purges breakpoint opcodes from child process memory before detachment, preventing rogue child termination.
-- 🔒 **Zero-Deadlock Syscall Suspension Handshake**: Upgraded `EventLoopThread` suspension mechanism with bidirectional condition variable synchronization, guaranteeing mutual exclusion and eliminating deadlocks between target event collection and remote memory syscalls (`remoteMmap`, `remoteMprotect`, `remoteMunmap`).
-- 🗺️ **ASLR/PIE Runtime Database Relocation & Disk Patching**: `.edb_db` projects record module load bases and automatically recompute relative virtual offsets on import, seamlessly transferring comments, labels, bookmarks, and breakpoints across ASLR runs. `PatchManager::patchFileToDisk` features runtime base offsets and dynamic base deduction for PIE/ASLR binaries.
-- ⚡ **High-Frequency UI Widget Item Pooling & Smooth Scrolling**: Replaced continuous heap allocations with `QTableWidgetItem` pooling (`getOrCreateItem`) in `DisassemblyView` and `MemoryHexView`, eliminating garbage churn during single-stepping. Implemented natural mouse wheel scrolling (`wheelEvent`) with backward instruction disassembly.
-- 🧵 **Thread-Local Script Engine Concurrency Isolation**: Replaced global static pointers with `thread_local`, RAII scopes (`PythonEngineScope`, `GilStateScope`), and Lua registry mapping (`kLuaEngineRegistryKey`), enabling clean multi-session script automation.
-- 📊 **Sugiyama Layered CFG Layout & Headless CFGBuilder (`CFGBuilder` & `SugiyamaLayout`)**: Headless core graph partitioning conforming to standard 3-rule basic block leader detection ($I_0$, branch targets, and fallthroughs) with 3-state DFS cycle breaking. High-aesthetic 5-phase Sugiyama layout engine featuring longest-path topological DAG layering, dummy node insertion for multi-layer edge span reduction, 8-sweep iterative barycenter crossing minimization, collision-free coordinate assignment, and dedicated exterior side-channel loop back-edge routing that completely avoids cutting through basic blocks. Double-click basic block jump-to-disassembly navigation.
-- 🧬 **Modern Type-Safe Script Bindings & C++23 Monadic Architecture (`ScriptApiBridge`, `Result<T, E>`)**: Completely modernized Python 3 and Lua 5.4 script engine bindings. Decoupled unified debugger business logic into a headless `ScriptApiBridge`, eliminating 620+ lines of duplicate C-API boilerplate and register mapping. Modern C++23 `Result<T, E>` monadic error-handling (`and_then`, `transform`, `or_else`) seamlessly unifies operations with standard `std::expected`.
+> **For architectural design and implementation details**, please refer to the Software Design Document: [doc/DESIGN_en.md](doc/DESIGN_en.md).
 
 ---
 
-## Comparison Matrix
+## Documentation
 
-| Dimension / Feature | Original edb (Linux) | x64dbg (Windows) | edb-next (Modern Linux Rewrite) |
-| :--- | :---: | :---: | :---: |
-| **Language Standard** | C++11 | C++14/17 | **Modern C++23 Standard** |
-| **Event Concurrency** | 0ms QTimer (prone to hangs) | Complex sync | **Linux `pidfd` + `epoll` Reactive Loop (0% Idle CPU)** |
-| **Workspace Layout** | Single bottom drawer | 4 Quadrants | **4-Quadrant Golden Workspace** |
-| **Disassembly & Ergonomics** | Plain monospaced text | Rich color schemes & call/ret highlights | **x64dbg-Style Syntax Delegate + 5-Rail Call & Jump Flow Lines (Neon Cyan Calls / Gold Jumps / Red Loops) + Dynamic Branch & Operand Deref Preview + Ctrl+* Set Origin** |
-| **Hex Dump & Stack Ergonomics** | Basic linear dump | Dump history & stack return address tags | **Dump Back/Forward History (Alt+Left/Right) + [Return Address] Detection + Struct Link** |
-| **Register Quick Tweaking** | Type hex manually | Quick increment/decrement | **GPR Quick +1/-1 + Follow in Stack + Multi-Format Copy Submenu** |
-| **Memory Dumps** | Single Dump view | Dump 1 ~ Dump 5 | **4-Way MultiDumpWidget (Dump 1~4)** |
-| **Read-Only Patching** | Rejected / Errors | VirtualProtect | **Remote Syscall Injection (`mprotect`)** |
-| **Physical Disk Patch** | None (Memory-only) | Patched EXE | **Innovative `patchFileToDisk` (ELF Export)** |
-| **Source-Level Debug** | None (Disasm-only) | External tools | **Integrated DWARF Source Mapping & Mixed-Mode (`libdw`)** |
-| **Scripting Automation**| None | Plugins | **Native Python 3 & Lua 5.4 Dual Engines (`Alt+P`)** |
-| **Session Persistence** | Lost on exit | `.dd64` Database | **SQLite3 + Zstandard ACID Database (`.edb_db`)** |
-| **Interactive CLI** | None | CommandBar | **x64dbg-Style Bottom CommandBar** |
-| **Native C Decompiler** | None | Plugins / Ghidra | **Native C++23 AST Decompiler (`F5` View & Bidirectional Mapping)** |
-| **Time-Travel Debugging**| None | None | **Register/Memory Delta Step Back & Timeline Scrub (`Ctrl+F7`)** |
-| **Symbolic Execution** | None | None | **SSA Micro-IR & Z3 SMT Solver Reachability & Taint Analysis** |
-| **Headless DAP Server** | None | None | **Native Microsoft DAP JSON-RPC Protocol Server (`--dap`)** |
-| **Linux eBPF Hooking** | None | N/A (Windows) | **Kernel uprobes Non-Intrusive Hook Engine (`EbpfHookEngine`)** |
-| **Linux Heap Analysis** | Outdated plugin | N/A (Windows) | **Native Glibc ptmalloc Analyzer (Tab 9)** |
-| **Shared Lib Hot-Reload / dlopen** | Manual reload | DLL events supported | **Native glibc _r_debug rendezvous + Pending Breakpoints** |
-| **Follow-Fork / Multi-Process** | Single process only | Multi-process attach | **Native PTRACE_EVENT_FORK + Parent/Child/Both Session Tree + inferiors CLI** |
-| **Thread Freeze / Isolated Stepping** | View thread list only | Suspend / Resume thread | **Native SYS_tgkill + scheduler mask + ice-blue badges + isolated stepping** |
-| **Differential Memory Scanner** | Basic byte search only | External CE required | **Native 8 data types + multi-pass differential convergence + delta + in-place edit (Tab 21)** |
-| **Compound Struct Reconstruction** | None | Complex plugin required | **Industrial `libclang` AST Parser + Bitfields + AMD64 ABI Alignment + Dereference Sync (Tab 22)** |
-| **Exploit Tooling** | Basic ROP plugin | 3rd-party | **Built-in ROP Engine & Python `p64()` Export** |
+Project documentation is maintained under the `doc/` directory:
+
+| Document | English | 简体中文 | Scope & Description |
+| :--- | :--- | :--- | :--- |
+| **Software Design Document (SDD)** | [doc/DESIGN_en.md](doc/DESIGN_en.md) | [doc/DESIGN_zh.md](doc/DESIGN_zh.md) | In-depth architecture, internal mechanisms, state machines, data structures, and roadmap |
+| **Tutorial & Plugin Development Guide** | [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) | [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) | User manuals, operation guides, shortcut cheat sheets, and C++20 plugin walkthroughs |
+| **Contributing Guide** | [doc/CONTRIBUTING_en.md](doc/CONTRIBUTING_en.md) | [doc/CONTRIBUTING_zh.md](doc/CONTRIBUTING_zh.md) | Coding style, commit guidelines, and Pull Request workflows |
 
 ---
 
 ## Quick Start
 
-### 1. Prerequisites (Ubuntu / Debian)
+### 1. Install Dependencies (Ubuntu / Debian)
 ```bash
 sudo apt update
 sudo apt install -y \
@@ -155,97 +95,80 @@ sudo apt install -y \
 git clone https://github.com/your-username/edb-next.git
 cd edb-next
 
-# Configure & build all binaries with max concurrency
+# Configure and compile with all available cores
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
-### 3. Run Verification Tests
+### 3. Run Verification Test Suites
 ```bash
-./build/test_core           # Validates engine, breakpoints, stepping, and unwinding
-./build/test_dwarf          # Validates DWARF source-level debugging & line mapping
-./build/test_advanced       # Validates patching, disk export, remote syscalls, and plugins
-./build/test_scripting      # Validates Python 3 & Lua 5.4 dual scripting automation
-./build/test_exit           # Validates clean process teardown without crashes
-./build/test_nextgen        # Validates pidfd event loop, target FD introspection, libclang AST, SQLite3+zstd, and C++23 monads
-./build/test_p4_advanced_re # Validates SSA Micro-IR, Z3 symbolic execution, decompiler, TTD step-back, DAP server, and eBPF
-./build/test_p5_ultimate    # Validates userfaultfd, BTF compact types, DR6 attribution & PageGuard fallback, anti-anti-debug, and NEON
+./build/test_core           # Core tests (breakpoints, stepping, threads, ELF parsing)
+./build/test_dwarf          # DWARF source debugging and line mapping tests
+./build/test_advanced       # Advanced tests (disk patching, tracing, CFG, remote syscalls)
+./build/test_scripting      # Embedded Python 3 & Lua 5.4 scripting tests
+./build/test_exit           # Teardown safety and resource cleanup stress tests
+./build/test_nextgen        # pidfd loop, target FD introspection, libclang AST, SQLite3+zstd, C++23
+./build/test_p4_advanced_re # SSA Micro-IR, Z3 symbolic solver, decompiler, TTD replay, DAP, eBPF
+./build/test_p5_ultimate    # userfaultfd, BTF compact types, DR6 attribution & PageGuard fallback, anti-anti-debug, NEON
 ```
 
+### 4. Launch the Debugger
 
-### 4. Launch edb-next
-
-#### Option A: Run Local Build Artifact
+#### Method A: Direct Execution
 ```bash
 ./build/edb_next
 ```
 
-#### Option B: Run Standalone Portable AppImage (Recommended, Zero Install)
-Download the release `.AppImage` or build it locally. Simply grant execution permission to run on any major Linux distribution (Ubuntu, Debian, Fedora, Arch Linux, etc.):
+#### Method B: Standalone Portable AppImage (Recommended)
+Download or build the standalone AppImage, make it executable, and run on any major Linux distribution (Ubuntu, Debian, Fedora, Arch Linux, etc.):
 ```bash
 chmod +x edb-next-x86_64.AppImage
 ./edb-next-x86_64.AppImage
 ```
 
-> **Note on ptrace permissions**:
-> - Debugging newly launched processes (Spawn / Open Binary) works with standard user permissions out of the box.
-> - To attach to an existing non-child process, due to Linux Yama LSM restrictions, launch with `sudo ./edb-next-x86_64.AppImage` or configure `sudo sysctl -w kernel.yama.ptrace_scope=0`.
+> **Note (ptrace privileges)**:
+> - Spawning new targets (Open Binary) works out of the box without root privileges.
+> - When attaching to existing non-child processes restricted by Linux Yama LSM, run with `sudo ./edb-next-x86_64.AppImage` or set: `sudo sysctl -w kernel.yama.ptrace_scope=0`.
 
 #### Build AppImage Locally
 ```bash
-# Host build with local dependencies
+# Build and package on host
 ./scripts/build_appimage.sh
 
-# Or reproducible build inside Ubuntu 22.04 LTS (glibc 2.35) Docker container:
+# Or package in an Ubuntu 22.04 LTS Docker container for maximum distribution compatibility
 ./scripts/docker_build_appimage.sh
 ```
 
-#### Desktop Integration & Icon
-`edb-next` embeds its high-resolution application icon directly into the binary via Qt resources (`:/res/edb-next.png`), providing immediate window and taskbar branding across Wayland and X11 environments. The desktop entry file and SVG/PNG vector/bitmap assets are organized under [`res/`](res/).
-
 ---
 
-## Documentation
+## Global Shortcut Cheat Sheet
 
-Comprehensive bilingual documentation is maintained under the `doc/` directory:
-
-| Document | English Version | 中文版本 (Chinese Version) | Description |
+| Shortcut | Action | Shortcut | Action |
 | :--- | :--- | :--- | :--- |
-| **Software Design Document (SDD)** | [doc/DESIGN_en.md](doc/DESIGN_en.md) | [doc/DESIGN_zh.md](doc/DESIGN_zh.md) | Comprehensive technical architecture, algorithms, and roadmap |
-| **User Manual & Plugin Guide** | [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) | [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md) | Full user manual, shortcut guide, and C++20 plugin development tutorial |
-| **Next-Gen Architecture & 2026 Roadmap** | - | [doc/NEXT_GEN_OPTIMIZATION_zh.md](doc/NEXT_GEN_OPTIMIZATION_zh.md) | In-depth 2026 modernization roadmap for Linux pidfd, Intel PT TTD, eBPF, libclang, SSA-IR & Ghidra |
-| **Contribution Guidelines** | [doc/CONTRIBUTING_en.md](doc/CONTRIBUTING_en.md) | [doc/CONTRIBUTING_zh.md](doc/CONTRIBUTING_zh.md) | Code style, git workflow, and PR verification rules |
-
----
-
-## Keyboard Shortcuts
-
-| Hotkey | Action | Hotkey | Action |
-| :--- | :--- | :--- | :--- |
-| **F9** | Continue Execution | **Enter** | Follow Branch (`CALL`/`JMP`) / Stack Smart Follow |
-| **F7** | Step Into | **Esc / Backspace** | Go Back in Navigation History |
-| **F8** | Step Over | **\*** *(Numpad / Key)* | **Origin**: Follow / Center on Current RIP |
-| **Shift+F11** | Step Out of Function | **Space** | Continuous Assemble (Auto-advancing with NOP fill) |
+| **F9** | Continue (Run) | **Enter** | Follow Branch / Smart Stack Follow |
+| **F7** | Step Into | **Esc / Backspace** | Go Back (History Stack) |
+| **F8** | Step Over | **\*** *(Numpad / Key)* | **Origin**: Center current RIP |
+| **Shift+F11** | Step Out | **Space** | Continuous In-Place Assembly (+ NOP fill) |
 | **F4** | Run to Selection | **; (Semicolon)** | Add / Edit Instruction Comment |
-| **F5** | **Native C Decompiler** (Refresh/Toggle) | **: (Colon)** | Set / Edit User Label (`🏷`) |
-| **Ctrl+F7** | **Step Back** (Time-Travel Debugging) | **Ctrl+B** | Toggle Bookmark (`★`) |
-| **Ctrl+Shift+F9** | **Reverse Continue** (TTD) | **X** | Show Cross References (XREFs) |
-| **Ctrl+F2** | Restart Debug Session | **Ctrl+E** | Modify Hex Bytes In-Place |
-| **Ctrl+\*** | Set RIP (New Origin) | **Ctrl+P** | Patch Manager & Disk File Export |
-| **F2** | Toggle Software Breakpoint | **Alt+S** | Focus Source View |
-| **Ctrl+Alt+S** | Search All Referenced Strings | **Alt+C** | Focus CPU / Disassembly |
-| **Ctrl+Alt+C** | Search All Intermodular Calls | **Ctrl+D** | Dump Formatted CPU State Snapshot |
+| **F5** | **Native C Decompiler** | **: (Colon)** | Set / Edit User Label (`🏷`) |
+| **Ctrl+F7** | **Step Back** (Time-Travel) | **Ctrl+B** | Toggle Bookmark |
+| **Ctrl+Shift+F9** | **Reverse Continue** | **X** | Cross References (XREFs) |
+| **Ctrl+F2** | Restart Session | **Ctrl+E** | Modify Hex Bytes |
+| **Ctrl+\*** | Set RIP to Selection | **Ctrl+P** | Patch Manager & Disk Export |
+| **F2** | Toggle Breakpoint | **Alt+S** | Focus Source View |
+| **Ctrl+Alt+S** | Search All Strings | **Alt+C** | Focus CPU / Disassembly |
+| **Ctrl+Alt+C** | Search Intermodular Calls | **Ctrl+D** | Dump Machine State Snapshot |
 | **Alt+P** | Script Console (Python/Lua) | **Shift+F7/F8/F9** | Pass Signal Step / Run |
-| **Ctrl+Shift+S** | Toggle Mixed ASM/Source View | **Stack: `Space` / `Ctrl+G`** | Modify QWORD / Go to Address |
-| **Ctrl+S** | Save Project Database | **Follow in Dump 1~4** | Route to Target Dump Tab |
-| **Shift+S** | Toggle Stack View | **Regs: `+` / `-` / `0`** | Inc / Dec / Zero Register |
-| **HexDump: `Enter` / Dbl-Click** | Modify Bytes In-Place | | |
+| **Ctrl+Shift+S** | Toggle Mixed ASM / Source | **Stack: `Space` / `Ctrl+G`** | Edit QWORD / Go to Address |
+| **Ctrl+S** | Save Project (.edb_db) | **Follow in Dump 1~4** | Route to Dedicated Dump Tab |
+| **Shift+S** | Toggle Stack View | **Regs: `+` / `-` / `0`** | GPR Quick Increment / Zero |
+| **Dump: `Enter` / DblClick** | In-Place Edit Hex Bytes | | |
 
 ---
 
-## Plugin Development
+## Plugin Development Example
 
-`edb-next` provides a modern C++20 plugin gateway. An official reference plugin is available at [plugins/SamplePlugin/](plugins/SamplePlugin/):
+`edb-next` provides a lightweight, decoupled C++20 plugin interface. An official sample plugin is provided at [plugins/SamplePlugin/](plugins/SamplePlugin/):
 
 ```cpp
 #include "core/IPlugin.hpp"
@@ -258,30 +181,30 @@ class MyPlugin : public QObject, public edb_next::IPlugin {
 
 public:
     bool initialize(edb_next::IPluginContext* ctx) override {
-        // Register a custom CLI command for the CommandBar
+        // Register custom CLI commands to the CommandBar
         ctx->registerCommand("my_ping", [](const std::vector<std::string>& args) {
-            // handle CLI execution
-        }, "my_ping - Sample command");
+            // Command execution logic
+        }, "my_ping - Sample extended command");
 
-        // Hook breakpoint events
+        // Hook debug events
         ctx->registerDebugEventListener([](const edb_next::DebugEvent& ev) {
-            // handle debug event
+            // Handle debug event
         });
         return true;
     }
     void shutdown() override {}
 };
 ```
-See the full guide in [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md) or [doc/TUTORIAL_zh.md](doc/TUTORIAL_zh.md).
+For detailed plugin development instructions, see [doc/TUTORIAL_en.md](doc/TUTORIAL_en.md).
 
 ---
 
 ## Contributing
 
-We welcome community contributions, bug reports, and feature requests! Please read our [Contribution Guidelines](doc/CONTRIBUTING_en.md) before opening a pull request.
+We welcome contributions from the open-source community! Before opening a PR, please read our [Contributing Guide](doc/CONTRIBUTING_en.md).
 
 ---
 
 ## License
 
-`edb-next` is licensed under the [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
+This project is licensed under the [GNU General Public License v3.0 (GPL-3.0)](LICENSE).

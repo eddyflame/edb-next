@@ -39,6 +39,11 @@
    - 4.12 Independent Thread Freeze & Thaw (Freeze / Thaw & Isolated Stepping)
    - 4.13 Differential Memory Scanner (CheatEngine-Style Convergence)
    - 4.14 Compound Type Reconstruction & Struct Layout (Type Viewer)
+   - 4.15 Native C Pseudo-Code Decompiler (`F5` & Bidirectional Mapping)
+   - 4.16 Time-Travel Debugging (TTD) & Step Back Replay (`Ctrl+F7` Step Back)
+   - 4.17 Headless DAP (Debug Adapter Protocol) Server & VS Code / Neovim Integration
+   - 4.18 BTF (BPF Type Format) Kernel & ELF Type Import (Type Viewer)
+   - 4.19 Advanced Anti-Anti-Debugging Configuration
 5. [Advanced Reverse Engineering Toolset](#5-advanced-reverse-engineering-toolset)
    - 5.1 Glibc ptmalloc Heap Inspection (HeapView)
    - 5.2 ROP Gadget Scanner & Python Payload Export (ROPToolView)
@@ -571,6 +576,97 @@ structs                       # List all registered struct types, sizes, and fie
 struct <name> <addr_or_expr>  # Parse and print struct fields at given memory address
 defstruct <c_code...>         # Dynamically define and register a new C struct
 ```
+
+---
+
+### 4.15 Native C Pseudo-Code Decompiler (`F5` & Bidirectional Mapping)
+
+Disassembly views are precise but can be overwhelming for large nested control flow graphs. `edb-next` includes an embedded C++23 AST decompiler:
+
+#### 1. Invoking & Refreshing the Decompiler
+- While navigating any function in Disassembly, press **`F5`** (or select **Analysis -> Decompile Function (F5)**);
+- The **DecompilerView** opens instantly, restructuring discrete assembly instructions into legible C pseudo-code (`while`, `for`, `if-else`, and expression trees).
+
+#### 2. Bidirectional Mapping & Focus Locking
+- **Pseudo-Code to Assembly**: Click any pseudo-code line to highlight and focus the corresponding assembly instruction range in Quadrant 1;
+- **Assembly to Pseudo-Code**: Single-stepping (`F7` / `F8`) in Disassembly automatically locks the active high-level statement row with an emerald green focus border.
+
+---
+
+### 4.16 Time-Travel Debugging (TTD) & Step Back Replay (`Ctrl+F7` Step Back)
+
+Conventional debugging is strictly unidirectional. If you step past a critical conditional branch or variable write, you must restart from scratch. `edb-next` provides deterministic time-travel debugging:
+
+#### 1. Rewind and Reverse Execution
+- **Step Back**: Press **`Ctrl+F7`** to rewind execution by one instruction cycle, instantly restoring the previous CPU register state and memory diffs (`MemoryDeltaDiff`);
+- **Reverse Continue**: Press **`Ctrl+Shift+F9`** to execute backwards at full speed until hitting a preceding breakpoint or reaching the session start.
+
+#### 2. Time-Travel Scrubber Widget (`TimeTravelWidget`)
+- Located at the bottom of Quadrant 2 (Registers);
+- Drag the slider to scrub through recorded execution frames;
+- Integrates with Linux `perf_event_open` hardware branch tracing for deterministic replay fidelity.
+
+---
+
+### 4.17 Headless DAP (Debug Adapter Protocol) Server & VS Code / Neovim Integration
+
+In addition to its standalone GUI, `edb-next` can run as a headless DAP server to power modern developer environments:
+
+#### 1. Launching the Headless DAP Daemon
+Launch edb-next with the `--dap` flag:
+```bash
+# Start DAP server on default port 4711
+./build/edb_next --dap
+
+# Or specify a custom port
+./build/edb_next --dap --dap-port 5555
+```
+
+#### 2. VS Code Configuration (`launch.json`)
+Configure your `.vscode/launch.json` client:
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "edb-next DAP Attach",
+            "type": "edb-next",
+            "request": "attach",
+            "port": 4711,
+            "program": "${workspaceFolder}/target_binary"
+        }
+    ]
+}
+```
+VS Code can now set breakpoints, step through code, and inspect variables using the edb-next reactive Linux kernel engine.
+
+---
+
+### 4.18 BTF (BPF Type Format) Kernel & ELF Type Import (Type Viewer)
+
+When analyzing stripped binaries or programs interacting with the Linux kernel without DWARF debug symbols, BTF provides compact, high-density type definitions:
+
+#### 1. Importing Linux Kernel vmlinux BTF
+1. Open the bottom drawer **Type Viewer** (Tab 22);
+2. Click **"📦 Import BTF..."** in the toolbar;
+3. Select **"Load Kernel BTF (/sys/kernel/btf/vmlinux)"**;
+4. The parser decodes over 170,000 kernel types (such as `task_struct`, `sk_buff`, `files_struct`) in microseconds;
+5. Select any type from the Struct combo to inspect target memory with accurate field layouts.
+
+#### 2. Importing ELF `.BTF` Sections
+If the target binary contains an embedded `.BTF` section, select **"Load ELF .BTF Section"** to automatically extract its custom structures and bitfield definitions.
+
+---
+
+### 4.19 Advanced Anti-Anti-Debugging Configuration
+
+Malware and protected binaries often inspect `/proc/[pid]/status` for `TracerPid` or measure single-step execution delays using `RDTSC`:
+
+#### 1. Configuring Anti-Anti-Debugging
+- Select **Debug -> 🛡️ Anti-Anti-Debugging...** from the main menu;
+- **TracerPid Spoofing**: Check "Spoof TracerPid as 0 in /proc/status" to sanitize tracer detection;
+- **RDTSC Smoothing**: Check "Smooth RDTSC Cycle Differences" to mask single-step delays;
+- **Self-Termination Interception**: Check "Intercept PTRACE_TRACEME & PR_SET_DUMPABLE" to neutralize self-integrity traps.
 
 ---
 
