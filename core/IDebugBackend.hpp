@@ -2,6 +2,7 @@
 
 #include "Types.hpp"
 #include "RegisterContext.hpp"
+#include "Breakpoint.hpp"
 #include <string>
 #include <vector>
 #include <span>
@@ -57,6 +58,9 @@ public:
         HardwareBpSize size = HardwareBpSize::Byte1) = 0;
     virtual bool clearHardwareBreakpoint(Tid tid, int slot) = 0;
     [[nodiscard]] virtual uint64_t getDebugRegister(Tid tid, int reg_index) const = 0;
+    [[nodiscard]] virtual Dr6Status getDr6Status(Tid tid = 0) const {
+        return Dr6Status::fromRaw(getDebugRegister(tid, 6));
+    }
 
     // Remote syscalls
     virtual Result<uint64_t> executeRemoteSyscall(Tid tid, uint64_t sys_no,

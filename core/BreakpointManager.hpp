@@ -11,6 +11,8 @@
 
 namespace edb_next {
 
+class PageGuardManager;
+
 class BreakpointManager {
 public:
     using ReadMemFunc = std::function<bool(Address, void*, size_t)>;
@@ -20,6 +22,11 @@ public:
 
     BreakpointManager(ReadMemFunc read_mem, WriteMemFunc write_mem,
                       SetHwBpFunc set_hw_bp = nullptr, ClearHwBpFunc clear_hw_bp = nullptr);
+
+    void setPageGuardManager(PageGuardManager* mgr) noexcept { pageGuardMgr_ = mgr; }
+    [[nodiscard]] PageGuardManager* pageGuardManager() const noexcept { return pageGuardMgr_; }
+    void setAutoFallbackToPageGuard(bool enable) noexcept { autoFallbackToPageGuard_ = enable; }
+    [[nodiscard]] bool isAutoFallbackToPageGuard() const noexcept { return autoFallbackToPageGuard_; }
 
     bool addBreakpoint(Address addr, bool is_internal = false, const std::string& symbol = "");
     bool addBreakpointWithOriginalByte(Address addr, uint8_t origByte, bool is_internal = false, const std::string& symbol = "");
@@ -39,6 +46,10 @@ public:
     [[nodiscard]] std::vector<Breakpoint> allBreakpoints(bool include_internal = false) const;
     void clear();
 
+    // DR6 status attribution & slot mapping
+    [[nodiscard]] std::optional<Address> getHardwareSlotAddress(int slot) const;
+    [[nodiscard]] std::optional<Address> attributeDr6(const Dr6Status& dr6) const;
+
     // Pending breakpoints
     bool addPendingBreakpoint(const std::string& symbol, const std::string& condition = "",
                               const std::string& scriptCode = "", const std::string& scriptLang = "python",
@@ -57,6 +68,8 @@ private:
     WriteMemFunc writeMem_;
     SetHwBpFunc setHwBp_;
     ClearHwBpFunc clearHwBp_;
+    PageGuardManager* pageGuardMgr_{nullptr};
+    bool autoFallbackToPageGuard_{true};
 
     std::unordered_map<uint64_t, Breakpoint> breakpoints_;
     std::vector<PendingBreakpoint> pendingBreakpoints_;
@@ -65,3 +78,4 @@ private:
 };
 
 } // namespace edb_next
+

@@ -359,7 +359,87 @@ static void scanInt64ExactAVX2(
     }
 }
 
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+
+static void scanInt32ExactNeon(
+    const uint8_t* data,
+    size_t bytesToRead,
+    Address chunkAddr,
+    int32_t targetVal,
+    std::vector<ScanResult>& results,
+    size_t maxResults) {
+
+    size_t i = 0;
+    int32x4_t targetVec = vdupq_n_s32(targetVal);
+
+    if (bytesToRead >= 16) {
+        size_t simdLimit = bytesToRead - 16 + 1;
+        for (; i < simdLimit; i += 16) {
+            if (results.size() >= maxResults) return;
+
+            int32x4_t chunk = vld1q_s32(reinterpret_cast<const int32_t*>(data + i));
+            uint32x4_t cmp = vceqq_s32(chunk, targetVec);
+
+            if (vmaxvq_u32(cmp) == 0) [[likely]] {
+                continue;
+            }
+
+            uint32_t matches[4];
+            vst1q_u32(matches, cmp);
+            for (int lane = 0; lane < 4; ++lane) {
+                if (matches[lane]) {
+                    size_t matchOffset = i + static_cast<size_t>(lane) * 4;
+                    ScanResult res;
+                    res.address = chunkAddr + matchOffset;
+                    res.previousValue = SmallBuffer(data + matchOffset, 4);
+                    res.currentValue = SmallBuffer(data + matchOffset, 4);
+                    results.push_back(std::move(res));
+                    if (results.size() >= maxResults) return;
+                }
+            }
+        }
+    }
+
+    for (; i + 4 <= bytesToRead; i += 4) {
+        if (results.size() >= maxResults) return;
+        int32_t v = 0;
+        std::memcpy(&v, data + i, sizeof(v));
+        if (v == targetVal) {
+            ScanResult res;
+            res.address = chunkAddr + i;
+            res.previousValue = SmallBuffer(data + i, 4);
+            res.currentValue = SmallBuffer(data + i, 4);
+            results.push_back(std::move(res));
+        }
+    }
+}
+#endif
+
+bool MemoryScanner::isNeonSupported() noexcept {
+#if defined(__aarch64__) || defined(__ARM_NEON)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool MemoryScanner::isAvx2Supported() noexcept {
+    return PatternSearcher::isAVX2Supported();
+}
+
+std::string MemoryScanner::activeSimdEngineName() noexcept {
+    if (isAvx2Supported()) {
+        return "AVX2 (256-bit)";
+    }
+    if (isNeonSupported()) {
+        return "ARM NEON (128-bit)";
+    }
+    return "Scalar Fallback";
+}
+
 size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& options) {
+
     results_.clear();
     scanPass_ = 0;
     activeOptions_ = options;
@@ -465,11 +545,18 @@ size_t MemoryScanner::firstScan(IDebugBackend& engine, const ScanOptions& option
                     scanInt32ExactAVX2(buffer.data(), bytesToRead, chunkAddr, static_cast<int32_t>(targetInt), localResults, options.maxResults);
                     offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
                     continue;
+#if defined(__aarch64__) || defined(__ARM_NEON)
+                } else if (options.dataType == ScanDataType::Int32 && align == 4 && isNeonSupported()) {
+                    scanInt32ExactNeon(buffer.data(), bytesToRead, chunkAddr, static_cast<int32_t>(targetInt), localResults, options.maxResults);
+                    offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
+                    continue;
+#endif
                 } else if (options.dataType == ScanDataType::Int64 && align == 8 && PatternSearcher::isAVX2Supported()) {
                     scanInt64ExactAVX2(buffer.data(), bytesToRead, chunkAddr, targetInt, localResults, options.maxResults);
                     offset += (bytesToRead > dataSize ? (bytesToRead - dataSize + align) : bytesToRead);
                     continue;
                 }
+
             }
 
             // General fallback path for float/double/string/differentials

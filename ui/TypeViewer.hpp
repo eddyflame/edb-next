@@ -33,6 +33,7 @@ Q_SIGNALS:
 private Q_SLOTS:
     void onInspectClicked();
     void onDefineStructClicked();
+    void onImportBtfClicked();
     void onStructSelected(int index);
     void onTableDoubleClicked(int row, int col);
     void onTableContextMenu(const QPoint& pos);
@@ -49,6 +50,7 @@ private:
     QLineEdit* addressEdit_{nullptr};
     QPushButton* inspectBtn_{nullptr};
     QPushButton* defineBtn_{nullptr};
+    QPushButton* importBtfBtn_{nullptr};
     QPushButton* refreshBtn_{nullptr};
     QLabel* sizeLabel_{nullptr};
 

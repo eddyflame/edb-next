@@ -51,6 +51,11 @@
 - ⚡ **SSA Micro-IR 与 Z3 符号执行自动化求解 (`MicroIR`, `SymbolicEngine`)**：将 x86_64 指令提升为 SSA 规范三地址码微码中间表示；支持常量折叠、不透明谓词混淆消除与死代码消除；深度集成 Z3 SMT C++23 求解器，实现分支目标到达性条件输入自动生成（`solveReachability`）与寄存器/内存动态污点追踪。
 - 🔌 **无头 DAP (Debug Adapter Protocol) 协议服务 (`DapServer`, `--dap`)**：原生实现微软 DAP JSON-RPC 协议标准（Content-Length 分帧），支持 initialize, launch, attach, threads, stackTrace, scopes, variables, continue, next, stepIn, stepBack, readMemory, disassemble 等全套指令，命令行支持 `--dap` 启动无头服务，无缝接入 VS Code 与 Neovim (`nvim-dap`) 等现代编辑器生态。
 - 🪝 **Linux 内核态 eBPF uprobes 探针引擎 (`EbpfHookEngine`)**：通过 `/sys/kernel/tracing` 实现用户态 ELF 二进制函数探针非侵入式挂载，具备异步 Ring Buffer 事件通道与优雅的非特权沙箱降级机制。
+- 🌀 **Linux `userfaultfd` 零 0xCC 隐匿缺页与脏页写入拦截引擎 (`UserfaultFdEngine`)**：基于 Linux 原生 `userfaultfd` 系统调用注册目标内存地址段（`UFFDIO_REGISTER_MODE_WP` 监视写访问）；实现完全无需篡改 ELF 内存段读写属性（`PROT_READ`）与免反复调用 `mprotect` 的物理写监视点与脏页记账，完美隐藏断点痕迹并具备非特权沙箱模拟回退。
+- 📦 **内核与 ELF 紧凑 BTF (BPF Type Format) 类型系统解析器 (`BtfParser`)**：原生解析 Linux 内核 `/sys/kernel/btf/vmlinux`（单核解析超 170,000 种内核核心类型仅需微秒级）与用户态 ELF `.BTF` 段；自动解码结构体、联合体、枚举、指针与位域，直通导出至 `TypeManager`，赋能无 DWARF 符号脱壳样本的结构体逆向分析；`TypeViewer` 面板提供“📦 导入 BTF...”交互。
+- 🎯 **x86_64 DR6 状态寄存器精准硬件归因与 PageGuard 自动降级回退**：精准解析 DR6 `B0~B3`、`BD`、`BS` 标志位，精准归因发生断下的具体 DR 槽位与目标物理地址；当 4 个物理硬件断点寄存器槽位耗尽时，`BreakpointManager` 透明无感降级为 `PageGuard` 软监视点（UI 醒目高亮指示 `[PG-Fallback]`），消除断点设置上限。
+- 🛡️ **深层反反调试内核感知与环境抹除引擎 (`AntiAntiDebugEngine`)**：全自动重定向伪造 `/proc/[pid]/status` 中的 `TracerPid: 0`；单步执行 `RDTSC` 周期差值平滑化，消除单步微秒级延迟对反调试时间差探测的触发；实时侦测与拦截被调试目标的 `ptrace(PTRACE_TRACEME)` 与 `prctl(PR_SET_DUMPABLE, 0)` 自毁探测；GUI 菜单集成“🛡️ Anti-Anti-Debugging...”配置工作台。
+- ⚡ **跨架构 ARM64 NEON 128 位向量化极速内存扫描引擎**：在 AVX2 (256 位) 基础上扩展 ARM64 原生 128 位 NEON SIMD 向量化算法（`vld1q_u8`, `vceqq_u8`, `vandq_u8`），统一跨架构双锚点极速扫描派发，赋能 Linux ARM64 与 Apple Silicon 高性能模式匹配。
 - 🎯 **经典 4 象限黄金工作台**：反汇编、寄存器、4路独立转储（Dump 1~4）以及专有 64 位 QWORD 栈视图四维同屏联动。
 - 🔍 **原生 Linux 深度内省与漏洞利用工具**：内置 Glibc ptmalloc 堆链解析器（`malloc_chunk` 与 `A|M|P` 标志）、ROP Gadget 滑动窗口搜寻与 Python `p64(...)` 利用脚本导出、交互式基本块控制流图 (CFG)、跨模块动态库 API 外呼搜索、以及 `/proc/<pid>/fd/` 句柄分类。
 - 📖 **DWARF 源码级调试与反汇编混合渲染**：基于 `libdw` 原生解析 `.debug_info` 与 `.debug_line`，实现地址与源码行号双向瞬时映射；支持反汇编与原始 C/C++ 源码混合排版（`Ctrl+Shift+S`），内置独立源码浏览器 `SourceView`（`Alt+S`），支持源码行双击断点与源码级单步。
@@ -164,6 +169,7 @@ cmake --build build -j$(nproc)
 ./build/test_exit       # 析构安全压力测试
 ./build/test_nextgen        # 验证 pidfd 反应式循环、目标 FD 内省、libclang AST、SQLite3+zstd 及 C++23 单子
 ./build/test_p4_advanced_re # 验证 SSA Micro-IR、Z3 符号执行、原生反编译、TTD 回溯、DAP 服务与 eBPF
+./build/test_p5_ultimate    # 验证 userfaultfd 隐匿缺页、BTF 紧凑类型系统、DR6 归因与 PageGuard 自动降级、反反调试及 NEON 向量化
 ```
 
 ### 4. 启动调试器

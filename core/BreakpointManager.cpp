@@ -1,4 +1,5 @@
 #include "BreakpointManager.hpp"
+#include "PageGuardManager.hpp"
 #include <iostream>
 
 namespace edb_next {
@@ -39,6 +40,7 @@ bool BreakpointManager::addBreakpoint(Address addr, bool is_internal, const std:
         .scriptLanguage = "python",
         .type = BreakpointType::Software,
         .hardwareSlot = -1,
+        .isPageGuardFallback = false,
         .symbol = symbol
     };
 
@@ -70,6 +72,7 @@ bool BreakpointManager::addBreakpointWithOriginalByte(Address addr, uint8_t orig
         .scriptLanguage = "python",
         .type = BreakpointType::Software,
         .hardwareSlot = -1,
+        .isPageGuardFallback = false,
         .symbol = symbol
     };
 
@@ -78,21 +81,66 @@ bool BreakpointManager::addBreakpointWithOriginalByte(Address addr, uint8_t orig
 }
 
 bool BreakpointManager::addHardwareBreakpoint(Address addr, HardwareBpType type, HardwareBpSize size, const std::string& symbol) {
-    if (!setHwBp_ || hasBreakpoint(addr)) {
+    if (hasBreakpoint(addr)) {
         return false;
     }
 
     // Find available hardware slot 0..3
     int free_slot = -1;
-    for (int i = 0; i < 4; ++i) {
-        if (!slotOccupied_[i]) {
-            free_slot = i;
-            break;
+    if (setHwBp_) {
+        for (int i = 0; i < 4; ++i) {
+            if (!slotOccupied_[i]) {
+                free_slot = i;
+                break;
+            }
         }
     }
 
     if (free_slot < 0) {
-        return false; // All 4 hardware slots occupied
+        // All 4 hardware slots occupied: transparently fallback to PageGuard soft watchpoint
+        if (autoFallbackToPageGuard_ && pageGuardMgr_) {
+            PageGuardAccess access = PageGuardAccess::NoAccess;
+            if (type == HardwareBpType::Write) {
+                access = PageGuardAccess::ReadOnly;
+            } else if (type == HardwareBpType::Execute) {
+                access = PageGuardAccess::ExecuteOnly;
+            }
+
+            size_t watch_size = 1;
+            switch (size) {
+                case HardwareBpSize::Byte1: watch_size = 1; break;
+                case HardwareBpSize::Byte2: watch_size = 2; break;
+                case HardwareBpSize::Byte4: watch_size = 4; break;
+                case HardwareBpSize::Byte8: watch_size = 8; break;
+            }
+
+            if (pageGuardMgr_->addGuard(addr, watch_size, access, PROT_READ | PROT_WRITE, "HW Fallback: " + symbol)) {
+                BreakpointType bp_type = BreakpointType::HardwareExecute;
+                if (type == HardwareBpType::Write) bp_type = BreakpointType::HardwareWrite;
+                else if (type == HardwareBpType::ReadWrite) bp_type = BreakpointType::HardwareReadWrite;
+
+                Breakpoint bp{
+                    .address = addr,
+                    .originalByte = 0,
+                    .enabled = true,
+                    .isInternal = false,
+                    .hitCount = 0,
+                    .ignoreCount = 0,
+                    .condition = {},
+                    .isLogOnly = false,
+                    .logFormat = {},
+                    .scriptCode = {},
+                    .scriptLanguage = "python",
+                    .type = bp_type,
+                    .hardwareSlot = -1,
+                    .isPageGuardFallback = true,
+                    .symbol = symbol
+                };
+                breakpoints_[addr.value()] = bp;
+                return true;
+            }
+        }
+        return false; // Hardware slots occupied and fallback not available/failed
     }
 
     if (!setHwBp_(free_slot, addr, type, size)) {
@@ -119,6 +167,7 @@ bool BreakpointManager::addHardwareBreakpoint(Address addr, HardwareBpType type,
         .scriptLanguage = "python",
         .type = bp_type,
         .hardwareSlot = free_slot,
+        .isPageGuardFallback = false,
         .symbol = symbol
     };
 
@@ -132,7 +181,11 @@ bool BreakpointManager::removeBreakpoint(Address addr) {
         return false;
     }
 
-    if (it->second.type != BreakpointType::Software) {
+    if (it->second.isPageGuardFallback) {
+        if (pageGuardMgr_) {
+            pageGuardMgr_->removeGuard(addr);
+        }
+    } else if (it->second.type != BreakpointType::Software) {
         if (it->second.hardwareSlot >= 0 && it->second.hardwareSlot < 4) {
             if (clearHwBp_) {
                 clearHwBp_(it->second.hardwareSlot);
@@ -152,6 +205,15 @@ bool BreakpointManager::removeBreakpoint(Address addr) {
 bool BreakpointManager::enableBreakpoint(Address addr) {
     auto it = breakpoints_.find(addr.value());
     if (it == breakpoints_.end() || it->second.enabled) {
+        return false;
+    }
+
+    if (it->second.isPageGuardFallback) {
+        if (pageGuardMgr_) {
+            pageGuardMgr_->enableGuard(addr);
+            it->second.enabled = true;
+            return true;
+        }
         return false;
     }
 
@@ -186,6 +248,15 @@ bool BreakpointManager::disableBreakpoint(Address addr) {
         return false;
     }
 
+    if (it->second.isPageGuardFallback) {
+        if (pageGuardMgr_) {
+            pageGuardMgr_->disableGuard(addr);
+            it->second.enabled = false;
+            return true;
+        }
+        return false;
+    }
+
     if (it->second.type != BreakpointType::Software) {
         if (it->second.hardwareSlot >= 0 && it->second.hardwareSlot < 4) {
             if (clearHwBp_) {
@@ -205,6 +276,7 @@ bool BreakpointManager::disableBreakpoint(Address addr) {
     it->second.enabled = false;
     return true;
 }
+
 
 bool BreakpointManager::toggleBreakpoint(Address addr) {
     if (hasBreakpoint(addr)) {
@@ -354,4 +426,23 @@ bool BreakpointManager::finishStepOver() {
     return false;
 }
 
+std::optional<Address> BreakpointManager::getHardwareSlotAddress(int slot) const {
+    if (slot < 0 || slot >= 4) return std::nullopt;
+    for (const auto& [_, bp] : breakpoints_) {
+        if (bp.hardwareSlot == slot && bp.enabled) {
+            return bp.address;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<Address> BreakpointManager::attributeDr6(const Dr6Status& dr6) const {
+    int slot = dr6.hitSlot();
+    if (slot >= 0) {
+        return getHardwareSlotAddress(slot);
+    }
+    return std::nullopt;
+}
+
 } // namespace edb_next
+

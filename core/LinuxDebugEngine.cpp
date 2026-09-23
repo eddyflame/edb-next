@@ -439,6 +439,12 @@ uint64_t LinuxDebugEngine::getDebugRegister(Tid tid, int reg_index) const {
     return static_cast<uint64_t>(val);
 }
 
+Dr6Status LinuxDebugEngine::getDr6Status(Tid tid) const {
+    uint64_t val = getDebugRegister(tid, 6);
+    return Dr6Status::fromRaw(val);
+}
+
+
 std::vector<MemoryRegion> LinuxDebugEngine::getMemoryRegions() const {
     std::vector<MemoryRegion> regions;
     if (pid_ <= 0) return regions;

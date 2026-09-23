@@ -130,24 +130,34 @@ void BreakpointManagerView::refresh() {
 
         // 3: Type
         QString type_str;
-        switch (bp.type) {
-            case BreakpointType::Software:
-                type_str = "Software (INT 3)";
-                break;
-            case BreakpointType::HardwareExecute:
-                type_str = QString("HW Exec (DR%1)").arg(bp.hardwareSlot);
-                break;
-            case BreakpointType::HardwareWrite:
-                type_str = QString("HW Write Watch (DR%1)").arg(bp.hardwareSlot);
-                break;
-            case BreakpointType::HardwareReadWrite:
-                type_str = QString("HW Access Watch (DR%1)").arg(bp.hardwareSlot);
-                break;
+        if (bp.isPageGuardFallback) {
+            type_str = QString("PG-Fallback (%1)").arg(
+                bp.type == BreakpointType::HardwareWrite ? "Write Watch" :
+                (bp.type == BreakpointType::HardwareReadWrite ? "Access Watch" : "Exec")
+            );
+        } else {
+            switch (bp.type) {
+                case BreakpointType::Software:
+                    type_str = "Software (INT 3)";
+                    break;
+                case BreakpointType::HardwareExecute:
+                    type_str = QString("HW Exec (DR%1)").arg(bp.hardwareSlot);
+                    break;
+                case BreakpointType::HardwareWrite:
+                    type_str = QString("HW Write Watch (DR%1)").arg(bp.hardwareSlot);
+                    break;
+                case BreakpointType::HardwareReadWrite:
+                    type_str = QString("HW Access Watch (DR%1)").arg(bp.hardwareSlot);
+                    break;
+            }
         }
         auto* item_type = new QTableWidgetItem(type_str);
-        if (bp.type != BreakpointType::Software) {
+        if (bp.isPageGuardFallback) {
+            item_type->setForeground(QColor(240, 140, 70));
+        } else if (bp.type != BreakpointType::Software) {
             item_type->setForeground(QColor(230, 180, 80));
         }
+
 
         // 4: Hit Count
         auto* item_hits = new QTableWidgetItem(QString::number(bp.hitCount));

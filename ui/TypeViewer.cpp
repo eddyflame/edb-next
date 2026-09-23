@@ -9,6 +9,8 @@
 #include <QGuiApplication>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QFileDialog>
+#include <filesystem>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QPlainTextEdit>
@@ -54,6 +56,10 @@ void TypeViewer::setupUi() {
     defineBtn_->setStyleSheet("QPushButton { background-color: #1e3a5f; color: #93c5fd; font-weight: bold; padding: 4px 10px; border-radius: 3px; } QPushButton:hover { background-color: #2563eb; color: white; }");
     connect(defineBtn_, &QPushButton::clicked, this, &TypeViewer::onDefineStructClicked);
 
+    importBtfBtn_ = new QPushButton("📦 Import BTF...", this);
+    importBtfBtn_->setStyleSheet("QPushButton { background-color: #3b2063; color: #d8b4fe; font-weight: bold; padding: 4px 10px; border-radius: 3px; } QPushButton:hover { background-color: #6b21a8; color: white; }");
+    connect(importBtfBtn_, &QPushButton::clicked, this, &TypeViewer::onImportBtfClicked);
+
     auto* addrLabel = new QLabel("Address:", this);
     addrLabel->setStyleSheet("font-weight: bold;");
     addressEdit_ = new QLineEdit(this);
@@ -75,12 +81,14 @@ void TypeViewer::setupUi() {
     topLayout->addWidget(structLabel);
     topLayout->addWidget(structCombo_);
     topLayout->addWidget(defineBtn_);
+    topLayout->addWidget(importBtfBtn_);
     topLayout->addSpacing(10);
     topLayout->addWidget(addrLabel);
     topLayout->addWidget(addressEdit_);
     topLayout->addWidget(inspectBtn_);
     topLayout->addWidget(refreshBtn_);
     topLayout->addWidget(sizeLabel_, 1);
+
 
     mainLayout->addLayout(topLayout);
 
@@ -402,4 +410,50 @@ void TypeViewer::onDefineStructClicked() {
     }
 }
 
+void TypeViewer::onImportBtfClicked() {
+    if (!session_) return;
+
+    bool hasVmlinux = std::filesystem::exists("/sys/kernel/btf/vmlinux");
+
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle("Import BTF Types");
+    msgBox.setText("Select BTF Source to Import:");
+    QAbstractButton* vmlinuxBtn = nullptr;
+    if (hasVmlinux) {
+        vmlinuxBtn = msgBox.addButton("Kernel (/sys/kernel/btf/vmlinux)", QMessageBox::ActionRole);
+    }
+    QAbstractButton* fileBtn = msgBox.addButton("ELF / BTF File...", QMessageBox::ActionRole);
+    QAbstractButton* cancelBtn = msgBox.addButton(QMessageBox::Cancel);
+
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == cancelBtn) {
+        return;
+    }
+
+    size_t imported = 0;
+    if (vmlinuxBtn && msgBox.clickedButton() == vmlinuxBtn) {
+        if (session_->btfParser().parseVmlinux()) {
+            imported = session_->btfParser().exportToTypeManager(session_->typeManager());
+        }
+    } else if (msgBox.clickedButton() == fileBtn) {
+        QString path = QFileDialog::getOpenFileName(this, "Select ELF Binary or BTF file", "", "All Files (*)");
+        if (!path.isEmpty()) {
+            if (session_->btfParser().parseElfSection(path.toStdString()) || session_->btfParser().parseFile(path.toStdString())) {
+                imported = session_->btfParser().exportToTypeManager(session_->typeManager());
+            }
+        }
+    }
+
+    if (imported > 0) {
+        updateStructList();
+        QMessageBox::information(this, "BTF Import Successful",
+            QString("Successfully imported %1 compact struct/union types into TypeManager.").arg(imported));
+    } else {
+        QMessageBox::warning(this, "BTF Import Failed",
+            "Could not parse any BTF types from the selected source.");
+    }
+}
+
 } // namespace edb_next
+

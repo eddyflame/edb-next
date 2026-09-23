@@ -130,6 +130,9 @@ public:
     [[nodiscard]] const ScanOptions& activeOptions() const noexcept { return activeOptions_; }
 
     static size_t getDataTypeSize(ScanDataType type, const std::string& inputStr = "");
+    static bool isNeonSupported() noexcept;
+    static bool isAvx2Supported() noexcept;
+    static std::string activeSimdEngineName() noexcept;
 
 private:
     std::vector<ScanResult> results_;

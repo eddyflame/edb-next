@@ -51,7 +51,13 @@ Built from scratch using **C++23**, **Qt 6.4+**, and the **Capstone Disassembly 
 - ⚡ **SSA Micro-IR & Z3 SMT Symbolic Execution (`MicroIR`, `SymbolicEngine`)**: Lifts x86_64 machine code into a clean SSA 3-Address Code Micro-IR. Features constant folding, opaque predicate simplification, and dead code elimination. Deeply integrates the Z3 SMT C++23 solver to automatically compute satisfying concrete inputs for target branch reachability (`solveReachability`) and perform dynamic register/memory taint tracking.
 - 🔌 **Headless DAP (Debug Adapter Protocol) Server (`DapServer`, `--dap`)**: Full Microsoft DAP JSON-RPC protocol implementation for headless automation and native integration with modern IDEs like VS Code and Neovim (`nvim-dap`). Supports initialize, launch, attach, threads, stackTrace, scopes, variables, continue, next, stepIn, stepBack, readMemory, and disassemble.
 - 🪝 **Linux Kernel eBPF & Uprobes Hook Engine (`EbpfHookEngine`)**: High-throughput non-intrusive userspace function probe attachment via kernel `/sys/kernel/tracing` with asynchronous ring buffer and graceful non-privileged fallback.
+- 🌀 **Linux `userfaultfd` Stealth Page-Fault & Dirty-Page Interceptor (`UserfaultFdEngine`)**: Native Linux `userfaultfd` file descriptor event loop registration for memory address ranges; enables zero-`0xCC` stealth write watchpoints (`UFFDIO_REGISTER_MODE_WP`) and dirty-page logging without altering ELF segment permissions or invoking `mprotect`.
+- 📦 **BTF (BPF Type Format) Kernel & Compact Type System (`BtfParser`)**: Native parsing of Linux `/sys/kernel/btf/vmlinux` (over 170,000 types) and ELF `.BTF` sections; instantly extracts compact structures, unions, and bitfields, exporting directly to `TypeManager` for instant reverse engineering in stripped binaries.
+- 🎯 **DR6 Precision Hardware Attribution & Automatic PageGuard Fallback**: Decodes x86_64 DR6 status register B0~B3 flags to attribute the exact hit slot and address. When the 4 physical DR0~DR3 registers are exhausted, `BreakpointManager` transparently falls back to `PageGuard` soft watchpoints (`[PG-Fallback]`).
+- 🛡️ **Advanced Anti-Anti-Debugging Deep Stealth Engine (`AntiAntiDebugEngine`)**: Automated `/proc/[pid]/status` `TracerPid: 0` sanitization, microsecond single-step `RDTSC` cycle delta smoothing, and active detection of `ptrace(PTRACE_TRACEME)` and `prctl(PR_SET_DUMPABLE, 0)`.
+- ⚡ **Cross-Architecture ARM64 NEON Vectorized Memory Scanner**: 128-bit NEON SIMD vectorization alongside AVX2 (256-bit) with unified cross-arch dispatching for line-rate pattern matching on ARM64 Linux and Apple Silicon.
 - 📖 **DWARF Source-Level Debugging & Mixed-Mode Disassembly**: Parses `.debug_info` and `.debug_line` with `libdw` for bidirectional address-to-source mapping. Inline source banner rendering in `DisassemblyView` (`Ctrl+Shift+S`), dedicated `SourceView` browser (`Alt+S`), source line breakpoints, and source stepping.
+
 - 🐍 **Embedded Dual Scripting Engine (Python 3 & Lua 5.4)**: Native embedded CPython 3 and Lua 5.4 engines managed by `ScriptEngineManager`. Rich `edb` module exposing memory/registers/breakpoints/stepping/eval APIs, dark geek Script Console (`Alt+P`), and inline CommandBar execution (`py <code...>` / `lua <code...>`); supports script-driven breakpoint actions with silent hook bypass (`return False` / `return false`) for non-intrusive microsecond-level runtime instrumentation.
 - 🏷️ **Intelligent C++ Symbol Demangling**: Integrated GNU `<cxxabi.h>` `abi::__cxa_demangle` across global Symbol Viewer, call stack backtraces, disassembly banners, register smart dereferences, and stack memory annotations, displaying clean `calculate_fib(int)` with tooltip mangled string preservation and bidirectional search.
 - 🎯 **Fine-Grained Hardware Watchpoint UI**: Right-click any byte cell in Hex Dumps to instantly set 1/2/4/8-byte hardware write watchpoints, read/write watchpoints, or execution breakpoints, complete with prominent deep red cell highlighting (`QColor(160, 40, 40, 160)`).
@@ -162,7 +168,9 @@ cmake --build build -j$(nproc)
 ./build/test_exit           # Validates clean process teardown without crashes
 ./build/test_nextgen        # Validates pidfd event loop, target FD introspection, libclang AST, SQLite3+zstd, and C++23 monads
 ./build/test_p4_advanced_re # Validates SSA Micro-IR, Z3 symbolic execution, decompiler, TTD step-back, DAP server, and eBPF
+./build/test_p5_ultimate    # Validates userfaultfd, BTF compact types, DR6 attribution & PageGuard fallback, anti-anti-debug, and NEON
 ```
+
 
 ### 4. Launch edb-next
 
