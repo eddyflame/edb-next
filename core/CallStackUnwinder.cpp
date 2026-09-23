@@ -234,10 +234,6 @@ std::vector<StackFrame> unwindViaRbpChain(
 
         if (return_addr.isNull()) break;
 
-        if (saved_rbp <= cur_rbp && !saved_rbp.isNull()) {
-            break;
-        }
-
         bool valid_return_addr = false;
         for (const auto& r : regions) {
             if (r.contains(return_addr) && r.isReadable()) {
@@ -255,7 +251,9 @@ std::vector<StackFrame> unwindViaRbpChain(
             .moduleName = findModuleName(return_addr, regions)
         });
 
-        if (saved_rbp.isNull() || saved_rbp.value() > 0x7fffffffffffULL) {
+        // Check if next frame's RBP is valid to continue walking the chain.
+        // Stack grows down: next caller's RBP must be strictly higher in memory.
+        if (saved_rbp.isNull() || saved_rbp <= cur_rbp || saved_rbp.value() > 0x7fffffffffffULL) {
             break;
         }
 
@@ -278,17 +276,19 @@ std::vector<StackFrame> CallStackUnwinder::unwind(DebugSession& session, size_t 
 
     // 1. Primary: Try DWARF CFI unwinding via libdwfl (.eh_frame / .debug_frame state machine)
     auto cfiFrames = unwindViaDwarfCfi(session, regions, max_depth);
-    if (cfiFrames.size() >= 2) {
-        return cfiFrames;
-    }
 
     // 2. Secondary: Fallback to RBP stack frame chain walking
     auto rbpFrames = unwindViaRbpChain(session, regions, max_depth);
-    if (!cfiFrames.empty() && rbpFrames.size() <= cfiFrames.size()) {
+
+    // Prefer whichever unwinder successfully recovered more frames
+    if (!cfiFrames.empty() && cfiFrames.size() >= rbpFrames.size()) {
         return cfiFrames;
     }
     if (!rbpFrames.empty()) {
         return rbpFrames;
+    }
+    if (!cfiFrames.empty()) {
+        return cfiFrames;
     }
 
     // 3. Fallback: Frame 0 only
