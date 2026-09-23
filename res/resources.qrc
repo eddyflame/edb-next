@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="edb-next.png">edb-next.png</file>
+        <file alias="edb-next.svg">edb-next.svg</file>
+        <file alias="res/edb-next.png">edb-next.png</file>
+        <file alias="res/edb-next.svg">edb-next.svg</file>
+    </qresource>
+</RCC>

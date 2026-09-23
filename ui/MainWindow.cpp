@@ -24,6 +24,7 @@
 #include <QTabBar>
 #include <QCheckBox>
 #include <QDialogButtonBox>
+#include <QIcon>
 
 namespace edb_next {
 
@@ -32,6 +33,8 @@ MainWindow::MainWindow(QWidget* parent)
       pluginMgr_(this, this),
       patchMgr_(this)
 {
+    setWindowIcon(QIcon(":/res/edb-next.png"));
+
     setupUi();
     setupActions();
     setupMenusAndToolbars();

@@ -199,6 +199,9 @@ chmod +x edb-next-x86_64.AppImage
 ./scripts/docker_build_appimage.sh
 ```
 
+#### 桌面集成与原生应用图标
+`edb-next` 通过 Qt 资源系统（`:/res/edb-next.png`）将高分辨率科技风应用图标直接内嵌于可执行二进制中，无论在 Wayland 还是 X11 桌面环境下运行均可即时呈现原生窗口与任务栏图标。桌面规范入口文件（`.desktop`）与 SVG/PNG 矢量/位图资产统一存放于 [`res/`](res/) 目录。
+
 ---
 
 ## 项目工程文档目录 (Documentation)

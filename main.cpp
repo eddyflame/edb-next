@@ -1,5 +1,6 @@
 #include "ui/MainWindow.hpp"
 #include <QApplication>
+#include <QIcon>
 #include <QStyleFactory>
 #include <QPalette>
 #include <QColor>
@@ -195,6 +196,7 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("edb-next");
     app.setApplicationVersion("1.0.0");
     app.setOrganizationName("edb-next");
+    app.setWindowIcon(QIcon(":/res/edb-next.png"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription("EDB Next: Next-Generation Linux x86-64 Binary Debugger");

@@ -199,6 +199,9 @@ chmod +x edb-next-x86_64.AppImage
 ./scripts/docker_build_appimage.sh
 ```
 
+#### Desktop Integration & Icon
+`edb-next` embeds its high-resolution application icon directly into the binary via Qt resources (`:/res/edb-next.png`), providing immediate window and taskbar branding across Wayland and X11 environments. The desktop entry file and SVG/PNG vector/bitmap assets are organized under [`res/`](res/).
+
 ---
 
 ## Documentation
