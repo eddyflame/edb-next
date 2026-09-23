@@ -22,6 +22,8 @@ public Q_SLOTS:
     void gotoAddressPrompt();
     void gotoAddress(Address addr);
     void followRip();
+    void setFollowRip(bool follow) noexcept { followRip_ = follow; }
+    [[nodiscard]] bool isFollowingRip() const noexcept { return followRip_; }
     void runToSelection();
     void patchBytesPrompt();
     void fillWithNops();

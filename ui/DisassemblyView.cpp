@@ -480,7 +480,35 @@ void DisassemblyView::refresh() {
         return;
     }
 
-    Address start_addr = (followRip_ || viewAddress_.isNull()) ? session->registers().rip() : viewAddress_;
+    Address rip = session->registers().rip();
+    Address start_addr;
+
+    if (followRip_) {
+        // Smooth context-preserving stepping (x64dbg / IDA standard):
+        // If RIP is already present within currentInstructions_ with sufficient lookahead,
+        // preserve viewAddress_ so the table does not jerk or scramble every single instruction.
+        bool ripInRange = false;
+        if (!viewAddress_.isNull() && !currentInstructions_.empty()) {
+            for (size_t i = 0; i < currentInstructions_.size(); ++i) {
+                if (currentInstructions_[i].address == rip) {
+                    if (i + 5 < currentInstructions_.size()) {
+                        ripInRange = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (ripInRange) {
+            start_addr = viewAddress_;
+        } else {
+            start_addr = rip;
+            viewAddress_ = rip;
+        }
+    } else {
+        start_addr = viewAddress_.isNull() ? rip : viewAddress_;
+    }
+
     if (start_addr.isNull()) {
         setRowCount(0);
         displayRows_.clear();
@@ -722,8 +750,15 @@ void DisassemblyView::refresh() {
         }
     }
 
-    if (followRip_ && target_scroll_row >= 0) {
-        scrollToItem(item(target_scroll_row, 0), QAbstractItemView::PositionAtCenter);
+    if (target_scroll_row >= 0) {
+        if (followRip_) {
+            setCurrentCell(target_scroll_row, 0);
+            selectRow(target_scroll_row);
+            scrollToItem(item(target_scroll_row, 0), QAbstractItemView::EnsureVisible);
+        }
+    } else if (!followRip_ && rowCount() > 0 && currentRow() < 0) {
+        setCurrentCell(0, 0);
+        selectRow(0);
     }
 }
 
@@ -849,22 +884,25 @@ const DisassembledInstruction* DisassemblyView::instructionAtRow(int row) const 
 }
 
 void DisassemblyView::handleCellDoubleClicked(int row, int col) {
-    if (col == 0 || col == 3) {
-        // Double clicking mark column or instruction column: follow branch/call if branch/call instruction!
+    if (col == 0) {
+        // Double-clicking Mark column toggles breakpoint cleanly
+        if (auto addr = addressAtRow(row)) {
+            if (auto session = session_.lock()) {
+                session->toggleBreakpoint(*addr);
+                refresh();
+                Q_EMIT breakpointToggled(*addr);
+            }
+        }
+        return;
+    }
+
+    if (col == 1 || col == 3) {
+        // Double clicking address or instruction column: follow branch/call if branch/call instruction!
         if (auto* insn = instructionAtRow(row)) {
             auto session = session_.lock();
             if (auto target = extractBranchTarget(*insn, session)) {
                 gotoAddress(*target);
                 return;
-            }
-        }
-        if (col == 0) {
-            if (auto addr = addressAtRow(row)) {
-                if (auto session = session_.lock()) {
-                    session->toggleBreakpoint(*addr);
-                    refresh();
-                    Q_EMIT breakpointToggled(*addr);
-                }
             }
         }
         return;
@@ -1347,6 +1385,30 @@ void DisassemblyView::onCurrentCellChanged(int currentRow, int currentColumn, in
 void DisassemblyView::paintEvent(QPaintEvent* event) {
     QTableWidget::paintEvent(event);
     QPainter painter(viewport());
+
+    // High-contrast x64dbg-style indicator bar on pending execution line (RIP)
+    auto session = session_.lock();
+    if (session && session->state() != SessionState::Stopped) {
+        Address rip = session->registers().rip();
+        for (int r = 0; r < rowCount(); ++r) {
+            if (auto addr = addressAtRow(r)) {
+                if (*addr == rip) {
+                    int y = rowViewportPosition(r);
+                    int h = rowHeight(r);
+                    if (y + h > 0 && y < viewport()->height()) {
+                        // 3px emerald-green accent bar at left edge of Mark column
+                        painter.fillRect(QRect(0, y, 3, h), QColor(80, 220, 140));
+                        // Subtle top & bottom highlight accent lines across the entire row
+                        painter.setPen(QColor(80, 220, 140, 90));
+                        painter.drawLine(0, y, viewport()->width(), y);
+                        painter.drawLine(0, y + h - 1, viewport()->width(), y + h - 1);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     drawFlowLines(painter);
 }
 
