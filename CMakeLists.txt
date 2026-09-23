@@ -16,6 +16,10 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CAPSTONE REQUIRED capstone)
 pkg_check_modules(ZSTD REQUIRED libzstd)
+pkg_check_modules(Z3 z3)
+if (NOT Z3_LIBRARIES)
+    find_library(Z3_LIBRARIES NAMES z3 libz3 libz3.so.4 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+endif()
 
 find_library(LIBDW_LIBRARIES NAMES dw libdw.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
 find_library(LIBELF_LIBRARIES NAMES elf libelf.so.1 PATHS /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
@@ -134,6 +138,12 @@ set(CORE_SOURCES
     core/CFGBuilder.cpp
     core/ScriptApiBridge.cpp
     core/ClangAstParser.cpp
+    core/MicroIR.cpp
+    core/SymbolicEngine.cpp
+    core/DecompilerEngine.cpp
+    core/TimeTravelEngine.cpp
+    core/DapServer.cpp
+    core/EbpfHookEngine.cpp
 )
 
 add_library(edb_core STATIC ${CORE_SOURCES})
@@ -149,6 +159,7 @@ target_link_libraries(edb_core
     ${KEYSTONE_LIBRARIES}
     ${ZYDIS_LIBRARIES}
     ${ZSTD_LIBRARIES}
+    ${Z3_LIBRARIES}
     ${CMAKE_DL_LIBS}
     pthread
 )
@@ -192,6 +203,8 @@ set(UI_SOURCES
     ui/StackView.cpp
     ui/MemoryScannerView.cpp
     ui/TypeViewer.cpp
+    ui/DecompilerView.cpp
+    ui/TimeTravelWidget.cpp
     ui/MainWindow.cpp
 )
 
@@ -303,6 +316,20 @@ target_link_libraries(test_nextgen
     pthread
 )
 add_dependencies(test_nextgen build_test_target)
+
+# Advanced RE (P4) test executable (Micro-IR, Z3, Decompiler, TTD, DAP, eBPF)
+add_executable(test_p4_advanced_re tests/test_p4_advanced_re.cpp)
+target_link_libraries(test_p4_advanced_re
+    PRIVATE
+    edb_core
+    Qt6::Core
+    ${CAPSTONE_LIBRARIES}
+    ${Z3_LIBRARIES}
+    ${ZSTD_LIBRARIES}
+    ${CMAKE_DL_LIBS}
+    pthread
+)
+add_dependencies(test_p4_advanced_re build_test_target)
 
 # ==============================================================================
 # Installation Rules (Standard FHS & AppImage Packaging Support)

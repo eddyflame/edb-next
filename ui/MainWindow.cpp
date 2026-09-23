@@ -296,6 +296,18 @@ void MainWindow::setupActions() {
     actRunUntilReturn_->setShortcut(QKeySequence("Ctrl+F9"));
     connect(actRunUntilReturn_, &QAction::triggered, this, &MainWindow::onRunUntilReturnTriggered);
 
+    actStepBack_ = new QAction("◀ Step &Back (TTD)", this);
+    actStepBack_->setShortcut(QKeySequence("Ctrl+F7"));
+    connect(actStepBack_, &QAction::triggered, this, &MainWindow::onStepBackTriggered);
+
+    actReverseContinue_ = new QAction("⏮ &Reverse Continue (TTD)", this);
+    actReverseContinue_->setShortcut(QKeySequence("Ctrl+Shift+F9"));
+    connect(actReverseContinue_, &QAction::triggered, this, &MainWindow::onReverseContinueTriggered);
+
+    actDecompiler_ = new QAction("⚡ &Decompiler", this);
+    actDecompiler_->setShortcut(QKeySequence("F5"));
+    connect(actDecompiler_, &QAction::triggered, this, &MainWindow::onDecompilerTriggered);
+
     actOrigin_ = new QAction("📍 &Origin (Go to RIP)", this);
     actOrigin_->setShortcuts({QKeySequence("*"), QKeySequence(Qt::Key_Asterisk), QKeySequence(Qt::Key_multiply)});
     connect(actOrigin_, &QAction::triggered, this, [this] {
@@ -480,6 +492,8 @@ void MainWindow::setupMenusAndToolbars() {
         }
     });
 
+    menuView_->addAction(actDecompiler_);
+
     // x64dbg-aligned global muscle memory shortcuts
     auto* sc_dump_alt = new QShortcut(QKeySequence("Alt+D"), this);
     connect(sc_dump_alt, &QShortcut::activated, this, [this]{ onSelectBottomTabTriggered(0); });
@@ -515,7 +529,11 @@ void MainWindow::setupMenusAndToolbars() {
     menuDebug_->addAction(actStepOver_);
     menuDebug_->addAction(actStepOut_);
     menuDebug_->addAction(actRunUntilReturn_);
+    menuDebug_->addAction(actStepBack_);
+    menuDebug_->addAction(actReverseContinue_);
     menuDebug_->addAction(actOrigin_);
+    menuDebug_->addSeparator();
+    menuDebug_->addAction(actDecompiler_);
     menuDebug_->addSeparator();
     menuDebug_->addAction(actResumePassSig_);
     menuDebug_->addAction(actStepIntoPassSig_);
@@ -1001,6 +1019,30 @@ void MainWindow::onStepOutTriggered() {
 void MainWindow::onRunUntilReturnTriggered() {
     if (auto s = sessionMgr_.activeSession()) {
         s->runUntilReturn();
+    }
+}
+
+void MainWindow::onStepBackTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        if (auto s = tab->session()) {
+            logMessage("Time-Travel: Stepping back one instruction...");
+            s->stepBack();
+        }
+    }
+}
+
+void MainWindow::onReverseContinueTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        if (auto s = tab->session()) {
+            logMessage("Time-Travel: Reversing execution to previous breakpoint...");
+            s->reverseContinue();
+        }
+    }
+}
+
+void MainWindow::onDecompilerTriggered() {
+    if (auto* tab = currentSessionTabWidget()) {
+        tab->showDecompilerView();
     }
 }
 

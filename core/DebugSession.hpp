@@ -28,6 +28,7 @@
 #include "RendezvousManager.hpp"
 #include "MemoryScanner.hpp"
 #include "TypeManager.hpp"
+#include "TimeTravelEngine.hpp"
 #include "DisassemblyTypes.hpp"
 
 namespace edb_next {
@@ -229,6 +230,13 @@ public:
     [[nodiscard]] const MemoryScanner& memoryScanner() const noexcept { return memoryScanner_; }
     [[nodiscard]] TypeManager& typeManager() noexcept { return typeMgr_; }
     [[nodiscard]] const TypeManager& typeManager() const noexcept { return typeMgr_; }
+    [[nodiscard]] TimeTravelEngine& timeTravelEngine() noexcept { return timeTravelEngine_; }
+    [[nodiscard]] const TimeTravelEngine& timeTravelEngine() const noexcept { return timeTravelEngine_; }
+
+    bool stepBack();
+    bool stepForward();
+    bool reverseContinue();
+    bool seekTimeTravelFrame(size_t index);
 
     // P0-2: Multi-entry LRU incremental disassembly cache — avoids full Capstone re-decode on every step
     struct DisasmCacheEntry {
@@ -349,6 +357,7 @@ private:
     ScriptEngineManager scriptEngines_;
     MemoryScanner memoryScanner_;
     TypeManager typeMgr_;
+    TimeTravelEngine timeTravelEngine_;
 
     RegisterContext currentRegs_;
     RegisterContext previousRegs_;

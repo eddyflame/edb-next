@@ -168,7 +168,19 @@ void applyDarkTheme(QApplication& app) {
 #include <QCommandLineOption>
 #include <iostream>
 
+#include "core/DapServer.hpp"
+
 int main(int argc, char* argv[]) {
+    // 1. Check for headless DAP server mode (VS Code / Neovim debug adapter)
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--dap") {
+            edb_next::DapServer server;
+            server.run(std::cin, std::cout);
+            return 0;
+        }
+    }
+
     // Under Linux Wayland environments (GNOME/Mutter), Qt6 Wayland client-side decoration (libbradient)
     // lacks native window titlebar double-click maximization and proper Mutter window action handling.
     // Falling back to xcb (XWayland) restores full native GNOME titlebar controls, window snapping, and double-click maximization.

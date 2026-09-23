@@ -65,8 +65,11 @@ private Q_SLOTS:
     void onStepIntoPassSignalTriggered();
     void onStepOverTriggered();
     void onStepOverPassSignalTriggered();
+    void onStepBackTriggered();
+    void onReverseContinueTriggered();
     void onStepOutTriggered();
     void onRunUntilReturnTriggered();
+    void onDecompilerTriggered();
     void onPauseTriggered();
     void onTerminateTriggered();
     void onDumpCpuStateTriggered();
@@ -142,6 +145,9 @@ private:
     QAction* actStepOverPassSig_{nullptr};
     QAction* actStepOut_{nullptr};
     QAction* actRunUntilReturn_{nullptr};
+    QAction* actStepBack_{nullptr};
+    QAction* actReverseContinue_{nullptr};
+    QAction* actDecompiler_{nullptr};
     QAction* actOrigin_{nullptr};
     QAction* actPause_{nullptr};
     QAction* actTerminate_{nullptr};
