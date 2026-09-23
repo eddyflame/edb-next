@@ -90,6 +90,9 @@ public:
     [[nodiscard]] std::vector<Tid> enumerateTids() const override;
 
     // Introspection
+    Result<int> getTargetFd(int targetFd) override;
+    std::vector<TargetFdInfo> enumerateTargetFds() override;
+
     [[nodiscard]] std::vector<MemoryRegion> getMemoryRegions() const override;
     [[nodiscard]] std::vector<ThreadInfo> getThreads() const override;
     [[nodiscard]] Pid pid() const noexcept override { return pid_.load(); }

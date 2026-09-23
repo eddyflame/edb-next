@@ -37,6 +37,9 @@ struct StructField {
     size_t alignment{4};
     size_t arrayCount{1};
     bool isPointer{false};
+    uint32_t bitOffset{0}; // Bit offset within byte (0..7)
+    uint32_t bitWidth{0};  // Bit width (e.g. 1..64, 0 = non-bitfield)
+    bool isBitfield{false};
 };
 
 struct StructDefinition {
@@ -56,6 +59,9 @@ struct EvaluatedField {
     std::vector<uint8_t> rawBytes;
     std::string formattedValue;
     uint64_t pointerTarget{0};
+    uint32_t bitOffset{0};
+    uint32_t bitWidth{0};
+    bool isBitfield{false};
 };
 
 struct EvaluatedStruct {

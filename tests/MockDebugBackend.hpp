@@ -87,6 +87,8 @@ public:
     }
 
     // Introspection
+    Result<int> getTargetFd(int) override { return Result<int>::Err("Not supported in mock"); }
+    std::vector<TargetFdInfo> enumerateTargetFds() override { return {}; }
     std::vector<MemoryRegion> getMemoryRegions() const override { return fakeRegions_; }
     std::vector<ThreadInfo>   getThreads() const override { return {}; }
     Pid  pid()       const noexcept override { return pid_; }

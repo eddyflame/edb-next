@@ -1,4 +1,5 @@
 #include "TypeManager.hpp"
+#include "ClangAstParser.hpp"
 #include "IDebugBackend.hpp"
 #include <sstream>
 #include <iomanip>
@@ -71,6 +72,18 @@ std::string StructDefinition::formatFieldValue(const StructField& field, const u
 
     std::ostringstream oss;
 
+    if (field.isBitfield && field.bitWidth > 0) {
+        uint64_t raw = 0;
+        size_t bytesToRead = std::min(field.size, sizeof(uint64_t));
+        if (bytesToRead > avail) bytesToRead = avail;
+        std::memcpy(&raw, ptr, bytesToRead);
+        uint64_t shifted = (field.bitOffset < 64) ? (raw >> field.bitOffset) : 0;
+        uint64_t mask = (field.bitWidth >= 64) ? ~0ULL : ((1ULL << field.bitWidth) - 1);
+        uint64_t val = shifted & mask;
+        oss << "0x" << std::hex << val << " (" << std::dec << val << ")";
+        return oss.str();
+    }
+
     if (field.isPointer) {
         uint64_t addr = readValAt<uint64_t>(ptr);
         oss << "0x" << std::hex << std::setw(16) << std::setfill('0') << addr;
@@ -78,7 +91,7 @@ std::string StructDefinition::formatFieldValue(const StructField& field, const u
         return oss.str();
     }
 
-    if (field.arrayCount > 1 && field.kind == FieldKind::Int8) {
+    if (field.kind == FieldKind::String || (field.arrayCount > 1 && field.kind == FieldKind::Int8)) {
         // String / char array
         size_t len = 0;
         while (len < field.size && ptr[len] != '\0') ++len;
@@ -213,6 +226,13 @@ bool TypeManager::removeStruct(const std::string& name) {
 }
 
 std::optional<StructDefinition> TypeManager::parseCStruct(const std::string& cCode, std::string* errorMsg) {
+    if (ClangAstParser::isAvailable()) {
+        auto astDef = ClangAstParser::parseCStruct(cCode, errorMsg);
+        if (astDef.has_value()) {
+            return astDef;
+        }
+    }
+
     std::string cleaned = cleanComments(cCode);
     std::string normalized;
     for (char ch : cleaned) {
@@ -431,6 +451,9 @@ std::optional<EvaluatedStruct> TypeManager::evaluate(
         ef.name = f.name;
         ef.typeName = f.typeName;
         ef.size = f.size;
+        ef.bitOffset = f.bitOffset;
+        ef.bitWidth = f.bitWidth;
+        ef.isBitfield = f.isBitfield;
 
         if (f.offset + f.size <= buffer.size()) {
             ef.rawBytes.assign(buffer.begin() + f.offset, buffer.begin() + f.offset + f.size);

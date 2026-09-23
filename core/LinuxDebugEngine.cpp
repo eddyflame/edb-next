@@ -16,6 +16,10 @@
 #include <iostream>
 #include <dirent.h>
 #include <algorithm>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/stat.h>
 
 namespace edb_next {
 
@@ -669,6 +673,123 @@ bool LinuxDebugEngine::adoptProcess(Pid pid) {
         PTRACE_O_EXITKILL;
     ::ptrace(PTRACE_SETOPTIONS, pid, nullptr, options);
     return true;
+}
+
+static int sys_pidfd_open_helper(pid_t pid, unsigned int flags) {
+#ifdef SYS_pidfd_open
+    return static_cast<int>(::syscall(SYS_pidfd_open, pid, flags));
+#else
+    errno = ENOSYS;
+    return -1;
+#endif
+}
+
+static int sys_pidfd_getfd_helper(int pidfd, int targetfd, unsigned int flags) {
+#ifdef SYS_pidfd_getfd
+    return static_cast<int>(::syscall(SYS_pidfd_getfd, pidfd, targetfd, flags));
+#else
+    errno = ENOSYS;
+    return -1;
+#endif
+}
+
+Result<int> LinuxDebugEngine::getTargetFd(int targetFd) {
+    if (pid_ <= 0) {
+        return Result<int>::Err("Process not attached");
+    }
+    int pfd = sys_pidfd_open_helper(pid_, 0);
+    if (pfd < 0) {
+        return Result<int>::Err("pidfd_open failed: " + std::string(strerror(errno)));
+    }
+    int local_fd = sys_pidfd_getfd_helper(pfd, targetFd, 0);
+    int err = errno;
+    ::close(pfd);
+
+    if (local_fd < 0) {
+        return Result<int>::Err("pidfd_getfd failed: " + std::string(strerror(err)));
+    }
+    return Result<int>::Ok(local_fd);
+}
+
+std::vector<IDebugBackend::TargetFdInfo> LinuxDebugEngine::enumerateTargetFds() {
+    std::vector<TargetFdInfo> result;
+    if (pid_ <= 0) return result;
+
+    int pfd = sys_pidfd_open_helper(pid_, 0);
+    std::string fd_dir_path = "/proc/" + std::to_string(pid_) + "/fd";
+
+    DIR* dir = ::opendir(fd_dir_path.c_str());
+    if (!dir) {
+        if (pfd >= 0) ::close(pfd);
+        return result;
+    }
+
+    struct dirent* entry = nullptr;
+    while ((entry = ::readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        int targetFd = std::atoi(entry->d_name);
+        std::string link_path = fd_dir_path + "/" + entry->d_name;
+
+        char buf[1024];
+        ssize_t len = ::readlink(link_path.c_str(), buf, sizeof(buf) - 1);
+        std::string target_path = (len > 0) ? std::string(buf, len) : "";
+
+        TargetFdInfo info;
+        info.targetFd = targetFd;
+        info.path = target_path;
+        info.type = "unknown";
+
+        if (pfd >= 0) {
+            int local_fd = sys_pidfd_getfd_helper(pfd, targetFd, 0);
+            if (local_fd >= 0) {
+                struct stat st{};
+                if (::fstat(local_fd, &st) == 0) {
+                    if (S_ISSOCK(st.st_mode)) {
+                        info.type = "socket";
+                        sockaddr_storage addr{};
+                        socklen_t addr_len = sizeof(addr);
+                        if (::getpeername(local_fd, reinterpret_cast<sockaddr*>(&addr), &addr_len) == 0) {
+                            char ip_str[INET6_ADDRSTRLEN] = {0};
+                            int port = 0;
+                            if (addr.ss_family == AF_INET) {
+                                auto* sin = reinterpret_cast<sockaddr_in*>(&addr);
+                                ::inet_ntop(AF_INET, &sin->sin_addr, ip_str, sizeof(ip_str));
+                                port = ntohs(sin->sin_port);
+                                info.extraInfo = "Connected to " + std::string(ip_str) + ":" + std::to_string(port);
+                            } else if (addr.ss_family == AF_INET6) {
+                                auto* sin6 = reinterpret_cast<sockaddr_in6*>(&addr);
+                                ::inet_ntop(AF_INET6, &sin6->sin6_addr, ip_str, sizeof(ip_str));
+                                port = ntohs(sin6->sin6_port);
+                                info.extraInfo = "Connected to [" + std::string(ip_str) + "]:" + std::to_string(port);
+                            }
+                        } else {
+                            info.extraInfo = "Listening / Unconnected";
+                        }
+                    } else if (S_ISFIFO(st.st_mode)) {
+                        info.type = "pipe";
+                    } else if (S_ISREG(st.st_mode)) {
+                        info.type = "file";
+                        info.offset = ::lseek(local_fd, 0, SEEK_CUR);
+                    } else if (S_ISCHR(st.st_mode)) {
+                        info.type = "character_device";
+                    } else if (S_ISDIR(st.st_mode)) {
+                        info.type = "directory";
+                    }
+                }
+                info.flags = ::fcntl(local_fd, F_GETFL);
+                ::close(local_fd);
+            }
+        }
+        result.push_back(std::move(info));
+    }
+    ::closedir(dir);
+
+    if (pfd >= 0) ::close(pfd);
+
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        return a.targetFd < b.targetFd;
+    });
+    return result;
 }
 
 } // namespace edb_next

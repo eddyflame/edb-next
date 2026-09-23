@@ -3,140 +3,633 @@
 #include "AnnotationManager.hpp"
 #include "BreakpointManager.hpp"
 #include "PatchManager.hpp"
+
+#include <zstd.h>
+#include <dlfcn.h>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <cstring>
+#include <iostream>
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFile>
-#include <QFileInfo>
-#include <QDir>
-#include <QCryptographicHash>
-#include <sstream>
-#include <iomanip>
 
 namespace edb_next {
+
+namespace {
+
+// SQLite3 C ABI Types & Function Signatures
+typedef struct sqlite3 sqlite3;
+typedef struct sqlite3_stmt sqlite3_stmt;
+
+constexpr int SQLITE_OK = 0;
+constexpr int SQLITE_ROW = 100;
+constexpr int SQLITE_DONE = 101;
+constexpr int SQLITE_OPEN_READONLY = 0x00000001;
+constexpr int SQLITE_OPEN_READWRITE = 0x00000002;
+constexpr int SQLITE_OPEN_CREATE = 0x00000004;
+
+struct SqliteLib {
+    void* handle{nullptr};
+    int (*open_v2)(const char*, sqlite3**, int, const char*){nullptr};
+    int (*close)(sqlite3*){nullptr};
+    int (*exec)(sqlite3*, const char*, int (*)(void*, int, char**, char**), void*, char**){nullptr};
+    int (*prepare_v2)(sqlite3*, const char*, int, sqlite3_stmt**, const char**){nullptr};
+    int (*step)(sqlite3_stmt*){nullptr};
+    int (*finalize)(sqlite3_stmt*){nullptr};
+    int64_t (*column_int64)(sqlite3_stmt*, int){nullptr};
+    int (*column_int)(sqlite3_stmt*, int){nullptr};
+    const unsigned char* (*column_text)(sqlite3_stmt*, int){nullptr};
+    const void* (*column_blob)(sqlite3_stmt*, int){nullptr};
+    int (*column_bytes)(sqlite3_stmt*, int){nullptr};
+    int (*bind_int64)(sqlite3_stmt*, int, int64_t){nullptr};
+    int (*bind_int)(sqlite3_stmt*, int, int){nullptr};
+    int (*bind_text)(sqlite3_stmt*, int, const char*, int, void (*)(void*)){nullptr};
+    int (*bind_blob)(sqlite3_stmt*, int, const void*, int, void (*)(void*)){nullptr};
+    const char* (*errmsg)(sqlite3*){nullptr};
+    int (*changes)(sqlite3*){nullptr};
+
+    static SqliteLib& instance() {
+        static SqliteLib inst;
+        return inst;
+    }
+
+    bool load() {
+        if (handle) return true;
+
+        const char* candidates[] = {
+            "/usr/lib/x86_64-linux-gnu/libsqlite3.so.0",
+            "/usr/lib/libsqlite3.so.0",
+            "/usr/lib/x86_64-linux-gnu/libsqlite3.so",
+            "libsqlite3.so.0",
+            "libsqlite3.so"
+        };
+
+        for (const char* path : candidates) {
+            handle = ::dlopen(path, RTLD_NOW | RTLD_LOCAL);
+            if (handle) break;
+        }
+
+        if (!handle) return false;
+
+        #define BIND_SYM(name) name = reinterpret_cast<decltype(name)>(::dlsym(handle, "sqlite3_" #name)); \
+            if (!name) { ::dlclose(handle); handle = nullptr; return false; }
+
+        BIND_SYM(open_v2);
+        BIND_SYM(close);
+        BIND_SYM(exec);
+        BIND_SYM(prepare_v2);
+        BIND_SYM(step);
+        BIND_SYM(finalize);
+        BIND_SYM(column_int64);
+        BIND_SYM(column_int);
+        BIND_SYM(column_text);
+        BIND_SYM(column_blob);
+        BIND_SYM(column_bytes);
+        BIND_SYM(bind_int64);
+        BIND_SYM(bind_int);
+        BIND_SYM(bind_text);
+        BIND_SYM(bind_blob);
+        BIND_SYM(errmsg);
+        BIND_SYM(changes);
+
+        #undef BIND_SYM
+        return true;
+    }
+};
+
+std::vector<uint8_t> compressBytes(const void* src, size_t srcSize) {
+    if (!src || srcSize == 0) return {};
+    size_t bound = ZSTD_compressBound(srcSize);
+    std::vector<uint8_t> comp(bound);
+    size_t cSize = ZSTD_compress(comp.data(), comp.size(), src, srcSize, 3);
+    if (ZSTD_isError(cSize)) return {};
+    comp.resize(cSize);
+    return comp;
+}
+
+std::vector<uint8_t> decompressBytes(const void* src, size_t srcSize, size_t origSize) {
+    if (!src || srcSize == 0 || origSize == 0) return {};
+    std::vector<uint8_t> decomp(origSize);
+    size_t dSize = ZSTD_decompress(decomp.data(), decomp.size(), src, srcSize);
+    if (ZSTD_isError(dSize)) return {};
+    decomp.resize(dSize);
+    return decomp;
+}
+
+} // anonymous namespace
 
 DatabaseManager& DatabaseManager::instance() {
     static DatabaseManager inst;
     return inst;
 }
 
+bool DatabaseManager::isSqliteAvailable() const noexcept {
+    return SqliteLib::instance().load();
+}
+
+bool DatabaseManager::isSqliteDatabase(const std::string& filepath) const {
+    std::ifstream f(filepath, std::ios::binary);
+    if (!f.is_open()) return false;
+    char magic[16] = {0};
+    f.read(magic, 16);
+    return (std::memcmp(magic, "SQLite format 3\000", 16) == 0);
+}
+
 std::string DatabaseManager::defaultDatabasePath(const std::string& binaryPath) const {
     if (binaryPath.empty()) return "";
-
-    QFileInfo fi(QString::fromStdString(binaryPath));
-    QString db_name = fi.completeBaseName() + ".edb_db";
-
-    // Store in same directory or in ~/.config/edb-next/databases/
-    QString local_db = fi.absoluteDir().filePath(db_name);
-    return local_db.toStdString();
+    std::filesystem::path p(binaryPath);
+    std::string dbName = p.stem().string() + ".edb_db";
+    return (p.parent_path() / dbName).string();
 }
 
 bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProject& project) {
-    QJsonObject root;
-    root["version"] = 1;
-    root["binary_path"] = QString::fromStdString(project.binaryPath);
-    root["notes"] = QString::fromStdString(project.notes);
-    root["base_address"] = QString("0x%1").arg(project.baseAddress, 0, 16);
+    auto& sql = SqliteLib::instance();
+    if (!sql.load()) {
+        // Fallback to JSON if SQLite3 library is completely unavailable
+        QJsonObject root;
+        root["version"] = 1;
+        root["binary_path"] = QString::fromStdString(project.binaryPath);
+        root["notes"] = QString::fromStdString(project.notes);
+        root["base_address"] = QString("0x%1").arg(project.baseAddress, 0, 16);
 
-    // Comments
-    QJsonArray comments_arr;
-    for (const auto& [addr, text] : project.comments) {
-        QJsonObject c_obj;
-        std::ostringstream ss;
-        ss << "0x" << std::hex << addr;
-        c_obj["address"] = QString::fromStdString(ss.str());
-        c_obj["comment"] = QString::fromStdString(text);
-        comments_arr.append(c_obj);
+        QJsonArray comments_arr;
+        for (const auto& [addr, text] : project.comments) {
+            QJsonObject c_obj;
+            std::ostringstream ss;
+            ss << "0x" << std::hex << addr;
+            c_obj["address"] = QString::fromStdString(ss.str());
+            c_obj["comment"] = QString::fromStdString(text);
+            comments_arr.append(c_obj);
+        }
+        root["comments"] = comments_arr;
+
+        QJsonArray labels_arr;
+        for (const auto& [addr, text] : project.labels) {
+            QJsonObject l_obj;
+            std::ostringstream ss;
+            ss << "0x" << std::hex << addr;
+            l_obj["address"] = QString::fromStdString(ss.str());
+            l_obj["label"] = QString::fromStdString(text);
+            labels_arr.append(l_obj);
+        }
+        root["labels"] = labels_arr;
+
+        QJsonArray bm_arr;
+        for (uint64_t addr : project.bookmarks) {
+            std::ostringstream ss;
+            ss << "0x" << std::hex << addr;
+            bm_arr.append(QString::fromStdString(ss.str()));
+        }
+        root["bookmarks"] = bm_arr;
+
+        QJsonArray bp_arr;
+        for (const auto& bp : project.breakpoints) {
+            QJsonObject bp_obj;
+            std::ostringstream ss;
+            ss << "0x" << std::hex << bp.address;
+            bp_obj["address"] = QString::fromStdString(ss.str());
+            bp_obj["type"] = QString::fromStdString(bp.type);
+            bp_obj["condition"] = QString::fromStdString(bp.condition);
+            bp_obj["log_format"] = QString::fromStdString(bp.logFormat);
+            bp_obj["ignore_count"] = static_cast<int>(bp.ignoreCount);
+            bp_obj["script_code"] = QString::fromStdString(bp.scriptCode);
+            bp_obj["script_lang"] = QString::fromStdString(bp.scriptLanguage);
+            bp_arr.append(bp_obj);
+        }
+        root["breakpoints"] = bp_arr;
+
+        QJsonArray pg_arr;
+        for (const auto& pg : project.pageGuards) {
+            QJsonObject pg_obj;
+            std::ostringstream ss;
+            ss << "0x" << std::hex << pg.address;
+            pg_obj["address"] = QString::fromStdString(ss.str());
+            pg_obj["size"] = static_cast<int>(pg.size);
+            pg_obj["access"] = QString::fromStdString(pg.access);
+            pg_obj["comment"] = QString::fromStdString(pg.comment);
+            pg_obj["condition"] = QString::fromStdString(pg.condition);
+            pg_obj["script_code"] = QString::fromStdString(pg.scriptCode);
+            pg_obj["script_lang"] = QString::fromStdString(pg.scriptLanguage);
+            pg_arr.append(pg_obj);
+        }
+        root["page_guards"] = pg_arr;
+
+        QJsonArray w_arr;
+        for (const auto& w : project.watches) {
+            w_arr.append(QString::fromStdString(w));
+        }
+        root["watches"] = w_arr;
+
+        QJsonArray p_arr;
+        for (const auto& p : project.patches) {
+            QJsonObject p_obj;
+            std::ostringstream ss;
+            ss << "0x" << std::hex << p.address;
+            p_obj["address"] = QString::fromStdString(ss.str());
+            p_obj["original_hex"] = QString::fromStdString(p.originalHex);
+            p_obj["patched_hex"] = QString::fromStdString(p.patchedHex);
+            p_arr.append(p_obj);
+        }
+        root["patches"] = p_arr;
+
+        QFile file(QString::fromStdString(filepath));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            return false;
+        }
+        QJsonDocument doc(root);
+        file.write(doc.toJson(QJsonDocument::Indented));
+        file.close();
+        return true;
     }
-    root["comments"] = comments_arr;
 
-    // Labels
-    QJsonArray labels_arr;
-    for (const auto& [addr, text] : project.labels) {
-        QJsonObject l_obj;
-        std::ostringstream ss;
-        ss << "0x" << std::hex << addr;
-        l_obj["address"] = QString::fromStdString(ss.str());
-        l_obj["label"] = QString::fromStdString(text);
-        labels_arr.append(l_obj);
+    return saveProjectIncremental(filepath, project);
+}
+
+bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const DatabaseProject& project) {
+    auto& sql = SqliteLib::instance();
+    if (!sql.load()) return false;
+
+    sqlite3* db = nullptr;
+    int rc = sql.open_v2(filepath.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+    if (rc != SQLITE_OK || !db) return false;
+
+    const char* schema = R"(
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+
+        CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        CREATE TABLE IF NOT EXISTS comments (
+            address INTEGER PRIMARY KEY,
+            text TEXT
+        );
+        CREATE TABLE IF NOT EXISTS labels (
+            address INTEGER PRIMARY KEY,
+            text TEXT
+        );
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            address INTEGER PRIMARY KEY
+        );
+        CREATE TABLE IF NOT EXISTS breakpoints (
+            address INTEGER PRIMARY KEY,
+            type TEXT,
+            condition TEXT,
+            log_format TEXT,
+            ignore_count INTEGER,
+            script_code TEXT,
+            script_lang TEXT
+        );
+        CREATE TABLE IF NOT EXISTS page_guards (
+            address INTEGER,
+            size INTEGER,
+            access TEXT,
+            comment TEXT,
+            condition TEXT,
+            script_code TEXT,
+            script_lang TEXT,
+            PRIMARY KEY (address, size)
+        );
+        CREATE TABLE IF NOT EXISTS patches (
+            address INTEGER PRIMARY KEY,
+            original_hex TEXT,
+            patched_hex TEXT
+        );
+        CREATE TABLE IF NOT EXISTS watches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expression TEXT
+        );
+        CREATE TABLE IF NOT EXISTS blobs (
+            name TEXT PRIMARY KEY,
+            orig_size INTEGER,
+            compressed_data BLOB
+        );
+    )";
+
+    char* errMsg = nullptr;
+    sql.exec(db, schema, nullptr, nullptr, &errMsg);
+
+    sql.exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+
+    // Save metadata
+    sqlite3_stmt* stmt = nullptr;
+    const char* metaSql = "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);";
+    if (sql.prepare_v2(db, metaSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        auto insertMeta = [&](const char* k, const std::string& v) {
+            sql.bind_text(stmt, 1, k, -1, nullptr);
+            sql.bind_text(stmt, 2, v.c_str(), -1, nullptr);
+            sql.step(stmt);
+            // Reset for next binding
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, metaSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        };
+        insertMeta("version", "2");
+        insertMeta("binary_path", project.binaryPath);
+        insertMeta("notes", project.notes);
+        insertMeta("base_address", std::to_string(project.baseAddress));
+        if (stmt) sql.finalize(stmt);
     }
-    root["labels"] = labels_arr;
 
-    // Bookmarks
-    QJsonArray bm_arr;
-    for (uint64_t addr : project.bookmarks) {
-        std::ostringstream ss;
-        ss << "0x" << std::hex << addr;
-        bm_arr.append(QString::fromStdString(ss.str()));
-    }
-    root["bookmarks"] = bm_arr;
-
-    // Breakpoints
-    QJsonArray bp_arr;
-    for (const auto& bp : project.breakpoints) {
-        QJsonObject bp_obj;
-        std::ostringstream ss;
-        ss << "0x" << std::hex << bp.address;
-        bp_obj["address"] = QString::fromStdString(ss.str());
-        bp_obj["type"] = QString::fromStdString(bp.type);
-        bp_obj["condition"] = QString::fromStdString(bp.condition);
-        bp_obj["log_format"] = QString::fromStdString(bp.logFormat);
-        bp_obj["ignore_count"] = static_cast<int>(bp.ignoreCount);
-        bp_obj["script_code"] = QString::fromStdString(bp.scriptCode);
-        bp_obj["script_lang"] = QString::fromStdString(bp.scriptLanguage);
-        bp_arr.append(bp_obj);
-    }
-    root["breakpoints"] = bp_arr;
-
-    // Page Guards
-    QJsonArray pg_arr;
-    for (const auto& pg : project.pageGuards) {
-        QJsonObject pg_obj;
-        std::ostringstream ss;
-        ss << "0x" << std::hex << pg.address;
-        pg_obj["address"] = QString::fromStdString(ss.str());
-        pg_obj["size"] = static_cast<int>(pg.size);
-        pg_obj["access"] = QString::fromStdString(pg.access);
-        pg_obj["comment"] = QString::fromStdString(pg.comment);
-        pg_obj["condition"] = QString::fromStdString(pg.condition);
-        pg_obj["script_code"] = QString::fromStdString(pg.scriptCode);
-        pg_obj["script_lang"] = QString::fromStdString(pg.scriptLanguage);
-        pg_arr.append(pg_obj);
-    }
-    root["page_guards"] = pg_arr;
-
-    // Watches
-    QJsonArray w_arr;
-    for (const auto& w : project.watches) {
-        w_arr.append(QString::fromStdString(w));
-    }
-    root["watches"] = w_arr;
-
-    // Patches
-    QJsonArray p_arr;
-    for (const auto& p : project.patches) {
-        QJsonObject p_obj;
-        std::ostringstream ss;
-        ss << "0x" << std::hex << p.address;
-        p_obj["address"] = QString::fromStdString(ss.str());
-        p_obj["original_hex"] = QString::fromStdString(p.originalHex);
-        p_obj["patched_hex"] = QString::fromStdString(p.patchedHex);
-        p_arr.append(p_obj);
-    }
-    root["patches"] = p_arr;
-
-    QJsonDocument doc(root);
-    QFile file(QString::fromStdString(filepath));
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        return false;
+    // Save comments
+    sql.exec(db, "DELETE FROM comments;", nullptr, nullptr, nullptr);
+    const char* commSql = "INSERT OR REPLACE INTO comments (address, text) VALUES (?, ?);";
+    if (sql.prepare_v2(db, commSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& [addr, text] : project.comments) {
+            sql.bind_int64(stmt, 1, static_cast<int64_t>(addr));
+            sql.bind_text(stmt, 2, text.c_str(), -1, nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, commSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
     }
 
-    file.write(doc.toJson(QJsonDocument::Indented));
-    file.close();
+    // Save labels
+    sql.exec(db, "DELETE FROM labels;", nullptr, nullptr, nullptr);
+    const char* lblSql = "INSERT OR REPLACE INTO labels (address, text) VALUES (?, ?);";
+    if (sql.prepare_v2(db, lblSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& [addr, text] : project.labels) {
+            sql.bind_int64(stmt, 1, static_cast<int64_t>(addr));
+            sql.bind_text(stmt, 2, text.c_str(), -1, nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, lblSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    // Save bookmarks
+    sql.exec(db, "DELETE FROM bookmarks;", nullptr, nullptr, nullptr);
+    const char* bmSql = "INSERT OR REPLACE INTO bookmarks (address) VALUES (?);";
+    if (sql.prepare_v2(db, bmSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (uint64_t addr : project.bookmarks) {
+            sql.bind_int64(stmt, 1, static_cast<int64_t>(addr));
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, bmSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    // Save breakpoints
+    sql.exec(db, "DELETE FROM breakpoints;", nullptr, nullptr, nullptr);
+    const char* bpSql = "INSERT OR REPLACE INTO breakpoints (address, type, condition, log_format, ignore_count, script_code, script_lang) VALUES (?, ?, ?, ?, ?, ?, ?);";
+    if (sql.prepare_v2(db, bpSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& bp : project.breakpoints) {
+            sql.bind_int64(stmt, 1, static_cast<int64_t>(bp.address));
+            sql.bind_text(stmt, 2, bp.type.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 3, bp.condition.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 4, bp.logFormat.c_str(), -1, nullptr);
+            sql.bind_int(stmt, 5, static_cast<int>(bp.ignoreCount));
+            sql.bind_text(stmt, 6, bp.scriptCode.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 7, bp.scriptLanguage.c_str(), -1, nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, bpSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    // Save page guards
+    sql.exec(db, "DELETE FROM page_guards;", nullptr, nullptr, nullptr);
+    const char* pgSql = "INSERT OR REPLACE INTO page_guards (address, size, access, comment, condition, script_code, script_lang) VALUES (?, ?, ?, ?, ?, ?, ?);";
+    if (sql.prepare_v2(db, pgSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& pg : project.pageGuards) {
+            sql.bind_int64(stmt, 1, static_cast<int64_t>(pg.address));
+            sql.bind_int(stmt, 2, static_cast<int>(pg.size));
+            sql.bind_text(stmt, 3, pg.access.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 4, pg.comment.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 5, pg.condition.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 6, pg.scriptCode.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 7, pg.scriptLanguage.c_str(), -1, nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, pgSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    // Save watches
+    sql.exec(db, "DELETE FROM watches;", nullptr, nullptr, nullptr);
+    const char* wSql = "INSERT INTO watches (expression) VALUES (?);";
+    if (sql.prepare_v2(db, wSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& w : project.watches) {
+            sql.bind_text(stmt, 1, w.c_str(), -1, nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, wSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    // Save patches
+    sql.exec(db, "DELETE FROM patches;", nullptr, nullptr, nullptr);
+    const char* pSql = "INSERT OR REPLACE INTO patches (address, original_hex, patched_hex) VALUES (?, ?, ?);";
+    if (sql.prepare_v2(db, pSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& p : project.patches) {
+            sql.bind_int64(stmt, 1, static_cast<int64_t>(p.address));
+            sql.bind_text(stmt, 2, p.originalHex.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 3, p.patchedHex.c_str(), -1, nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, pSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    // Save blobs with Zstandard compression
+    sql.exec(db, "DELETE FROM blobs;", nullptr, nullptr, nullptr);
+    const char* blobSql = "INSERT OR REPLACE INTO blobs (name, orig_size, compressed_data) VALUES (?, ?, ?);";
+    if (sql.prepare_v2(db, blobSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        for (const auto& [name, rawBytes] : project.blobs) {
+            auto comp = compressBytes(rawBytes.data(), rawBytes.size());
+            sql.bind_text(stmt, 1, name.c_str(), -1, nullptr);
+            sql.bind_int64(stmt, 2, static_cast<int64_t>(rawBytes.size()));
+            sql.bind_blob(stmt, 3, comp.data(), static_cast<int>(comp.size()), nullptr);
+            sql.step(stmt);
+            sqlite3_stmt* nextStmt = nullptr;
+            sql.prepare_v2(db, blobSql, -1, &nextStmt, nullptr);
+            sql.finalize(stmt);
+            stmt = nextStmt;
+        }
+        if (stmt) sql.finalize(stmt);
+    }
+
+    sql.exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+    sql.close(db);
     return true;
 }
 
 bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject& project) {
+    if (isSqliteDatabase(filepath)) {
+        auto& sql = SqliteLib::instance();
+        if (!sql.load()) return false;
+
+        sqlite3* db = nullptr;
+        int rc = sql.open_v2(filepath.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+        if (rc != SQLITE_OK || !db) return false;
+
+        // Clear existing
+        project = DatabaseProject{};
+
+        // 1. Metadata
+        sqlite3_stmt* stmt = nullptr;
+        if (sql.prepare_v2(db, "SELECT key, value FROM metadata;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                const char* k = reinterpret_cast<const char*>(sql.column_text(stmt, 0));
+                const char* v = reinterpret_cast<const char*>(sql.column_text(stmt, 1));
+                if (k && v) {
+                    std::string key = k;
+                    std::string val = v;
+                    if (key == "binary_path") project.binaryPath = val;
+                    else if (key == "notes") project.notes = val;
+                    else if (key == "base_address") {
+                        try { project.baseAddress = std::stoull(val); } catch (...) {}
+                    }
+                }
+            }
+            sql.finalize(stmt);
+        }
+
+        // 2. Comments
+        if (sql.prepare_v2(db, "SELECT address, text FROM comments ORDER BY address;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                uint64_t addr = static_cast<uint64_t>(sql.column_int64(stmt, 0));
+                const char* t = reinterpret_cast<const char*>(sql.column_text(stmt, 1));
+                project.comments.emplace_back(addr, t ? t : "");
+            }
+            sql.finalize(stmt);
+        }
+
+        // 3. Labels
+        if (sql.prepare_v2(db, "SELECT address, text FROM labels ORDER BY address;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                uint64_t addr = static_cast<uint64_t>(sql.column_int64(stmt, 0));
+                const char* t = reinterpret_cast<const char*>(sql.column_text(stmt, 1));
+                project.labels.emplace_back(addr, t ? t : "");
+            }
+            sql.finalize(stmt);
+        }
+
+        // 4. Bookmarks
+        if (sql.prepare_v2(db, "SELECT address FROM bookmarks ORDER BY address;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                uint64_t addr = static_cast<uint64_t>(sql.column_int64(stmt, 0));
+                project.bookmarks.push_back(addr);
+            }
+            sql.finalize(stmt);
+        }
+
+        // 5. Breakpoints
+        if (sql.prepare_v2(db, "SELECT address, type, condition, log_format, ignore_count, script_code, script_lang FROM breakpoints ORDER BY address;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                DatabaseBreakpointData bp;
+                bp.address = static_cast<uint64_t>(sql.column_int64(stmt, 0));
+                const char* type = reinterpret_cast<const char*>(sql.column_text(stmt, 1));
+                const char* cond = reinterpret_cast<const char*>(sql.column_text(stmt, 2));
+                const char* logf = reinterpret_cast<const char*>(sql.column_text(stmt, 3));
+                bp.ignoreCount = static_cast<uint32_t>(sql.column_int(stmt, 4));
+                const char* scode = reinterpret_cast<const char*>(sql.column_text(stmt, 5));
+                const char* slang = reinterpret_cast<const char*>(sql.column_text(stmt, 6));
+
+                bp.type = type ? type : "Software";
+                bp.condition = cond ? cond : "";
+                bp.logFormat = logf ? logf : "";
+                bp.scriptCode = scode ? scode : "";
+                bp.scriptLanguage = slang ? slang : "python";
+                project.breakpoints.push_back(std::move(bp));
+            }
+            sql.finalize(stmt);
+        }
+
+        // 6. Page Guards
+        if (sql.prepare_v2(db, "SELECT address, size, access, comment, condition, script_code, script_lang FROM page_guards ORDER BY address;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                DatabasePageGuardData pg;
+                pg.address = static_cast<uint64_t>(sql.column_int64(stmt, 0));
+                pg.size = static_cast<size_t>(sql.column_int(stmt, 1));
+                const char* acc = reinterpret_cast<const char*>(sql.column_text(stmt, 2));
+                const char* cmt = reinterpret_cast<const char*>(sql.column_text(stmt, 3));
+                const char* cnd = reinterpret_cast<const char*>(sql.column_text(stmt, 4));
+                const char* scode = reinterpret_cast<const char*>(sql.column_text(stmt, 5));
+                const char* slang = reinterpret_cast<const char*>(sql.column_text(stmt, 6));
+
+                pg.access = acc ? acc : "NoAccess";
+                pg.comment = cmt ? cmt : "";
+                pg.condition = cnd ? cnd : "";
+                pg.scriptCode = scode ? scode : "";
+                pg.scriptLanguage = slang ? slang : "python";
+                project.pageGuards.push_back(std::move(pg));
+            }
+            sql.finalize(stmt);
+        }
+
+        // 7. Watches
+        if (sql.prepare_v2(db, "SELECT expression FROM watches ORDER BY id;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                const char* expr = reinterpret_cast<const char*>(sql.column_text(stmt, 0));
+                if (expr) project.watches.push_back(expr);
+            }
+            sql.finalize(stmt);
+        }
+
+        // 8. Patches
+        if (sql.prepare_v2(db, "SELECT address, original_hex, patched_hex FROM patches ORDER BY address;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                DatabasePatchData p;
+                p.address = static_cast<uint64_t>(sql.column_int64(stmt, 0));
+                const char* orig = reinterpret_cast<const char*>(sql.column_text(stmt, 1));
+                const char* patch = reinterpret_cast<const char*>(sql.column_text(stmt, 2));
+                p.originalHex = orig ? orig : "";
+                p.patchedHex = patch ? patch : "";
+                project.patches.push_back(std::move(p));
+            }
+            sql.finalize(stmt);
+        }
+
+        // 9. Blobs (with Zstandard decompression)
+        if (sql.prepare_v2(db, "SELECT name, orig_size, compressed_data FROM blobs ORDER BY name;", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sql.step(stmt) == SQLITE_ROW) {
+                const char* name = reinterpret_cast<const char*>(sql.column_text(stmt, 0));
+                size_t origSize = static_cast<size_t>(sql.column_int64(stmt, 1));
+                const void* blobData = sql.column_blob(stmt, 2);
+                int blobBytes = sql.column_bytes(stmt, 2);
+
+                if (name && blobData && blobBytes > 0 && origSize > 0) {
+                    auto raw = decompressBytes(blobData, static_cast<size_t>(blobBytes), origSize);
+                    project.blobs.emplace_back(name, std::move(raw));
+                }
+            }
+            sql.finalize(stmt);
+        }
+
+        sql.close(db);
+        return true;
+    }
+
+    // Backward compatibility fallback: Load legacy JSON format
     QFile file(QString::fromStdString(filepath));
     if (!file.open(QIODevice::ReadOnly)) {
         return false;
@@ -147,7 +640,7 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
 
     QJsonParseError err{};
     QJsonDocument doc = QJsonDocument::fromJson(data, &err);
-    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+    if (doc.isNull() || !doc.isObject()) {
         return false;
     }
 
@@ -162,8 +655,8 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
     for (const auto& val : comments_arr) {
         QJsonObject obj = val.toObject();
         uint64_t addr = obj["address"].toString().toULongLong(nullptr, 16);
-        std::string text = obj["comment"].toString().toStdString();
-        project.comments.emplace_back(addr, text);
+        std::string comment = obj["comment"].toString().toStdString();
+        project.comments.emplace_back(addr, comment);
     }
 
     // Labels
@@ -172,8 +665,8 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
     for (const auto& val : labels_arr) {
         QJsonObject obj = val.toObject();
         uint64_t addr = obj["address"].toString().toULongLong(nullptr, 16);
-        std::string text = obj["label"].toString().toStdString();
-        project.labels.emplace_back(addr, text);
+        std::string label = obj["label"].toString().toStdString();
+        project.labels.emplace_back(addr, label);
     }
 
     // Bookmarks
