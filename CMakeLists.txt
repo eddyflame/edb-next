@@ -144,7 +144,11 @@ set(CORE_SOURCES
     core/TimeTravelEngine.cpp
     core/DapServer.cpp
     core/EbpfHookEngine.cpp
+    core/UserfaultFdEngine.cpp
+    core/BtfParser.cpp
+    core/AntiAntiDebug.cpp
 )
+
 
 add_library(edb_core STATIC ${CORE_SOURCES})
 target_link_libraries(edb_core
@@ -331,8 +335,23 @@ target_link_libraries(test_p4_advanced_re
 )
 add_dependencies(test_p4_advanced_re build_test_target)
 
+# Ultimate Next-Gen (P5) test executable (userfaultfd, BTF, DR6 fallback, Anti-Anti-Debug, NEON)
+add_executable(test_p5_ultimate tests/test_p5_ultimate.cpp)
+target_link_libraries(test_p5_ultimate
+    PRIVATE
+    edb_core
+    Qt6::Core
+    ${CAPSTONE_LIBRARIES}
+    ${Z3_LIBRARIES}
+    ${ZSTD_LIBRARIES}
+    ${CMAKE_DL_LIBS}
+    pthread
+)
+add_dependencies(test_p5_ultimate build_test_target)
+
 # ==============================================================================
 # Installation Rules (Standard FHS & AppImage Packaging Support)
+
 # ==============================================================================
 include(GNUInstallDirs)
 

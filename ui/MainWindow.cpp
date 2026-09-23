@@ -22,6 +22,8 @@
 #include <QShortcut>
 #include <QMouseEvent>
 #include <QTabBar>
+#include <QCheckBox>
+#include <QDialogButtonBox>
 
 namespace edb_next {
 
@@ -339,6 +341,9 @@ void MainWindow::setupActions() {
     actResetLayout_ = new QAction("Reset &UI Layout", this);
     connect(actResetLayout_, &QAction::triggered, this, &MainWindow::onResetLayoutTriggered);
 
+    actAntiAntiDebug_ = new QAction("🛡️ &Anti-Anti-Debugging...", this);
+    connect(actAntiAntiDebug_, &QAction::triggered, this, &MainWindow::onAntiAntiDebugTriggered);
+
     actToggleStack_ = new QAction("Toggle &Stack View", this);
     actToggleStack_->setShortcut(QKeySequence("Shift+S"));
     connect(actToggleStack_, &QAction::triggered, this, [this]{
@@ -553,6 +558,7 @@ void MainWindow::setupMenusAndToolbars() {
     menuOptions_->addAction(actPreferences_);
     menuOptions_->addAction(actPatchManager_);
     menuOptions_->addAction(actTargetArgs_);
+    menuOptions_->addAction(actAntiAntiDebug_);
     menuOptions_->addSeparator();
     menuOptions_->addAction(actResetLayout_);
 
@@ -793,6 +799,62 @@ void MainWindow::onPluginManagerTriggered() {
     PluginManagerDialog dlg(pluginMgr_, this);
     dlg.exec();
 }
+
+void MainWindow::onAntiAntiDebugTriggered() {
+    auto session = sessionMgr_.activeSession();
+    if (!session) {
+        QMessageBox::information(this, "Anti-Anti-Debugging", "No active debug session.");
+        return;
+    }
+
+    auto& engine = session->antiAntiDebug();
+    auto cfg = engine.config();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("Anti-Anti-Debugging Options");
+    dlg.resize(460, 260);
+
+    auto* layout = new QVBoxLayout(&dlg);
+
+    auto* desc = new QLabel("Configure deep stealth and anti-reverse evasion bypasses:", &dlg);
+    desc->setStyleSheet("color: #94a3b8; font-size: 11px;");
+    layout->addWidget(desc);
+
+    auto* chkTracerPid = new QCheckBox("Spoof /proc/[pid]/status TracerPid: 0 (Bypass TracerPid self-detection)", &dlg);
+    chkTracerPid->setChecked(cfg.spoofTracerPid);
+    layout->addWidget(chkTracerPid);
+
+    auto* chkRdtsc = new QCheckBox("Smooth RDTSC Timing Deltas (Bypass single-step execution time checks)", &dlg);
+    chkRdtsc->setChecked(cfg.smoothRdtscTiming);
+    layout->addWidget(chkRdtsc);
+
+    auto* chkPtrace = new QCheckBox("Intercept ptrace(PTRACE_TRACEME) anti-debugging probes", &dlg);
+    chkPtrace->setChecked(cfg.interceptPtraceTraceme);
+    layout->addWidget(chkPtrace);
+
+    auto* chkPrctl = new QCheckBox("Intercept prctl(PR_SET_DUMPABLE, 0) anti-dumping calls", &dlg);
+    chkPrctl->setChecked(cfg.interceptPrctlDumpable);
+    layout->addWidget(chkPrctl);
+
+    auto* statsLabel = new QLabel(QString("Active detections recorded: %1").arg(engine.detectionCount()), &dlg);
+    statsLabel->setStyleSheet("color: #38bdf8; font-weight: bold; margin-top: 6px;");
+    layout->addWidget(statsLabel);
+
+    auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(btnBox);
+
+    if (dlg.exec() == QDialog::Accepted) {
+        cfg.spoofTracerPid = chkTracerPid->isChecked();
+        cfg.smoothRdtscTiming = chkRdtsc->isChecked();
+        cfg.interceptPtraceTraceme = chkPtrace->isChecked();
+        cfg.interceptPrctlDumpable = chkPrctl->isChecked();
+        engine.setConfig(cfg);
+        logMessage("Anti-Anti-Debugging configuration updated.");
+    }
+}
+
 
 void MainWindow::onShortcutsCheatsheetTriggered() {
     QMessageBox::information(

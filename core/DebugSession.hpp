@@ -30,6 +30,9 @@
 #include "TypeManager.hpp"
 #include "TimeTravelEngine.hpp"
 #include "DisassemblyTypes.hpp"
+#include "UserfaultFdEngine.hpp"
+#include "BtfParser.hpp"
+#include "AntiAntiDebug.hpp"
 
 namespace edb_next {
 
@@ -116,6 +119,15 @@ public:
     [[nodiscard]] bool isAddressPageWatched(Address addr) const;
     [[nodiscard]] PageGuardManager& pageGuardManager() noexcept { return pageGuardMgr_; }
     [[nodiscard]] const PageGuardManager& pageGuardManager() const noexcept { return pageGuardMgr_; }
+
+    [[nodiscard]] UserfaultFdEngine& userfaultFdEngine() noexcept { return uffdEngine_; }
+    [[nodiscard]] const UserfaultFdEngine& userfaultFdEngine() const noexcept { return uffdEngine_; }
+
+    [[nodiscard]] BtfParser& btfParser() noexcept { return btfParser_; }
+    [[nodiscard]] const BtfParser& btfParser() const noexcept { return btfParser_; }
+
+    [[nodiscard]] AntiAntiDebugEngine& antiAntiDebug() noexcept { return antiAntiDebug_; }
+    [[nodiscard]] const AntiAntiDebugEngine& antiAntiDebug() const noexcept { return antiAntiDebug_; }
 
     // Shared Libraries & Rendezvous (_r_debug)
     [[nodiscard]] const RendezvousManager& rendezvousManager() const noexcept { return rendezvousMgr_; }
@@ -358,6 +370,9 @@ private:
     MemoryScanner memoryScanner_;
     TypeManager typeMgr_;
     TimeTravelEngine timeTravelEngine_;
+    UserfaultFdEngine uffdEngine_;
+    BtfParser btfParser_;
+    AntiAntiDebugEngine antiAntiDebug_;
 
     RegisterContext currentRegs_;
     RegisterContext previousRegs_;

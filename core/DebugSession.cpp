@@ -58,6 +58,7 @@ DebugSession::DebugSession(std::string id, std::string name, QObject* parent)
       ),
       eventLoop_(engine_, bpMgr_, nullptr)
 {
+    bpMgr_.setPageGuardManager(&pageGuardMgr_);
     qRegisterMetaType<edb_next::SessionState>("edb_next::SessionState");
     connect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent);
     scriptEngines_.setSession(this);
@@ -886,8 +887,22 @@ void DebugSession::handleBreakpointOrTrap(const DebugEvent& event) {
                 }
             }
         } else {
-            processed_event.reason = StopReason::SingleStep;
-            processed_event.address = currentRegs_.rip();
+            // Check DR6 for hardware breakpoint/watchpoint attribution
+            Dr6Status dr6 = engine_.getDr6Status(engine_.activeTid());
+            if (dr6.anySlotHit()) {
+                auto hit_addr = bpMgr_.attributeDr6(dr6);
+                processed_event.reason = StopReason::Breakpoint;
+                if (hit_addr.has_value()) {
+                    processed_event.address = *hit_addr;
+                    processed_event.message = std::format("Hardware watchpoint hit at slot {} ({})", dr6.hitSlot(), hit_addr->toHex());
+                } else {
+                    processed_event.address = currentRegs_.rip();
+                    processed_event.message = std::format("Hardware watchpoint hit at slot {}", dr6.hitSlot());
+                }
+            } else {
+                processed_event.reason = StopReason::SingleStep;
+                processed_event.address = currentRegs_.rip();
+            }
         }
     }
 

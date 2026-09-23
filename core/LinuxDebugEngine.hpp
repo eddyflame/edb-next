@@ -70,6 +70,7 @@ public:
     bool setHardwareBreakpoint(Tid tid, int slot, Address addr, HardwareBpType type = HardwareBpType::Execute, HardwareBpSize size = HardwareBpSize::Byte1) override;
     bool clearHardwareBreakpoint(Tid tid, int slot) override;
     [[nodiscard]] uint64_t getDebugRegister(Tid tid, int reg_index) const override;
+    [[nodiscard]] Dr6Status getDr6Status(Tid tid = 0) const override;
 
     // Remote syscall execution (e.g. mprotect, mmap, munmap)
     Result<uint64_t> executeRemoteSyscall(Tid tid, uint64_t sys_no,

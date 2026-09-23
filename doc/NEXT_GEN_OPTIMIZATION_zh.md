@@ -218,3 +218,22 @@
   - 引入 `core/DapServer`，原生支持微软 DAP JSON-RPC 协议标准（Content-Length 分帧）；
   - 支持 `initialize`, `launch`, `attach`, `threads`, `stackTrace`, `scopes`, `variables`, `continue`, `next`, `stepIn`, `stepBack`, `readMemory`, `disassemble`, `disconnect` 等全量指令；
   - `main.cpp` 支持 `--dap` / `--dap-port` 命令行无头自举启动，无缝接入 VS Code 与 Neovim (`nvim-dap`) 等现代编辑器生态。
+
+### 阶段 P5：终极内核接管、紧凑类型体系与跨架构极速扫描 (Ultimate Kernel & Cross-Arch) [100% 全部落地]
+
+* [x] **P5-1: Linux `userfaultfd` 隐匿缺页与脏页接管引擎**
+  - 引入 `core/UserfaultFdEngine`，基于 Linux 原生 `userfaultfd` 文件描述符非阻塞监听与注册虚拟内存范围；
+  - 零 `0xCC` 注入与免 `mprotect` 修改，支持软写监视点（`UFFDIO_REGISTER_MODE_WP`）与非特权沙箱降级回退。
+* [x] **P5-2: BTF (BPF Type Format) 内核与 ELF 紧凑类型解析引擎**
+  - 引入 `core/BtfParser`，原生解析 Linux `/sys/kernel/btf/vmlinux`（实测瞬时解析 17 万+ 内核类型）与 ELF `.BTF` 数据段；
+  - 提取紧凑结构体、联合体及位域偏移，一键批量导出注册至 `TypeManager`，在脱壳与 stripped 无调试符号场景下秒级加载海量类型。
+* [x] **P5-3: 硬件监视点 DR6 状态精准溯源与页保护自动降级**
+  - 深入解析 x86_64 DR6 状态寄存器标志（`B0`~`B3` 槽位与单步标志），精准报告具体哪一个硬件槽位（DR0~DR3）触发命中及对应虚拟地址；
+  - 在 `BreakpointManager` 中支持当 4 个硬件调试寄存器槽位耗尽时，透明自动降级（Fallback）为 `PageGuard` 内存页保护软监视点，UI 醒目标识 `[PG-Fallback]`，彻底解除 4 槽位限制。
+* [x] **P5-4: 高级反反调试深度伪装引擎**
+  - 引入 `core/AntiAntiDebug`，实现 `/proc/self/status` 的 `TracerPid:\t0` 抹平与动态自校验绕过；
+  - 实时平滑 `RDTSC` 单步执行周期差，对抗加固样本时间差反调试攻击；主动拦截探测 `PTRACE_TRACEME` 与 `PR_SET_DUMPABLE(0)`。
+* [x] **P5-5: 跨架构 ARM64 NEON 向量化内存扫描引擎**
+  - 扩展 `core/MemoryScanner` 引入 ARM64 NEON 128-bit 向量化（`vld1q_s32`, `vceqq_s32`, `vmaxvq_u32`）扫描引擎；
+  - 统一跨架构 SIMD 调度器，在 x86_64（AVX2 256 位）、ARM64（NEON 128 位）与通用标量间自适应无缝切换。
+

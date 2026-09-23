@@ -63,7 +63,9 @@ public:
         if (slot >= 0 && slot < 4) hwBpSet_[slot] = false;
         return true;
     }
-    uint64_t getDebugRegister(Tid, int) const override { return 0; }
+    uint64_t mockDr6_{0};
+    void setMockDr6(uint64_t val) noexcept { mockDr6_ = val; }
+    uint64_t getDebugRegister(Tid, int reg) const override { return (reg == 6) ? mockDr6_ : 0; }
 
     // Remote syscalls (stub)
     Result<uint64_t> executeRemoteSyscall(Tid, uint64_t, uint64_t, uint64_t, uint64_t,

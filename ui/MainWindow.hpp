@@ -80,6 +80,7 @@ private Q_SLOTS:
     void onPluginManagerTriggered();
     void onResetLayoutTriggered();
     void onScriptConsoleTriggered();
+    void onAntiAntiDebugTriggered();
 
     // Help
     void onShortcutsCheatsheetTriggered();
@@ -157,6 +158,7 @@ private:
     QAction* actPatchManager_{nullptr};
     QAction* actPluginManager_{nullptr};
     QAction* actResetLayout_{nullptr};
+    QAction* actAntiAntiDebug_{nullptr};
 
     QAction* actToggleStack_{nullptr};
     QAction* actToggleConsole_{nullptr};
