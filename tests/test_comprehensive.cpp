@@ -727,6 +727,153 @@ void test_memory_scanner_comprehensive() {
 }
 
 // ==============================================================================
+// Test 10: Architecture & Defect Fixes Comprehensive Validation
+// ==============================================================================
+static void test_architecture_and_defect_fixes() {
+    std::cout << "[TEST] Running test_architecture_and_defect_fixes..." << std::endl;
+
+    // 1. Verify IDebugBackend decoupling in ExpressionEvaluator
+    {
+        MockDebugBackend mockBackend;
+        mockBackend.attached_ = true;
+        mockBackend.fakeMemory_.resize(256, 0);
+        uint64_t testSecret = 0x1122334455667788ULL;
+        std::memcpy(mockBackend.fakeMemory_.data() + 16, &testSecret, sizeof(testSecret));
+
+        RegisterContext regs;
+        regs.setRax(0x1000); // 0x1000 % 256 = 0, so [rax + 16] points to offset 16
+
+        auto val = ExpressionEvaluator::evaluateValue("[rax + 16]", regs, &mockBackend);
+        assert(val.has_value());
+        assert(*val == testSecret);
+    }
+
+    // 2. Verify IDebugBackend decoupling in DapServer
+    {
+        auto mockBackendPtr = std::make_shared<MockDebugBackend>();
+        mockBackendPtr->attached_ = true;
+        mockBackendPtr->activeTid_ = 4321;
+
+        DapServer dap(mockBackendPtr);
+        assert(dap.backend() == mockBackendPtr);
+
+        std::string resp = dap.handleMessage("{\"seq\":1,\"type\":\"request\",\"command\":\"threads\"}");
+        assert(resp.find("\"threads\"") != std::string::npos);
+        assert(resp.find("4321") != std::string::npos);
+    }
+
+    // 3. Verify BreakpointManager step-over internal breakpoint lifecycle
+    {
+        std::vector<uint8_t> mem(64, 0x90); // NOPs
+        auto readMem = [&](Address a, void* buf, size_t s) {
+            if (a.value() + s <= mem.size()) {
+                std::memcpy(buf, mem.data() + a.value(), s);
+                return true;
+            }
+            return false;
+        };
+        auto writeMem = [&](Address a, const void* buf, size_t s) {
+            if (a.value() + s <= mem.size()) {
+                std::memcpy(mem.data() + a.value(), buf, s);
+                return true;
+            }
+            return false;
+        };
+
+        BreakpointManager bpMgr(readMem, writeMem);
+        Address targetAddr(0x10);
+
+        // Add internal breakpoint
+        bool ok = bpMgr.addBreakpoint(targetAddr, true, "[InternalStepOver]");
+        assert(ok);
+        assert(mem[0x10] == 0xCC); // Int3 opcode written
+
+        // Verify internal breakpoint is hidden from user listing
+        assert(bpMgr.allBreakpoints(false).empty());
+        assert(bpMgr.allBreakpoints(true).size() == 1);
+
+        const auto* bp = bpMgr.getBreakpoint(targetAddr);
+        assert(bp != nullptr);
+        assert(bp->isInternal);
+        assert(bp->enabled);
+
+        // Simulate internal breakpoint removal after step-over completion
+        bool removed = bpMgr.removeBreakpoint(targetAddr);
+        assert(removed);
+        assert(mem[0x10] == 0x90); // Original byte restored
+        assert(!bpMgr.hasBreakpoint(targetAddr));
+    }
+
+    // 4. Verify TimeTravelEngine std::deque O(1) buffer and multi-frame memory rollback
+    {
+        TimeTravelEngine tte(4); // Max 4 frames
+        RegisterContext regs;
+
+        // Frame 0: baseline
+        tte.recordFrame(Address(0x1000), regs, "nop");
+
+        // Frame 1: modify 0x5000 from 0xAA to 0xBB
+        uint8_t old1 = 0xAA, new1 = 0xBB;
+        tte.recordMemoryChange(Address(0x5000), std::span(&old1, 1), std::span(&new1, 1));
+        tte.recordFrame(Address(0x1002), regs, "mov [0x5000], 0xbb");
+
+        // Frame 2: modify 0x6000 from 0x11 to 0x22
+        uint8_t old2 = 0x11, new2 = 0x22;
+        tte.recordMemoryChange(Address(0x6000), std::span(&old2, 1), std::span(&new2, 1));
+        tte.recordFrame(Address(0x1004), regs, "mov [0x6000], 0x22");
+
+        // Frame 3: modify 0x5000 from 0xBB to 0xCC
+        uint8_t old3 = 0xBB, new3 = 0xCC;
+        tte.recordMemoryChange(Address(0x5000), std::span(&old3, 1), std::span(&new3, 1));
+        tte.recordFrame(Address(0x1006), regs, "mov [0x5000], 0xcc");
+
+        assert(tte.frameCount() == 4);
+        assert(tte.currentFrameIndex() == 3);
+
+        // Simulate multi-frame memory rollback from cursor 3 down to 0
+        std::unordered_map<uint64_t, uint8_t> simMem;
+        simMem[0x5000] = 0xCC;
+        simMem[0x6000] = 0x22;
+
+        const auto& tl = tte.timeline();
+        size_t fromIdx = 3; // Current frame index
+        size_t toIdx = 0;   // Rewind back to frame 0 (before memory writes)
+
+        for (size_t i = fromIdx; i > toIdx; --i) {
+            for (const auto& delta : tl[i].memoryDeltas) {
+                if (!delta.oldBytes.empty()) {
+                    simMem[delta.address.value()] = delta.oldBytes[0];
+                }
+            }
+        }
+        // After rolling back fromIdx (3) to toIdx (0), memory must be restored to old values
+        assert(simMem[0x5000] == 0xAA);
+        assert(simMem[0x6000] == 0x11);
+
+        // Test frame overflow: add Frame 4 (discards Frame 0 via pop_front)
+        tte.recordFrame(Address(0x1008), regs, "nop");
+        assert(tte.frameCount() == 4);
+        assert(tte.timeline().front().frameIndex == 0);
+        assert(tte.timeline().back().frameIndex == 3);
+    }
+
+    // 5. Verify RegisterContext RF flag (0x10000) for hardware breakpoint step-over
+    {
+        RegisterContext regs;
+        constexpr uint64_t kRflagsRF = 1ULL << 16;
+        assert((regs.rflags() & kRflagsRF) == 0);
+
+        regs.setRflags(regs.rflags() | kRflagsRF);
+        assert((regs.rflags() & kRflagsRF) != 0);
+
+        regs.setRflags(regs.rflags() & ~kRflagsRF);
+        assert((regs.rflags() & kRflagsRF) == 0);
+    }
+
+    std::cout << "  -> test_architecture_and_defect_fixes PASSED" << std::endl;
+}
+
+// ==============================================================================
 // Main Entry Point
 // ==============================================================================
 int main() {
@@ -744,6 +891,7 @@ int main() {
         test_elf_parser_memory_safety();
         test_database_manager_comprehensive();
         test_memory_scanner_comprehensive();
+        test_architecture_and_defect_fixes();
     } catch (const std::exception& e) {
         std::cerr << "\n[FATAL EXCEPTION]: " << e.what() << std::endl;
         return 1;

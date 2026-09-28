@@ -317,7 +317,7 @@ private:
 
 class Parser {
 public:
-    Parser(std::string_view expr, const RegisterContext& regs, const LinuxDebugEngine* engine)
+    Parser(std::string_view expr, const RegisterContext& regs, IDebugBackend* engine)
         : tokenizer_(expr, regs), engine_(engine) {}
 
     std::optional<uint64_t> parse() {
@@ -333,7 +333,7 @@ public:
 
 private:
     Tokenizer tokenizer_;
-    const LinuxDebugEngine* engine_;
+    IDebugBackend* engine_;
 
     // Grammar precedence levels:
     // 1. Logical OR: ||
@@ -573,20 +573,20 @@ private:
         Address targetAddr(*addrVal);
         switch (sizeBytes) {
             case 1: {
-                auto val = const_cast<LinuxDebugEngine*>(engine_)->read<uint8_t>(targetAddr);
+                auto val = engine_->read<uint8_t>(targetAddr);
                 return val ? std::optional<uint64_t>(*val) : std::nullopt;
             }
             case 2: {
-                auto val = const_cast<LinuxDebugEngine*>(engine_)->read<uint16_t>(targetAddr);
+                auto val = engine_->read<uint16_t>(targetAddr);
                 return val ? std::optional<uint64_t>(*val) : std::nullopt;
             }
             case 4: {
-                auto val = const_cast<LinuxDebugEngine*>(engine_)->read<uint32_t>(targetAddr);
+                auto val = engine_->read<uint32_t>(targetAddr);
                 return val ? std::optional<uint64_t>(*val) : std::nullopt;
             }
             case 8:
             default: {
-                auto val = const_cast<LinuxDebugEngine*>(engine_)->read<uint64_t>(targetAddr);
+                auto val = engine_->read<uint64_t>(targetAddr);
                 return val ? std::optional<uint64_t>(*val) : std::nullopt;
             }
         }
@@ -627,7 +627,7 @@ private:
 std::optional<uint64_t> ExpressionEvaluator::evaluateValue(
     std::string_view expr,
     const RegisterContext& regs,
-    const LinuxDebugEngine* engine) {
+    IDebugBackend* engine) {
     std::string_view s = trim(expr);
     if (s.empty()) return std::nullopt;
 
@@ -638,7 +638,7 @@ std::optional<uint64_t> ExpressionEvaluator::evaluateValue(
 bool ExpressionEvaluator::evaluateCondition(
     std::string_view condExpr,
     const RegisterContext& regs,
-    const LinuxDebugEngine* engine) {
+    IDebugBackend* engine) {
     std::string_view s = trim(condExpr);
     if (s.empty()) return true;
 
@@ -650,7 +650,7 @@ bool ExpressionEvaluator::evaluateCondition(
 std::string ExpressionEvaluator::formatLog(
     std::string_view format,
     const RegisterContext& regs,
-    const LinuxDebugEngine* engine) {
+    IDebugBackend* engine) {
     std::string result;
     size_t i = 0;
     while (i < format.size()) {

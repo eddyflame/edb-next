@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <iostream>
 #include <fstream>
+#include <charconv>
 
 namespace edb_next {
 
@@ -231,13 +232,24 @@ void EventLoopThread::run() {
 
             if (waited_pid != engine_.pid()) {
                 pid_t tgid = 0;
-                std::ifstream status_file("/proc/" + std::to_string(waited_pid) + "/status");
-                std::string line;
-                while (std::getline(status_file, line)) {
-                    if (line.compare(0, 5, "Tgid:") == 0) {
-                        tgid = std::stoi(line.substr(5));
-                        break;
+                try {
+                    std::ifstream status_file("/proc/" + std::to_string(waited_pid) + "/status");
+                    std::string line;
+                    while (std::getline(status_file, line)) {
+                        if (line.compare(0, 5, "Tgid:") == 0) {
+                            size_t pos = line.find_first_not_of(" \t", 5);
+                            if (pos != std::string::npos) {
+                                int val = 0;
+                                auto [ptr, ec] = std::from_chars(line.data() + pos, line.data() + line.size(), val);
+                                if (ec == std::errc{}) {
+                                    tgid = val;
+                                }
+                            }
+                            break;
+                        }
                     }
+                } catch (...) {
+                    tgid = 0;
                 }
 
                 {

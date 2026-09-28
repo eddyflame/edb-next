@@ -1,4 +1,5 @@
 #include "DapServer.hpp"
+#include "LinuxDebugEngine.hpp"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -77,7 +78,7 @@ std::string frameDapMessage(const std::string& json) {
     return oss.str();
 }
 
-} // anonymous namespace
+} // namespace
 
 struct DapServer::Impl {
     int seqCounter{1};
@@ -85,18 +86,18 @@ struct DapServer::Impl {
 
 DapServer::DapServer()
     : pImpl_(std::make_unique<Impl>()),
-      engine_(std::make_shared<LinuxDebugEngine>()) {}
+      backend_(std::make_shared<LinuxDebugEngine>()) {}
 
-DapServer::DapServer(std::shared_ptr<LinuxDebugEngine> engine)
+DapServer::DapServer(std::shared_ptr<IDebugBackend> backend)
     : pImpl_(std::make_unique<Impl>()),
-      engine_(std::move(engine)) {}
+      backend_(std::move(backend)) {}
 
 DapServer::~DapServer() = default;
 DapServer::DapServer(DapServer&&) noexcept = default;
 DapServer& DapServer::operator=(DapServer&&) noexcept = default;
 
-void DapServer::setEngine(std::shared_ptr<LinuxDebugEngine> engine) {
-    engine_ = std::move(engine);
+void DapServer::setBackend(std::shared_ptr<IDebugBackend> backend) {
+    backend_ = std::move(backend);
 }
 
 std::string DapServer::handleMessage(const std::string& rawMessage) {
@@ -129,8 +130,8 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
     if (command == "launch") {
         std::string prog = extractJsonString(json, "program");
         bool ok = true;
-        if (!prog.empty() && engine_) {
-            ok = engine_->launch(prog, {}).success;
+        if (!prog.empty() && backend_) {
+            ok = backend_->launch(prog, {}).success;
         }
         return formatDapResponse(resSeq, reqSeq, command, ok, "{}");
     }
@@ -138,8 +139,8 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
     if (command == "attach") {
         int pid = extractJsonInt(json, "pid", 0);
         bool ok = false;
-        if (pid > 0 && engine_) {
-            ok = engine_->attach(pid).success;
+        if (pid > 0 && backend_) {
+            ok = backend_->attach(pid).success;
         }
         return formatDapResponse(resSeq, reqSeq, command, ok, "{}");
     }
@@ -154,7 +155,7 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
     }
 
     if (command == "threads") {
-        int tid = (engine_ && engine_->activeTid() > 0) ? engine_->activeTid() : 1;
+        int tid = (backend_ && backend_->activeTid() > 0) ? backend_->activeTid() : 1;
         std::ostringstream oss;
         oss << "{\"threads\":[{\"id\":" << tid << ",\"name\":\"Main Thread (" << tid << ")\"}]}";
         return formatDapResponse(resSeq, reqSeq, command, true, oss.str());
@@ -162,9 +163,9 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
 
     if (command == "stackTrace") {
         uint64_t ripVal = 0x401000;
-        if (engine_ && engine_->activeTid() > 0) {
+        if (backend_ && backend_->activeTid() > 0) {
             RegisterContext regs;
-            if (engine_->getRegisters(engine_->activeTid(), regs)) {
+            if (backend_->getRegisters(backend_->activeTid(), regs)) {
                 ripVal = regs.rip().value();
             }
         }
@@ -191,8 +192,8 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
         int varRef = extractJsonInt(json, "variablesReference", 0);
         if (varRef == 1) {
             RegisterContext regs;
-            if (engine_ && engine_->activeTid() > 0) {
-                engine_->getRegisters(engine_->activeTid(), regs);
+            if (backend_ && backend_->activeTid() > 0) {
+                backend_->getRegisters(backend_->activeTid(), regs);
             }
             std::ostringstream oss;
             oss << "{\"variables\":["
@@ -212,15 +213,15 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
     }
 
     if (command == "continue") {
-        if (engine_ && engine_->activeTid() > 0) {
-            engine_->continueExecution(engine_->activeTid(), 0);
+        if (backend_ && backend_->activeTid() > 0) {
+            backend_->continueExecution(backend_->activeTid(), 0);
         }
         return formatDapResponse(resSeq, reqSeq, command, true, "{}");
     }
 
     if (command == "next" || command == "stepIn") {
-        if (engine_ && engine_->activeTid() > 0) {
-            engine_->singleStep(engine_->activeTid(), 0);
+        if (backend_ && backend_->activeTid() > 0) {
+            backend_->singleStep(backend_->activeTid(), 0);
         }
         return formatDapResponse(resSeq, reqSeq, command, true, "{}");
     }
@@ -231,8 +232,8 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
     }
 
     if (command == "pause") {
-        if (engine_ && engine_->activeTid() > 0) {
-            engine_->pause(engine_->activeTid());
+        if (backend_ && backend_->activeTid() > 0) {
+            backend_->pause(backend_->activeTid());
         }
         return formatDapResponse(resSeq, reqSeq, command, true, "{}");
     }
@@ -247,8 +248,8 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
         }
 
         std::vector<uint8_t> buf(count, 0);
-        if (engine_ && addr > 0 && count > 0) {
-            engine_->readMemory(Address(addr), buf.data(), count);
+        if (backend_ && addr > 0 && count > 0) {
+            backend_->readMemory(Address(addr), buf.data(), count);
         }
 
         std::ostringstream hexStream;
@@ -290,8 +291,8 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
     }
 
     if (command == "disconnect") {
-        if (engine_ && engine_->activeTid() > 0) {
-            engine_->detach();
+        if (backend_ && backend_->activeTid() > 0) {
+            backend_->detach();
         }
         isRunning_ = false;
         return formatDapResponse(resSeq, reqSeq, command, true, "{}");

@@ -2,7 +2,7 @@
 
 #include "Types.hpp"
 #include "RegisterContext.hpp"
-#include "LinuxDebugEngine.hpp"
+#include "IDebugBackend.hpp"
 #include <string>
 #include <string_view>
 #include <optional>
@@ -16,14 +16,14 @@ public:
     static std::optional<uint64_t> evaluateValue(
         std::string_view expr,
         const RegisterContext& regs,
-        const LinuxDebugEngine* engine = nullptr);
+        IDebugBackend* backend = nullptr);
 
     static std::optional<uint64_t> evaluate(
         std::string_view expr,
         const RegisterContext& regs,
-        const LinuxDebugEngine* engine = nullptr)
+        IDebugBackend* backend = nullptr)
     {
-        return evaluateValue(expr, regs, engine);
+        return evaluateValue(expr, regs, backend);
     }
 
     // Evaluates a boolean condition (e.g. "rax == 0", "rdi > 5", "[rsp] != 0")
@@ -31,13 +31,13 @@ public:
     static bool evaluateCondition(
         std::string_view condExpr,
         const RegisterContext& regs,
-        const LinuxDebugEngine* engine = nullptr);
+        IDebugBackend* backend = nullptr);
 
     // Formats a log string with placeholders, e.g. "Loop {rdi}, rax={rax:x}"
     static std::string formatLog(
         std::string_view format,
         const RegisterContext& regs,
-        const LinuxDebugEngine* engine = nullptr);
+        IDebugBackend* backend = nullptr);
 };
 
 } // namespace edb_next

@@ -162,12 +162,38 @@ Result<void> LinuxDebugEngine::attach(Pid pid) {
     mainTid_ = pid;
     openProcMem();
 
+    // Attach to any other existing secondary threads of this process
+    std::string task_dir = "/proc/" + std::to_string(pid) + "/task";
+    DIR* dir = ::opendir(task_dir.c_str());
+    if (dir) {
+        struct dirent* entry = nullptr;
+        while ((entry = ::readdir(dir)) != nullptr) {
+            if (entry->d_name[0] == '.') continue;
+            char* endptr = nullptr;
+            long tid_val = std::strtol(entry->d_name, &endptr, 10);
+            if (endptr && *endptr == '\0' && tid_val > 0 && tid_val != pid) {
+                if (::ptrace(PTRACE_ATTACH, tid_val, nullptr, nullptr) == 0) {
+                    int tstatus = 0;
+                    ::waitpid(tid_val, &tstatus, __WALL);
+                    ::ptrace(PTRACE_SETOPTIONS, tid_val, nullptr, options);
+                }
+            }
+        }
+        ::closedir(dir);
+    }
+
     return Result<void>::Ok();
 }
 
 void LinuxDebugEngine::detach() {
     if (pid_.load() > 0) {
         memFd_.reset();
+        auto tids = enumerateTids();
+        for (Tid t : tids) {
+            if (t > 0 && t != pid_.load()) {
+                ::ptrace(PTRACE_DETACH, t, nullptr, nullptr);
+            }
+        }
         ::ptrace(PTRACE_DETACH, pid_.load(), nullptr, nullptr);
         pid_.store(0);
         mainTid_.store(0);

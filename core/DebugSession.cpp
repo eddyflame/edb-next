@@ -251,13 +251,19 @@ void DebugSession::resume(bool passSignal) {
     }
 
     Address rip = currentRegs_.rip();
-    if (bpMgr_.hasBreakpoint(rip)) {
+    if (bpMgr_.isBreakpointEnabled(rip) && bpMgr_.prepareStepOver(rip)) {
         // Step-over breakpoint before running
-        bpMgr_.prepareStepOver(rip);
         isStepOverBreak_ = true;
         engine_.singleStep(engine_.activeTid());
         setState(SessionState::Running);
         return;
+    }
+
+    const auto* curBp = bpMgr_.getBreakpoint(rip);
+    if (curBp && curBp->enabled && curBp->type == BreakpointType::HardwareExecute) {
+        constexpr uint64_t kRflagsRF = 1ULL << 16;
+        currentRegs_.setRflags(currentRegs_.rflags() | kRflagsRF);
+        engine_.setRegisters(engine_.activeTid(), currentRegs_);
     }
 
     auto allTids = engine_.enumerateTids();
@@ -290,8 +296,15 @@ void DebugSession::stepInto(bool passSignal) {
     }
 
     Address rip = currentRegs_.rip();
-    if (bpMgr_.hasBreakpoint(rip)) {
+    if (bpMgr_.isBreakpointEnabled(rip)) {
         bpMgr_.prepareStepOver(rip);
+    }
+
+    const auto* curBp = bpMgr_.getBreakpoint(rip);
+    if (curBp && curBp->enabled && curBp->type == BreakpointType::HardwareExecute) {
+        constexpr uint64_t kRflagsRF = 1ULL << 16;
+        currentRegs_.setRflags(currentRegs_.rflags() | kRflagsRF);
+        engine_.setRegisters(engine_.activeTid(), currentRegs_);
     }
 
     engine_.singleStep(engine_.activeTid(), sig);
@@ -846,6 +859,20 @@ void DebugSession::handleBreakpointOrTrap(const DebugEvent& event) {
 
             auto* bp = bpMgr_.getBreakpointMutable(bp_addr);
             if (bp) {
+                if (bp->isInternal) {
+                    bpMgr_.removeBreakpoint(bp_addr);
+                    processed_event.reason = StopReason::SingleStep;
+                    processed_event.message = "Step-over completed";
+                    Q_EMIT breakpointsUpdated();
+                    if (tempRunToBp_.has_value() && *tempRunToBp_ == bp_addr) {
+                        tempRunToBp_.reset();
+                    }
+                    setState(SessionState::Paused);
+                    Q_EMIT eventOccurred(processed_event);
+                    Q_EMIT memoryUpdated();
+                    return;
+                }
+
                 bp->hitCount++;
 
                 bool ignore = false;
@@ -1751,15 +1778,20 @@ void DebugSession::syncHardwareBreakpointsToAllThreads() {
 }
 
 bool DebugSession::stepBack() {
+    if (!timeTravelEngine_.canStepBack()) return false;
+    size_t fromIdx = timeTravelEngine_.currentFrameIndex();
     auto frameOpt = timeTravelEngine_.stepBack();
     if (!frameOpt.has_value()) return false;
 
     setRegisters(frameOpt->registers);
     currentRegs_ = frameOpt->registers;
 
-    for (const auto& delta : frameOpt->memoryDeltas) {
-        if (!delta.oldBytes.empty()) {
-            engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+    const auto& timeline = timeTravelEngine_.timeline();
+    if (fromIdx < timeline.size()) {
+        for (const auto& delta : timeline[fromIdx].memoryDeltas) {
+            if (!delta.oldBytes.empty()) {
+                engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+            }
         }
     }
 
@@ -1771,15 +1803,20 @@ bool DebugSession::stepBack() {
 }
 
 bool DebugSession::stepForward() {
+    if (!timeTravelEngine_.canStepForward()) return false;
     auto frameOpt = timeTravelEngine_.stepForward();
     if (!frameOpt.has_value()) return false;
 
     setRegisters(frameOpt->registers);
     currentRegs_ = frameOpt->registers;
 
-    for (const auto& delta : frameOpt->memoryDeltas) {
-        if (!delta.newBytes.empty()) {
-            engine_.writeMemory(delta.address, delta.newBytes.data(), delta.newBytes.size());
+    size_t toIdx = timeTravelEngine_.currentFrameIndex();
+    const auto& timeline = timeTravelEngine_.timeline();
+    if (toIdx < timeline.size()) {
+        for (const auto& delta : timeline[toIdx].memoryDeltas) {
+            if (!delta.newBytes.empty()) {
+                engine_.writeMemory(delta.address, delta.newBytes.data(), delta.newBytes.size());
+            }
         }
     }
 
@@ -1791,6 +1828,9 @@ bool DebugSession::stepForward() {
 }
 
 bool DebugSession::reverseContinue() {
+    if (!timeTravelEngine_.canStepBack()) return false;
+    size_t fromIdx = timeTravelEngine_.currentFrameIndex();
+
     std::unordered_set<uint64_t> bpAddrs;
     for (const auto& bp : bpMgr_.allBreakpoints()) {
         if (bp.enabled) {
@@ -1801,14 +1841,21 @@ bool DebugSession::reverseContinue() {
     auto frameOpt = timeTravelEngine_.reverseContinue(bpAddrs);
     if (!frameOpt.has_value()) return false;
 
-    setRegisters(frameOpt->registers);
-    currentRegs_ = frameOpt->registers;
+    size_t toIdx = timeTravelEngine_.currentFrameIndex();
+    const auto& timeline = timeTravelEngine_.timeline();
 
-    for (const auto& delta : frameOpt->memoryDeltas) {
-        if (!delta.oldBytes.empty()) {
-            engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+    for (size_t i = fromIdx; i > toIdx; --i) {
+        if (i < timeline.size()) {
+            for (const auto& delta : timeline[i].memoryDeltas) {
+                if (!delta.oldBytes.empty()) {
+                    engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+                }
+            }
         }
     }
+
+    setRegisters(frameOpt->registers);
+    currentRegs_ = frameOpt->registers;
 
     invalidateDisasmCache();
     Q_EMIT registersUpdated();
@@ -1818,8 +1865,36 @@ bool DebugSession::reverseContinue() {
 }
 
 bool DebugSession::seekTimeTravelFrame(size_t index) {
+    if (timeTravelEngine_.frameCount() == 0) return false;
+    size_t fromIdx = timeTravelEngine_.currentFrameIndex();
+
     auto frameOpt = timeTravelEngine_.seekFrame(index);
     if (!frameOpt.has_value()) return false;
+
+    size_t toIdx = timeTravelEngine_.currentFrameIndex();
+    const auto& timeline = timeTravelEngine_.timeline();
+
+    if (toIdx < fromIdx) {
+        for (size_t i = fromIdx; i > toIdx; --i) {
+            if (i < timeline.size()) {
+                for (const auto& delta : timeline[i].memoryDeltas) {
+                    if (!delta.oldBytes.empty()) {
+                        engine_.writeMemory(delta.address, delta.oldBytes.data(), delta.oldBytes.size());
+                    }
+                }
+            }
+        }
+    } else if (toIdx > fromIdx) {
+        for (size_t i = fromIdx + 1; i <= toIdx; ++i) {
+            if (i < timeline.size()) {
+                for (const auto& delta : timeline[i].memoryDeltas) {
+                    if (!delta.newBytes.empty()) {
+                        engine_.writeMemory(delta.address, delta.newBytes.data(), delta.newBytes.size());
+                    }
+                }
+            }
+        }
+    }
 
     setRegisters(frameOpt->registers);
     currentRegs_ = frameOpt->registers;

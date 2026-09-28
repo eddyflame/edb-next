@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Types.hpp"
-#include "LinuxDebugEngine.hpp"
+#include "IDebugBackend.hpp"
 #include "BreakpointManager.hpp"
 #include "RegisterContext.hpp"
 #include "TimeTravelEngine.hpp"
@@ -25,7 +25,7 @@ namespace edb_next {
 class DapServer {
 public:
     DapServer();
-    explicit DapServer(std::shared_ptr<LinuxDebugEngine> engine);
+    explicit DapServer(std::shared_ptr<IDebugBackend> backend);
     ~DapServer();
 
     // Disable copy, allow move
@@ -34,8 +34,11 @@ public:
     DapServer(DapServer&&) noexcept;
     DapServer& operator=(DapServer&&) noexcept;
 
-    void setEngine(std::shared_ptr<LinuxDebugEngine> engine);
-    [[nodiscard]] std::shared_ptr<LinuxDebugEngine> engine() const noexcept { return engine_; }
+    void setBackend(std::shared_ptr<IDebugBackend> backend);
+    [[nodiscard]] std::shared_ptr<IDebugBackend> backend() const noexcept { return backend_; }
+
+    void setEngine(std::shared_ptr<IDebugBackend> engine) { setBackend(std::move(engine)); }
+    [[nodiscard]] std::shared_ptr<IDebugBackend> engine() const noexcept { return backend_; }
 
     // Direct JSON-RPC message processing (headless / testable)
     [[nodiscard]] std::string handleMessage(const std::string& jsonText);
@@ -49,7 +52,7 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> pImpl_;
-    std::shared_ptr<LinuxDebugEngine> engine_;
+    std::shared_ptr<IDebugBackend> backend_;
     std::unique_ptr<BreakpointManager> bpMgr_;
     TimeTravelEngine timeTravel_;
     bool isRunning_{false};
