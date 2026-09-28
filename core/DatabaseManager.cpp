@@ -328,10 +328,13 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     )";
 
     char* errMsg = nullptr;
-    sql.exec(db, schema, nullptr, nullptr, &errMsg);
-    if (errMsg) {
-        sql.free(errMsg);
-        errMsg = nullptr;
+    if (sql.exec(db, schema, nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        if (errMsg) {
+            std::cerr << "Schema creation failed: " << errMsg << std::endl;
+            sql.free(errMsg);
+        }
+        sql.close(db);
+        return false;
     }
 
     sql.exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
