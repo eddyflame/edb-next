@@ -132,6 +132,7 @@ bool BreakpointManager::addHardwareBreakpoint(Address addr, HardwareBpType type,
                     .scriptCode = {},
                     .scriptLanguage = "python",
                     .type = bp_type,
+                    .hardwareSize = size,
                     .hardwareSlot = -1,
                     .isPageGuardFallback = true,
                     .symbol = symbol
@@ -166,6 +167,7 @@ bool BreakpointManager::addHardwareBreakpoint(Address addr, HardwareBpType type,
         .scriptCode = {},
         .scriptLanguage = "python",
         .type = bp_type,
+        .hardwareSize = size,
         .hardwareSlot = free_slot,
         .isPageGuardFallback = false,
         .symbol = symbol
@@ -218,14 +220,26 @@ bool BreakpointManager::enableBreakpoint(Address addr) {
     }
 
     if (it->second.type != BreakpointType::Software) {
-        // Re-enable hardware breakpoint
-        if (it->second.hardwareSlot >= 0 && it->second.hardwareSlot < 4) {
+        // Re-enable hardware breakpoint: verify current slot or find a new free slot
+        int targetSlot = it->second.hardwareSlot;
+        if (targetSlot < 0 || targetSlot >= 4 || slotOccupied_[targetSlot]) {
+            targetSlot = -1;
+            for (int i = 0; i < 4; ++i) {
+                if (!slotOccupied_[i]) {
+                    targetSlot = i;
+                    break;
+                }
+            }
+        }
+
+        if (targetSlot >= 0 && targetSlot < 4) {
             HardwareBpType hw_type = HardwareBpType::Execute;
             if (it->second.type == BreakpointType::HardwareWrite) hw_type = HardwareBpType::Write;
             else if (it->second.type == BreakpointType::HardwareReadWrite) hw_type = HardwareBpType::ReadWrite;
 
-            if (setHwBp_ && setHwBp_(it->second.hardwareSlot, addr, hw_type, HardwareBpSize::Byte1)) {
-                slotOccupied_[it->second.hardwareSlot] = true;
+            if (setHwBp_ && setHwBp_(targetSlot, addr, hw_type, it->second.hardwareSize)) {
+                slotOccupied_[targetSlot] = true;
+                it->second.hardwareSlot = targetSlot;
                 it->second.enabled = true;
                 return true;
             }
@@ -233,8 +247,8 @@ bool BreakpointManager::enableBreakpoint(Address addr) {
         return false;
     }
 
-    constexpr uint8_t int3_opcode = 0xCC;
-    if (!writeMem_(addr, &int3_opcode, 1)) {
+    constexpr uint8_t int32_opcode = 0xCC;
+    if (!writeMem_(addr, &int32_opcode, 1)) {
         return false;
     }
 
@@ -263,6 +277,7 @@ bool BreakpointManager::disableBreakpoint(Address addr) {
                 clearHwBp_(it->second.hardwareSlot);
             }
             slotOccupied_[it->second.hardwareSlot] = false;
+            it->second.hardwareSlot = -1;
             it->second.enabled = false;
             return true;
         }

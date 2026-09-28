@@ -659,7 +659,8 @@ edb-next/
     ├── test_exit.cpp           # Window destruction and process teardown stress test
     ├── test_nextgen.cpp        # pidfd loop, target FD introspection, libclang AST & SQLite3+zstd
     ├── test_p4_advanced_re.cpp # SSA Micro-IR, Z3 symbolic solver, decompiler, TTD replay, DAP & eBPF
-    └── test_p5_ultimate.cpp    # userfaultfd, BTF compact types, DR6 attribution, PageGuard fallback & NEON
+    ├── test_p5_ultimate.cpp    # userfaultfd, BTF compact types, DR6 attribution, PageGuard fallback & NEON
+    └── test_comprehensive.cpp  # Comprehensive boundary security & P0/P1 defense test suite
 ```
 
 ---
@@ -768,11 +769,12 @@ cmake --build build -j$(nproc)
 
 ### 7.2 Verification Suite
 ```bash
-./build/test_core       # Basic engine, call stack & hardware breakpoint verification
-./build/test_advanced   # Advanced reverse engineering suite (P0~P2, P1-A/B/C)
-./build/test_dwarf      # DWARF source-level debugging suite
-./build/test_exit       # Clean exit and process teardown test
-./build/test_scripting  # Embedded Python 3 & Lua 5.4 scripting suite
+./build/test_core           # Basic engine, call stack & hardware breakpoint verification
+./build/test_advanced       # Advanced reverse engineering suite (P0~P2, P1-A/B/C)
+./build/test_dwarf          # DWARF source-level debugging suite
+./build/test_exit           # Clean exit and process teardown test
+./build/test_scripting      # Embedded Python 3 & Lua 5.4 scripting suite
+./build/test_comprehensive  # Comprehensive boundary security & P0/P1 defense test suite
 ```
 
 ---

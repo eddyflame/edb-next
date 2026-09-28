@@ -242,8 +242,12 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
         int count = extractJsonInt(json, "count", 16);
         uint64_t addr = parseAddress(memRef);
 
+        if (count < 0 || count > 64 * 1024 * 1024) {
+            return formatDapResponse(resSeq, reqSeq, command, false, "{\"error\":\"Invalid count parameter\"}");
+        }
+
         std::vector<uint8_t> buf(count, 0);
-        if (engine_ && addr > 0) {
+        if (engine_ && addr > 0 && count > 0) {
             engine_->readMemory(Address(addr), buf.data(), count);
         }
 
@@ -261,6 +265,10 @@ std::string DapServer::handleMessage(const std::string& rawMessage) {
         std::string memRef = extractJsonString(json, "memoryReference");
         int insnCount = extractJsonInt(json, "instructionCount", 4);
         uint64_t addr = parseAddress(memRef);
+
+        if (insnCount < 0 || insnCount > 100000) {
+            return formatDapResponse(resSeq, reqSeq, command, false, "{\"error\":\"Invalid instructionCount parameter\"}");
+        }
 
         std::ostringstream oss;
         oss << "{\"instructions\":[";
@@ -302,7 +310,16 @@ void DapServer::run(std::istream& in, std::ostream& out) {
 
         if (line.starts_with("Content-Length:")) {
             size_t colon = line.find(':');
-            int len = std::stoi(line.substr(colon + 1));
+            int len = 0;
+            try {
+                len = std::stoi(line.substr(colon + 1));
+            } catch (...) {
+                continue;
+            }
+
+            if (len <= 0 || len > 64 * 1024 * 1024) {
+                continue;
+            }
 
             // Read the empty line \r
             std::string empty;

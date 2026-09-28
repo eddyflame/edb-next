@@ -139,6 +139,7 @@ Build outputs in `build/`:
 - `test_advanced`: Advanced features regression suite
 - `test_scripting`: Python 3 & Lua 5.4 scripting regression suite
 - `test_exit`: Teardown and teardown stress suite
+- `test_comprehensive`: Comprehensive boundary security and P0/P1 defense test suite
 
 ---
 
@@ -150,6 +151,7 @@ Build outputs in `build/`:
 ./build/test_advanced
 ./build/test_scripting
 ./build/test_exit
+./build/test_comprehensive
 ```
 
 ---

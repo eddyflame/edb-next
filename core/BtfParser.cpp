@@ -93,9 +93,8 @@ bool BtfParser::parseBuffer(std::span<const uint8_t> data) {
         switch (kind) {
             case BTF_KIND_INT: {
                 entry.size = t->size;
-                if (ptr + sizeof(uint32_t) <= end) {
-                    ptr += sizeof(uint32_t); // Skip btf_int encoding
-                }
+                if (ptr + sizeof(uint32_t) > end) return false;
+                ptr += sizeof(uint32_t); // Skip btf_int encoding
                 break;
             }
             case BTF_KIND_PTR:
@@ -108,65 +107,61 @@ bool BtfParser::parseBuffer(std::span<const uint8_t> data) {
                 break;
             }
             case BTF_KIND_ARRAY: {
-                if (ptr + sizeof(struct btf_array) <= end) {
-                    const auto* arr = reinterpret_cast<const struct btf_array*>(ptr);
-                    entry.targetTypeId = arr->type;
-                    entry.size = arr->nelems;
-                    ptr += sizeof(struct btf_array);
-                }
+                if (ptr + sizeof(struct btf_array) > end) return false;
+                const auto* arr = reinterpret_cast<const struct btf_array*>(ptr);
+                entry.targetTypeId = arr->type;
+                entry.size = arr->nelems;
+                ptr += sizeof(struct btf_array);
                 break;
             }
             case BTF_KIND_STRUCT:
             case BTF_KIND_UNION: {
                 entry.size = t->size;
                 size_t members_size = vlen * sizeof(struct btf_member);
-                if (ptr + members_size <= end) {
-                    const auto* members = reinterpret_cast<const struct btf_member*>(ptr);
-                    ptr += members_size;
+                if (ptr + members_size > end) return false;
+                const auto* members = reinterpret_cast<const struct btf_member*>(ptr);
+                ptr += members_size;
 
-                    for (uint16_t i = 0; i < vlen; ++i) {
-                        const auto& m = members[i];
-                        StructField field{};
-                        field.name = getString(m.name_off);
-                        field.typeName = resolveTypeName(m.type);
+                for (uint16_t i = 0; i < vlen; ++i) {
+                    const auto& m = members[i];
+                    StructField field{};
+                    field.name = getString(m.name_off);
+                    field.typeName = resolveTypeName(m.type);
 
-                        uint32_t bit_offset = 0;
-                        uint32_t bit_width = 0;
-                        if (kflag) {
-                            bit_offset = m.offset & 0x00ffffff;
-                            bit_width = (m.offset >> 24) & 0xff;
-                        } else {
-                            bit_offset = m.offset;
-                            bit_width = 0;
-                        }
-
-                        field.offset = bit_offset / 8;
-                        field.bitOffset = bit_offset % 8;
-                        field.bitWidth = bit_width;
-                        field.isBitfield = (bit_width > 0);
-                        field.size = (bit_width > 0) ? ((bit_width + 7) / 8) : 4;
-                        field.kind = typeIdToFieldKind(m.type);
-
-                        entry.fields.push_back(field);
+                    uint32_t bit_offset = 0;
+                    uint32_t bit_width = 0;
+                    if (kflag) {
+                        bit_offset = m.offset & 0x00ffffff;
+                        bit_width = (m.offset >> 24) & 0xff;
+                    } else {
+                        bit_offset = m.offset;
+                        bit_width = 0;
                     }
+
+                    field.offset = bit_offset / 8;
+                    field.bitOffset = bit_offset % 8;
+                    field.bitWidth = bit_width;
+                    field.isBitfield = (bit_width > 0);
+                    field.size = (bit_width > 0) ? ((bit_width + 7) / 8) : 4;
+                    field.kind = typeIdToFieldKind(m.type);
+
+                    entry.fields.push_back(field);
                 }
                 break;
             }
             case BTF_KIND_ENUM: {
                 entry.size = t->size;
                 size_t enum_size = vlen * sizeof(struct btf_enum);
-                if (ptr + enum_size <= end) {
-                    ptr += enum_size;
-                }
+                if (ptr + enum_size > end) return false;
+                ptr += enum_size;
                 break;
             }
             case BTF_KIND_ENUM64: {
                 entry.size = t->size;
                 // btf_enum64 is 12 bytes
                 size_t enum64_size = vlen * 12;
-                if (ptr + enum64_size <= end) {
-                    ptr += enum64_size;
-                }
+                if (ptr + enum64_size > end) return false;
+                ptr += enum64_size;
                 break;
             }
             case BTF_KIND_FWD:
@@ -181,31 +176,27 @@ bool BtfParser::parseBuffer(std::span<const uint8_t> data) {
             case BTF_KIND_FUNC_PROTO: {
                 entry.targetTypeId = t->type;
                 size_t proto_size = vlen * sizeof(struct btf_param);
-                if (ptr + proto_size <= end) {
-                    ptr += proto_size;
-                }
+                if (ptr + proto_size > end) return false;
+                ptr += proto_size;
                 break;
             }
             case BTF_KIND_VAR: {
                 entry.targetTypeId = t->type;
-                if (ptr + sizeof(struct btf_var) <= end) {
-                    ptr += sizeof(struct btf_var);
-                }
+                if (ptr + sizeof(struct btf_var) > end) return false;
+                ptr += sizeof(struct btf_var);
                 break;
             }
             case BTF_KIND_DATASEC: {
                 entry.size = t->size;
                 size_t datasec_size = vlen * sizeof(struct btf_var_secinfo);
-                if (ptr + datasec_size <= end) {
-                    ptr += datasec_size;
-                }
+                if (ptr + datasec_size > end) return false;
+                ptr += datasec_size;
                 break;
             }
             case BTF_KIND_DECL_TAG: {
                 entry.targetTypeId = t->type;
-                if (ptr + sizeof(BtfDeclTagCompat) <= end) {
-                    ptr += sizeof(BtfDeclTagCompat);
-                }
+                if (ptr + sizeof(BtfDeclTagCompat) > end) return false;
+                ptr += sizeof(BtfDeclTagCompat);
                 break;
             }
             default:

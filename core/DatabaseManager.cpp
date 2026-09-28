@@ -149,8 +149,9 @@ std::string DatabaseManager::defaultDatabasePath(const std::string& binaryPath) 
 
 bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProject& project) {
     auto& sql = SqliteLib::instance();
-    if (!sql.load()) {
-        // Fallback to JSON if SQLite3 library is completely unavailable
+    bool forceJson = filepath.ends_with(".json") || filepath.ends_with(".JSON");
+    if (forceJson || !sql.load()) {
+        // Save as JSON if explicitly requested or SQLite3 library is unavailable
         QJsonObject root;
         root["version"] = 1;
         root["binary_path"] = QString::fromStdString(project.binaryPath);

@@ -59,6 +59,7 @@ struct Breakpoint {
     std::string scriptCode;
     std::string scriptLanguage{"python"};
     BreakpointType type{BreakpointType::Software};
+    HardwareBpSize hardwareSize{HardwareBpSize::Byte1};
     int hardwareSlot{-1};
     bool isPageGuardFallback{false};
     std::string symbol;

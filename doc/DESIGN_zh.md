@@ -1023,7 +1023,8 @@ edb-next/
     ├── test_exit.cpp           # 目标运行中窗口安全析构防崩溃压力测试
     ├── test_nextgen.cpp        # 验证 pidfd 反应式循环、目标 FD 内省、libclang AST 及 SQLite3+zstd
     ├── test_p4_advanced_re.cpp # 验证 SSA Micro-IR、Z3 符号执行、原生反编译、TTD 回溯、DAP 与 eBPF
-    └── test_p5_ultimate.cpp    # 验证 userfaultfd 隐匿缺页、BTF 紧凑类型系统、DR6 归因、PageGuard 降级与 NEON
+    ├── test_p5_ultimate.cpp    # 验证 userfaultfd 隐匿缺页、BTF 紧凑类型系统、DR6 归因、PageGuard 降级与 NEON
+    └── test_comprehensive.cpp  # 全量综合边界安全与 P0/P1 缺陷防御测试套件 (DAP, Breakpoint, Z3, MicroIR, ELF, BTF, Scanner)
 ```
 
 ---
@@ -1481,7 +1482,8 @@ cmake --build build -j$(nproc)
 - `build/plugins/sample_plugin.so`：参考扩展插件；
 - `build/test_core`：全功能核心单元测试程序；
 - `build/test_advanced`：进阶高阶逆向特性自动化回归测试套件；
-- `build/test_exit`：窗口安全析构与进程销毁压力测试程序。
+- `build/test_exit`：窗口安全析构与进程销毁压力测试程序；
+- `build/test_comprehensive`：全量综合边界安全与 P0/P1 缺陷防御测试程序。
 
 ### 7.3 全量自动化测试套件运行
 在发布或提交代码前，确保全量测试套件执行通过：
@@ -1500,6 +1502,9 @@ cmake --build build -j$(nproc)
 
 # 运行内嵌 Python 3 与 Lua 5.4 脚本引擎测试
 ./build/test_scripting
+
+# 运行综合边界鲁棒性与 P0/P1 缺陷防御测试套件
+./build/test_comprehensive
 ```
 
 ---

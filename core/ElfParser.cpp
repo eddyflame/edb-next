@@ -206,7 +206,9 @@ bool ElfParser::loadBinary(const std::string& filepath, Address base_addr) {
     for (const auto& sh : shdrs) {
         std::string sname;
         if (sh.sh_name < shstrtab.size()) {
-            sname = &shstrtab[sh.sh_name];
+            const char* s_ptr = &shstrtab[sh.sh_name];
+            size_t max_len = shstrtab.size() - sh.sh_name;
+            sname.assign(s_ptr, ::strnlen(s_ptr, max_len));
         }
 
         uint64_t saddr = sh.sh_addr;
@@ -242,7 +244,8 @@ bool ElfParser::loadBinary(const std::string& filepath, Address base_addr) {
             if (sym.st_name >= strtab.size()) continue;
 
             const char* name_ptr = &strtab[sym.st_name];
-            std::string sym_name(name_ptr);
+            size_t max_len = strtab.size() - sym.st_name;
+            std::string sym_name(name_ptr, ::strnlen(name_ptr, max_len));
             if (sym_name.empty()) continue;
 
             uint64_t actual_val = sym.st_value;
@@ -406,7 +409,9 @@ bool ElfParser::addSharedLibrary(const std::string& filepath, Address base_addr)
     for (const auto& sh : shdrs) {
         std::string sname;
         if (sh.sh_name < shstrtab.size()) {
-            sname = &shstrtab[sh.sh_name];
+            const char* s_ptr = &shstrtab[sh.sh_name];
+            size_t max_len = shstrtab.size() - sh.sh_name;
+            sname.assign(s_ptr, ::strnlen(s_ptr, max_len));
         }
 
         uint64_t saddr = sh.sh_addr;
@@ -442,7 +447,8 @@ bool ElfParser::addSharedLibrary(const std::string& filepath, Address base_addr)
             if (sym.st_name >= strtab.size()) continue;
 
             const char* name_ptr = &strtab[sym.st_name];
-            std::string sym_name(name_ptr);
+            size_t max_len = strtab.size() - sym.st_name;
+            std::string sym_name(name_ptr, ::strnlen(name_ptr, max_len));
             if (sym_name.empty()) continue;
 
             uint64_t actual_val = sym.st_value;
