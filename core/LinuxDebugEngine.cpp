@@ -271,11 +271,13 @@ bool LinuxDebugEngine::readMemory(Address addr, void* buffer, size_t size) {
     auto* dst = static_cast<uint8_t*>(buffer);
     size_t words = size / sizeof(long);
     size_t remainder = size % sizeof(long);
+    Tid fallbackTid = activeTid_.load();
+    if (fallbackTid <= 0) fallbackTid = mainTid_.load();
 
     for (size_t i = 0; i < words; ++i) {
         uint64_t target = addr.value() + i * sizeof(long);
         errno = 0;
-        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_.load(), reinterpret_cast<void*>(target), nullptr);
+        long data = ::ptrace(PTRACE_PEEKDATA, fallbackTid, reinterpret_cast<void*>(target), nullptr);
         if (errno != 0) return false;
         std::memcpy(dst + i * sizeof(long), &data, sizeof(long));
     }
@@ -283,7 +285,7 @@ bool LinuxDebugEngine::readMemory(Address addr, void* buffer, size_t size) {
     if (remainder > 0) {
         uint64_t target = addr.value() + words * sizeof(long);
         errno = 0;
-        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_.load(), reinterpret_cast<void*>(target), nullptr);
+        long data = ::ptrace(PTRACE_PEEKDATA, fallbackTid, reinterpret_cast<void*>(target), nullptr);
         if (errno != 0) return false;
         std::memcpy(dst + words * sizeof(long), &data, remainder);
     }
@@ -314,12 +316,14 @@ bool LinuxDebugEngine::writeMemory(Address addr, const void* buffer, size_t size
     const auto* src = static_cast<const uint8_t*>(buffer);
     size_t words = size / sizeof(long);
     size_t remainder = size % sizeof(long);
+    Tid fallbackTid = activeTid_.load();
+    if (fallbackTid <= 0) fallbackTid = mainTid_.load();
 
     for (size_t i = 0; i < words; ++i) {
         uint64_t target = addr.value() + i * sizeof(long);
         long data = 0;
         std::memcpy(&data, src + i * sizeof(long), sizeof(long));
-        if (::ptrace(PTRACE_POKEDATA, mainTid_.load(), reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
+        if (::ptrace(PTRACE_POKEDATA, fallbackTid, reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
             return false;
         }
     }
@@ -327,10 +331,10 @@ bool LinuxDebugEngine::writeMemory(Address addr, const void* buffer, size_t size
     if (remainder > 0) {
         uint64_t target = addr.value() + words * sizeof(long);
         errno = 0;
-        long data = ::ptrace(PTRACE_PEEKDATA, mainTid_.load(), reinterpret_cast<void*>(target), nullptr);
+        long data = ::ptrace(PTRACE_PEEKDATA, fallbackTid, reinterpret_cast<void*>(target), nullptr);
         if (errno != 0) return false;
         std::memcpy(&data, src + words * sizeof(long), remainder);
-        if (::ptrace(PTRACE_POKEDATA, mainTid_.load(), reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
+        if (::ptrace(PTRACE_POKEDATA, fallbackTid, reinterpret_cast<void*>(target), reinterpret_cast<void*>(data)) < 0) {
             return false;
         }
     }
@@ -529,6 +533,8 @@ std::vector<ThreadInfo> LinuxDebugEngine::getThreads() const {
         }
 
         // Read registers (RIP / RSP)
+        // Note: PTRACE_GETREGS is semantically read-only but the API is non-const;
+        // const_cast is intentional here to keep getThreads() const.
         RegisterContext regs;
         if (const_cast<LinuxDebugEngine*>(this)->getRegisters(tid, regs)) {
             info.rip = regs.rip();

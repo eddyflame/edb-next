@@ -205,9 +205,17 @@ bool PatchManager::patchFileToDisk(const std::string& inputBinaryPath,
         }
     }
 
-    if (patches_.size() > 0 && applied_count == 0) {
+    size_t total_active = 0;
+    for (const auto& p : patches_) {
+        if (p.isApplied && !p.patchedBytes.empty()) total_active++;
+    }
+    if (total_active > 0 && applied_count == 0) {
         errorMsg = "No patches could be mapped to ELF file offsets.";
         return false;
+    }
+    if (applied_count < total_active) {
+        errorMsg = "Warning: Only " + std::to_string(applied_count) + " of " +
+                   std::to_string(total_active) + " active patches were applied to the binary.";
     }
 
     // 4. Write output binary

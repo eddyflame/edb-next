@@ -247,8 +247,8 @@ bool BreakpointManager::enableBreakpoint(Address addr) {
         return false;
     }
 
-    constexpr uint8_t int32_opcode = 0xCC;
-    if (!writeMem_(addr, &int32_opcode, 1)) {
+    constexpr uint8_t int3_opcode = 0xCC;
+    if (!writeMem_(addr, &int3_opcode, 1)) {
         return false;
     }
 
