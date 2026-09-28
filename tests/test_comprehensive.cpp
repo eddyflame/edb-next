@@ -545,7 +545,7 @@ void test_database_manager_comprehensive() {
 
     auto& dbMgr = DatabaseManager::instance();
 
-    // 1. Explicit .json file saving and loading
+    // 1. Dedicated exportToJson and importFromJson (Scheme 2 auxiliary interchange)
     std::string jsonPath = "/tmp/test_project_format.json";
     std::filesystem::remove(jsonPath);
 
@@ -558,18 +558,23 @@ void test_database_manager_comprehensive() {
     proj.bookmarks.push_back(0x401000);
     proj.watches.push_back("rax == 42");
 
-    bool saveJsonOk = dbMgr.saveToFile(jsonPath, proj);
+    bool saveJsonOk = dbMgr.exportToJson(jsonPath, proj);
     assert(saveJsonOk);
-    assert(!dbMgr.isSqliteDatabase(jsonPath) && "Explicit .json path must save JSON document, not SQLite");
+    assert(!dbMgr.isSqliteDatabase(jsonPath) && "exportToJson must save JSON document, not SQLite");
 
     DatabaseProject loadedJson;
-    bool loadJsonOk = dbMgr.loadFromFile(jsonPath, loadedJson);
+    bool loadJsonOk = dbMgr.importFromJson(jsonPath, loadedJson);
     assert(loadJsonOk);
     assert(loadedJson.binaryPath == "/bin/echo");
     assert(loadedJson.notes == proj.notes);
     assert(loadedJson.comments.size() == 1);
     assert(loadedJson.comments[0].second == "Comment with \"quoted string\"");
     assert(loadedJson.watches.size() == 1);
+
+    // Verify backward compatibility: loadFromFile seamlessly auto-detects and migrates legacy JSON
+    DatabaseProject legacyLoaded;
+    assert(dbMgr.loadFromFile(jsonPath, legacyLoaded));
+    assert(legacyLoaded.notes == proj.notes);
     std::filesystem::remove(jsonPath);
 
     // 2. Explicit SQLite database saving and loading

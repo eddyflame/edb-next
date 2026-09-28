@@ -708,8 +708,9 @@ flowchart LR
 ## 7. Project Database & Automatic Session Persistence (.edb_db)
 
 - **Persistence Scope**: Instruction comments (`;`), custom user labels (`:` with `🏷` badge, globally resolved across the session), bookmarks (`Ctrl+B`), breakpoints (with conditions), watch expressions, patches, and scratch notes.
-- **Save**: Press **Ctrl+S** to generate `<binary>.edb_db`.
+- **Save**: Press **Ctrl+S** to generate `<binary>.edb_db` (pure SQLite3 WAL transactional database).
 - **Automatic Restore**: Reopening the binary detects and restores the `.edb_db` project database seamlessly.
+- **Auxiliary JSON Interchange**: Use `File -> Export Project to JSON...` to export human-readable project metadata for Git diffs/review or external Python tooling, and `File -> Import Project from JSON...` to import legacy analysis projects.
 
 ---
 

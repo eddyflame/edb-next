@@ -264,6 +264,12 @@ void MainWindow::setupActions() {
     actLoadDatabase_->setShortcut(QKeySequence("Ctrl+Shift+S"));
     connect(actLoadDatabase_, &QAction::triggered, this, &MainWindow::onLoadDatabaseTriggered);
 
+    actExportJson_ = new QAction("📤 &Export Project to JSON...", this);
+    connect(actExportJson_, &QAction::triggered, this, &MainWindow::onExportJsonTriggered);
+
+    actImportJson_ = new QAction("📥 &Import Project from JSON...", this);
+    connect(actImportJson_, &QAction::triggered, this, &MainWindow::onImportJsonTriggered);
+
     // Debug Actions
     actResume_ = new QAction("▶ &Run / Continue", this);
     actResume_->setShortcut(QKeySequence("F9"));
@@ -391,6 +397,9 @@ void MainWindow::setupMenusAndToolbars() {
     menuFile_->addSeparator();
     menuFile_->addAction(actSaveDatabase_);
     menuFile_->addAction(actLoadDatabase_);
+    menuFile_->addSeparator();
+    menuFile_->addAction(actExportJson_);
+    menuFile_->addAction(actImportJson_);
     menuFile_->addSeparator();
     auto* act_quit = menuFile_->addAction("E&xit");
     act_quit->setShortcut(QKeySequence("Alt+X"));
@@ -631,8 +640,11 @@ void MainWindow::onSaveDatabaseTriggered() {
     }
 
     QString default_path = QString::fromStdString(DatabaseManager::instance().defaultDatabasePath(session->targetPath()));
-    QString path = QFileDialog::getSaveFileName(this, "Save Project Database", default_path, "EDB Database Files (*.edb_db);;JSON Files (*.json)");
+    QString path = QFileDialog::getSaveFileName(this, "Save Project Database", default_path, "EDB Database Files (*.edb_db)");
     if (path.isEmpty()) return;
+    if (!path.endsWith(".edb_db", Qt::CaseInsensitive)) {
+        path += ".edb_db";
+    }
 
     QString notes;
     std::vector<std::string> watches;
@@ -658,7 +670,7 @@ void MainWindow::onLoadDatabaseTriggered() {
     }
 
     QString default_path = QString::fromStdString(DatabaseManager::instance().defaultDatabasePath(session->targetPath()));
-    QString path = QFileDialog::getOpenFileName(this, "Load Project Database", default_path, "EDB Database Files (*.edb_db);;JSON Files (*.json)");
+    QString path = QFileDialog::getOpenFileName(this, "Load Project Database", default_path, "EDB Database Files (*.edb_db);;All Supported Files (*.edb_db *.json)");
     if (path.isEmpty()) return;
 
     std::string notes;
@@ -677,6 +689,66 @@ void MainWindow::onLoadDatabaseTriggered() {
         QMessageBox::information(this, "Load Database", "Project database restored successfully.");
     } else {
         QMessageBox::critical(this, "Load Error", "Failed to load project database. File may be corrupt or invalid.");
+    }
+}
+
+void MainWindow::onExportJsonTriggered() {
+    auto session = sessionMgr_.activeSession();
+    if (!session || session->targetPath().empty()) {
+        QMessageBox::warning(this, "Export JSON", "No active target binary in session to export JSON for.");
+        return;
+    }
+
+    std::filesystem::path p(session->targetPath());
+    std::string default_json = (p.parent_path() / (p.stem().string() + ".json")).string();
+    QString path = QFileDialog::getSaveFileName(this, "Export Project to JSON", QString::fromStdString(default_json), "JSON Files (*.json)");
+    if (path.isEmpty()) return;
+    if (!path.endsWith(".json", Qt::CaseInsensitive)) {
+        path += ".json";
+    }
+
+    QString notes;
+    std::vector<std::string> watches;
+    if (auto* tab = currentSessionTabWidget()) {
+        notes = tab->notesView()->notesText();
+        watches = tab->watchView()->watchExpressions();
+    }
+
+    bool ok = DatabaseManager::instance().exportSession(session, &patchMgr_, notes.toStdString(), watches, path.toStdString());
+    if (ok) {
+        logMessage("Project exported to JSON successfully: " + path);
+        QMessageBox::information(this, "Export JSON", "Project successfully exported to JSON:\n" + path);
+    } else {
+        QMessageBox::critical(this, "Export Error", "Failed to export project to JSON.");
+    }
+}
+
+void MainWindow::onImportJsonTriggered() {
+    auto session = sessionMgr_.activeSession();
+    if (!session) {
+        QMessageBox::warning(this, "Import JSON", "Please create or select an active session first.");
+        return;
+    }
+
+    QString path = QFileDialog::getOpenFileName(this, "Import Project from JSON", QString(), "JSON Files (*.json);;All Files (*)");
+    if (path.isEmpty()) return;
+
+    std::string notes;
+    std::vector<std::string> watches;
+    bool ok = DatabaseManager::instance().importSession(session, &patchMgr_, notes, watches, path.toStdString());
+    if (ok) {
+        if (auto* tab = currentSessionTabWidget()) {
+            tab->notesView()->setNotesText(QString::fromStdString(notes));
+            tab->watchView()->clearWatches();
+            for (const auto& w : watches) {
+                tab->watchView()->addWatchExpression(QString::fromStdString(w));
+            }
+            tab->refreshAll();
+        }
+        logMessage("Project imported from JSON successfully: " + path);
+        QMessageBox::information(this, "Import JSON", "Project successfully imported from JSON.");
+    } else {
+        QMessageBox::critical(this, "Import Error", "Failed to import JSON file. File may be corrupt or invalid.");
     }
 }
 
