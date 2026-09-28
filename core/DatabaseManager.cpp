@@ -151,104 +151,108 @@ bool DatabaseManager::saveToFile(const std::string& filepath, const DatabaseProj
     auto& sql = SqliteLib::instance();
     bool forceJson = filepath.ends_with(".json") || filepath.ends_with(".JSON");
     if (forceJson || !sql.load()) {
-        // Save as JSON if explicitly requested or SQLite3 library is unavailable
-        QJsonObject root;
-        root["version"] = 1;
-        root["binary_path"] = QString::fromStdString(project.binaryPath);
-        root["notes"] = QString::fromStdString(project.notes);
-        root["base_address"] = QString("0x%1").arg(project.baseAddress, 0, 16);
-
-        QJsonArray comments_arr;
-        for (const auto& [addr, text] : project.comments) {
-            QJsonObject c_obj;
-            std::ostringstream ss;
-            ss << "0x" << std::hex << addr;
-            c_obj["address"] = QString::fromStdString(ss.str());
-            c_obj["comment"] = QString::fromStdString(text);
-            comments_arr.append(c_obj);
-        }
-        root["comments"] = comments_arr;
-
-        QJsonArray labels_arr;
-        for (const auto& [addr, text] : project.labels) {
-            QJsonObject l_obj;
-            std::ostringstream ss;
-            ss << "0x" << std::hex << addr;
-            l_obj["address"] = QString::fromStdString(ss.str());
-            l_obj["label"] = QString::fromStdString(text);
-            labels_arr.append(l_obj);
-        }
-        root["labels"] = labels_arr;
-
-        QJsonArray bm_arr;
-        for (uint64_t addr : project.bookmarks) {
-            std::ostringstream ss;
-            ss << "0x" << std::hex << addr;
-            bm_arr.append(QString::fromStdString(ss.str()));
-        }
-        root["bookmarks"] = bm_arr;
-
-        QJsonArray bp_arr;
-        for (const auto& bp : project.breakpoints) {
-            QJsonObject bp_obj;
-            std::ostringstream ss;
-            ss << "0x" << std::hex << bp.address;
-            bp_obj["address"] = QString::fromStdString(ss.str());
-            bp_obj["type"] = QString::fromStdString(bp.type);
-            bp_obj["condition"] = QString::fromStdString(bp.condition);
-            bp_obj["log_format"] = QString::fromStdString(bp.logFormat);
-            bp_obj["ignore_count"] = static_cast<int>(bp.ignoreCount);
-            bp_obj["script_code"] = QString::fromStdString(bp.scriptCode);
-            bp_obj["script_lang"] = QString::fromStdString(bp.scriptLanguage);
-            bp_arr.append(bp_obj);
-        }
-        root["breakpoints"] = bp_arr;
-
-        QJsonArray pg_arr;
-        for (const auto& pg : project.pageGuards) {
-            QJsonObject pg_obj;
-            std::ostringstream ss;
-            ss << "0x" << std::hex << pg.address;
-            pg_obj["address"] = QString::fromStdString(ss.str());
-            pg_obj["size"] = static_cast<int>(pg.size);
-            pg_obj["access"] = QString::fromStdString(pg.access);
-            pg_obj["comment"] = QString::fromStdString(pg.comment);
-            pg_obj["condition"] = QString::fromStdString(pg.condition);
-            pg_obj["script_code"] = QString::fromStdString(pg.scriptCode);
-            pg_obj["script_lang"] = QString::fromStdString(pg.scriptLanguage);
-            pg_arr.append(pg_obj);
-        }
-        root["page_guards"] = pg_arr;
-
-        QJsonArray w_arr;
-        for (const auto& w : project.watches) {
-            w_arr.append(QString::fromStdString(w));
-        }
-        root["watches"] = w_arr;
-
-        QJsonArray p_arr;
-        for (const auto& p : project.patches) {
-            QJsonObject p_obj;
-            std::ostringstream ss;
-            ss << "0x" << std::hex << p.address;
-            p_obj["address"] = QString::fromStdString(ss.str());
-            p_obj["original_hex"] = QString::fromStdString(p.originalHex);
-            p_obj["patched_hex"] = QString::fromStdString(p.patchedHex);
-            p_arr.append(p_obj);
-        }
-        root["patches"] = p_arr;
-
-        QFile file(QString::fromStdString(filepath));
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            return false;
-        }
-        QJsonDocument doc(root);
-        file.write(doc.toJson(QJsonDocument::Indented));
-        file.close();
-        return true;
+        return exportToJson(filepath, project);
     }
 
     return saveProjectIncremental(filepath, project);
+}
+
+bool DatabaseManager::exportToJson(const std::string& filepath, const DatabaseProject& project) {
+    // Export as auxiliary / legacy JSON interchange format
+    QJsonObject root;
+    root["version"] = 1;
+    root["binary_path"] = QString::fromStdString(project.binaryPath);
+    root["notes"] = QString::fromStdString(project.notes);
+    root["base_address"] = QString("0x%1").arg(project.baseAddress, 0, 16);
+
+    QJsonArray comments_arr;
+    for (const auto& [addr, text] : project.comments) {
+        QJsonObject c_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << addr;
+        c_obj["address"] = QString::fromStdString(ss.str());
+        c_obj["comment"] = QString::fromStdString(text);
+        comments_arr.append(c_obj);
+    }
+    root["comments"] = comments_arr;
+
+    QJsonArray labels_arr;
+    for (const auto& [addr, text] : project.labels) {
+        QJsonObject l_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << addr;
+        l_obj["address"] = QString::fromStdString(ss.str());
+        l_obj["label"] = QString::fromStdString(text);
+        labels_arr.append(l_obj);
+    }
+    root["labels"] = labels_arr;
+
+    QJsonArray bm_arr;
+    for (uint64_t addr : project.bookmarks) {
+        std::ostringstream ss;
+        ss << "0x" << std::hex << addr;
+        bm_arr.append(QString::fromStdString(ss.str()));
+    }
+    root["bookmarks"] = bm_arr;
+
+    QJsonArray bp_arr;
+    for (const auto& bp : project.breakpoints) {
+        QJsonObject bp_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << bp.address;
+        bp_obj["address"] = QString::fromStdString(ss.str());
+        bp_obj["type"] = QString::fromStdString(bp.type);
+        bp_obj["condition"] = QString::fromStdString(bp.condition);
+        bp_obj["log_format"] = QString::fromStdString(bp.logFormat);
+        bp_obj["ignore_count"] = static_cast<int>(bp.ignoreCount);
+        bp_obj["script_code"] = QString::fromStdString(bp.scriptCode);
+        bp_obj["script_lang"] = QString::fromStdString(bp.scriptLanguage);
+        bp_arr.append(bp_obj);
+    }
+    root["breakpoints"] = bp_arr;
+
+    QJsonArray pg_arr;
+    for (const auto& pg : project.pageGuards) {
+        QJsonObject pg_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << pg.address;
+        pg_obj["address"] = QString::fromStdString(ss.str());
+        pg_obj["size"] = static_cast<int>(pg.size);
+        pg_obj["access"] = QString::fromStdString(pg.access);
+        pg_obj["comment"] = QString::fromStdString(pg.comment);
+        pg_obj["condition"] = QString::fromStdString(pg.condition);
+        pg_obj["script_code"] = QString::fromStdString(pg.scriptCode);
+        pg_obj["script_lang"] = QString::fromStdString(pg.scriptLanguage);
+        pg_arr.append(pg_obj);
+    }
+    root["page_guards"] = pg_arr;
+
+    QJsonArray w_arr;
+    for (const auto& w : project.watches) {
+        w_arr.append(QString::fromStdString(w));
+    }
+    root["watches"] = w_arr;
+
+    QJsonArray p_arr;
+    for (const auto& p : project.patches) {
+        QJsonObject p_obj;
+        std::ostringstream ss;
+        ss << "0x" << std::hex << p.address;
+        p_obj["address"] = QString::fromStdString(ss.str());
+        p_obj["original_hex"] = QString::fromStdString(p.originalHex);
+        p_obj["patched_hex"] = QString::fromStdString(p.patchedHex);
+        p_arr.append(p_obj);
+    }
+    root["patches"] = p_arr;
+
+    QFile file(QString::fromStdString(filepath));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    QJsonDocument doc(root);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.close();
+    return true;
 }
 
 bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const DatabaseProject& project) {
@@ -630,7 +634,11 @@ bool DatabaseManager::loadFromFile(const std::string& filepath, DatabaseProject&
         return true;
     }
 
-    // Backward compatibility fallback: Load legacy JSON format
+    // Auxiliary / backward compatibility fallback: Load legacy JSON format
+    return importFromJson(filepath, project);
+}
+
+bool DatabaseManager::importFromJson(const std::string& filepath, DatabaseProject& project) {
     QFile file(QString::fromStdString(filepath));
     if (!file.open(QIODevice::ReadOnly)) {
         return false;

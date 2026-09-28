@@ -55,6 +55,8 @@ private Q_SLOTS:
     void onTargetArgumentsTriggered();
     void onSaveDatabaseTriggered();
     void onLoadDatabaseTriggered();
+    void onExportJsonTriggered();
+    void onImportJsonTriggered();
     void onRecentFileTriggered(const QString& path);
     void updateRecentFilesMenu();
 
@@ -137,6 +139,8 @@ private:
     QAction* actNewSession_{nullptr};
     QAction* actSaveDatabase_{nullptr};
     QAction* actLoadDatabase_{nullptr};
+    QAction* actExportJson_{nullptr};
+    QAction* actImportJson_{nullptr};
 
     QAction* actResume_{nullptr};
     QAction* actResumePassSig_{nullptr};

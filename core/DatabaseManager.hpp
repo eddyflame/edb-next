@@ -54,6 +54,7 @@ class DatabaseManager {
 public:
     static DatabaseManager& instance();
 
+    // Primary Project Storage (.edb_db SQLite3 WAL + zstd)
     bool saveToFile(const std::string& filepath, const DatabaseProject& project);
     bool loadFromFile(const std::string& filepath, DatabaseProject& project);
 
@@ -61,6 +62,10 @@ public:
     bool saveProjectIncremental(const std::string& filepath, const DatabaseProject& project);
     [[nodiscard]] bool isSqliteDatabase(const std::string& filepath) const;
     [[nodiscard]] bool isSqliteAvailable() const noexcept;
+
+    // Auxiliary Interchange & Migration (Legacy JSON Import / Export)
+    bool exportToJson(const std::string& filepath, const DatabaseProject& project);
+    bool importFromJson(const std::string& filepath, DatabaseProject& project);
 
     // Auto-save database path calculation based on binary path
     [[nodiscard]] std::string defaultDatabasePath(const std::string& binaryPath) const;
