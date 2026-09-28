@@ -43,8 +43,14 @@ uint64_t parseHexOrDec(const std::string& str) {
         if (str.starts_with("0x") || str.starts_with("0X")) {
             return std::stoull(str, nullptr, 16);
         }
-        if (std::all_of(str.begin(), str.end(), ::isdigit)) {
-            return std::stoull(str, nullptr, 10);
+        if (str.starts_with("-0x") || str.starts_with("-0X")) {
+            int64_t sval = std::strtoll(str.c_str(), nullptr, 16);
+            return static_cast<uint64_t>(sval);
+        }
+        size_t start = (str.starts_with('-') || str.starts_with('+')) ? 1 : 0;
+        if (start < str.size() && std::all_of(str.begin() + start, str.end(), ::isdigit)) {
+            int64_t sval = std::strtoll(str.c_str(), nullptr, 10);
+            return static_cast<uint64_t>(sval);
         }
         return std::stoull(str, nullptr, 16);
     } catch (...) {
@@ -61,10 +67,12 @@ IROperand parseOperandString(const std::string& text, uint8_t defaultSz = 8) {
     size_t closeBracket = s.rfind(']');
     if (openBracket != std::string::npos && closeBracket != std::string::npos && closeBracket > openBracket) {
         uint8_t sz = defaultSz;
-        if (s.find("byte ptr") != std::string::npos) sz = 1;
-        else if (s.find("word ptr") != std::string::npos) sz = 2;
-        else if (s.find("dword ptr") != std::string::npos) sz = 4;
-        else if (s.find("qword ptr") != std::string::npos) sz = 8;
+        std::string prefix = s.substr(0, openBracket);
+        std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
+        if (prefix.find("qword") != std::string::npos) sz = 8;
+        else if (prefix.find("dword") != std::string::npos) sz = 4;
+        else if (prefix.find("word") != std::string::npos) sz = 2;
+        else if (prefix.find("byte") != std::string::npos) sz = 1;
 
         std::string inner = s.substr(openBracket + 1, closeBracket - openBracket - 1);
         return IROperand::Mem(trim(inner), sz);
@@ -73,9 +81,13 @@ IROperand parseOperandString(const std::string& text, uint8_t defaultSz = 8) {
     // Check if immediate number
     bool isNumber = false;
     if (s.starts_with("0x") || s.starts_with("0X") || s.starts_with("-0x") || s.starts_with("-0X")) {
-        isNumber = true;
-    } else if (std::all_of(s.begin() + (s.starts_with('-') ? 1 : 0), s.end(), ::isdigit)) {
-        isNumber = true;
+        size_t pfx = (s.starts_with('-') ? 3 : 2);
+        isNumber = (s.size() > pfx && std::all_of(s.begin() + pfx, s.end(), ::isxdigit));
+    } else {
+        size_t start = (s.starts_with('-') || s.starts_with('+')) ? 1 : 0;
+        if (start < s.size() && std::all_of(s.begin() + start, s.end(), ::isdigit)) {
+            isNumber = true;
+        }
     }
 
     if (isNumber) {

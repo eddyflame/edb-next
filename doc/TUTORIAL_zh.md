@@ -157,7 +157,8 @@ cmake --build build -j$(nproc)
 - `build/test_dwarf`：DWARF 源码级调试与行号双向映射测试套件；
 - `build/test_advanced`：高阶逆向特性全量回归测试套件；
 - `build/test_scripting`：Python 3 & Lua 5.4 嵌入式双引擎测试套件；
-- `build/test_exit`：窗口析构防崩溃压力测试套件。
+- `build/test_exit`：窗口析构防崩溃压力测试套件；
+- `build/test_comprehensive`：全量综合边界安全与 P0/P1 缺陷防御测试套件。
 
 ---
 
@@ -180,8 +181,11 @@ cmake --build build -j$(nproc)
 
 # 运行析构防崩溃压力测试
 ./build/test_exit
+
+# 运行全量综合边界安全与 P0/P1 缺陷防御测试
+./build/test_comprehensive
 ```
-若全部测试输出 `>>> ALL UNIT TESTS PASSED SUCCESSFULLY! <<<`，表明调试内核运行环境完全就绪。
+若全部测试输出 `>>> ALL UNIT TESTS PASSED SUCCESSFULLY! <<<` 或 `ALL COMPREHENSIVE TESTS PASSED!`，表明调试内核运行环境完全就绪。
 
 ---
 

@@ -239,6 +239,8 @@ private:
                     current_ = Token(TokenType::Number, std::string(src_.substr(start, cursor_ - start)), val);
                     return;
                 }
+                current_ = Token(TokenType::EndOfInput);
+                return;
             } else if (c == '0' && cursor_ + 1 < src_.size() &&
                        (src_[cursor_ + 1] == 'b' || src_[cursor_ + 1] == 'B')) {
                 cursor_ += 2;
@@ -252,6 +254,8 @@ private:
                     current_ = Token(TokenType::Number, std::string(src_.substr(start, cursor_ - start)), val);
                     return;
                 }
+                current_ = Token(TokenType::EndOfInput);
+                return;
             } else {
                 while (cursor_ < src_.size() && std::isdigit(static_cast<unsigned char>(src_[cursor_]))) {
                     cursor_++;
@@ -263,6 +267,8 @@ private:
                     current_ = Token(TokenType::Number, std::string(decStr), val);
                     return;
                 }
+                current_ = Token(TokenType::EndOfInput);
+                return;
             }
         }
 

@@ -350,6 +350,21 @@ target_link_libraries(test_p5_ultimate
 )
 add_dependencies(test_p5_ultimate build_test_target)
 
+# Comprehensive Unit Test Suite (P0-P2 fixes, boundary checks, robustness)
+add_executable(test_comprehensive tests/test_comprehensive.cpp)
+target_link_libraries(test_comprehensive
+    PRIVATE
+    edb_core
+    Qt6::Core
+    ${CAPSTONE_LIBRARIES}
+    ${Z3_LIBRARIES}
+    ${ZSTD_LIBRARIES}
+    ${CMAKE_DL_LIBS}
+    pthread
+)
+add_dependencies(test_comprehensive build_test_target)
+
+
 # ==============================================================================
 # Installation Rules (Standard FHS & AppImage Packaging Support)
 

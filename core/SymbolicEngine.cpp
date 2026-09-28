@@ -36,16 +36,30 @@ public:
         return sym;
     }
 
+    z3::expr fitExpr(const z3::expr& e, unsigned targetBits) {
+        if (!e.is_bv()) return e;
+        unsigned curBits = e.get_sort().bv_size();
+        if (curBits == targetBits) return e;
+        if (curBits > targetBits) {
+            return e.extract(targetBits - 1, 0);
+        } else {
+            return z3::zext(e, targetBits - curBits);
+        }
+    }
+
     z3::expr getOperandExpr(const IROperand& op, uint8_t defaultSize = 8) {
         uint8_t sz = (op.size > 0) ? op.size : defaultSize;
+        if (sz == 0) sz = 8;
+        unsigned targetBits = sz * 8;
         if (op.isImm()) {
-            return ctx.bv_val(static_cast<uint64_t>(op.immValue), sz * 8);
+            return ctx.bv_val(static_cast<uint64_t>(op.immValue), targetBits);
         }
         if (op.isReg() || op.isVar()) {
-            return getOrCreateReg(op.name, sz);
+            z3::expr reg = getOrCreateReg(op.name, sz);
+            return fitExpr(reg, targetBits);
         }
         // Default 0
-        return ctx.bv_val(0, sz * 8);
+        return ctx.bv_val(0, targetBits);
     }
 };
 
@@ -124,10 +138,18 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
     }
 
     auto& p = *pImpl_;
+    auto alignOperands = [&](z3::expr& e1, z3::expr& e2, uint8_t dstSize) {
+        unsigned targetBits = (dstSize > 0) ? (dstSize * 8) : std::max(e1.get_sort().bv_size(), e2.get_sort().bv_size());
+        e1 = p.fitExpr(e1, targetBits);
+        e2 = p.fitExpr(e2, targetBits);
+    };
+
     switch (insn.op) {
         case IROp::Mov: {
             if (!insn.dst.name.empty()) {
-                p.regs.insert_or_assign(insn.dst.name, p.getOperandExpr(insn.src1, insn.dst.size));
+                z3::expr val = p.getOperandExpr(insn.src1, insn.dst.size);
+                if (insn.dst.size > 0) val = p.fitExpr(val, insn.dst.size * 8);
+                p.regs.insert_or_assign(insn.dst.name, val);
             }
             break;
         }
@@ -135,6 +157,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, e1 + e2);
             }
             break;
@@ -143,6 +166,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, e1 - e2);
             }
             break;
@@ -151,6 +175,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, e1 * e2);
             }
             break;
@@ -159,6 +184,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, z3::udiv(e1, e2));
             }
             break;
@@ -167,6 +193,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, z3::urem(e1, e2));
             }
             break;
@@ -175,6 +202,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, e1 & e2);
             }
             break;
@@ -183,6 +211,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, e1 | e2);
             }
             break;
@@ -191,6 +220,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, e1 ^ e2);
             }
             break;
@@ -198,6 +228,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
         case IROp::Not: {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
+                if (insn.dst.size > 0) e1 = p.fitExpr(e1, insn.dst.size * 8);
                 p.regs.insert_or_assign(insn.dst.name, ~e1);
             }
             break;
@@ -205,6 +236,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
         case IROp::Neg: {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
+                if (insn.dst.size > 0) e1 = p.fitExpr(e1, insn.dst.size * 8);
                 p.regs.insert_or_assign(insn.dst.name, -e1);
             }
             break;
@@ -213,6 +245,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, z3::shl(e1, e2));
             }
             break;
@@ -221,6 +254,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, z3::lshr(e1, e2));
             }
             break;
@@ -229,6 +263,7 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
             if (!insn.dst.name.empty()) {
                 z3::expr e1 = p.getOperandExpr(insn.src1, insn.dst.size);
                 z3::expr e2 = p.getOperandExpr(insn.src2, insn.dst.size);
+                alignOperands(e1, e2, insn.dst.size);
                 p.regs.insert_or_assign(insn.dst.name, z3::ashr(e1, e2));
             }
             break;
@@ -236,6 +271,9 @@ void SymbolicEngine::stepIR(const IRInstruction& insn) {
         case IROp::Cmp: {
             z3::expr e1 = p.getOperandExpr(insn.src1, 8);
             z3::expr e2 = p.getOperandExpr(insn.src2, 8);
+            unsigned targetBits = std::max(e1.get_sort().bv_size(), e2.get_sort().bv_size());
+            e1 = p.fitExpr(e1, targetBits);
+            e2 = p.fitExpr(e2, targetBits);
             p.lastCmp = {e1, e2};
             break;
         }
