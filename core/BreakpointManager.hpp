@@ -37,6 +37,7 @@ public:
     bool toggleBreakpoint(Address addr);
 
     [[nodiscard]] bool hasBreakpoint(Address addr) const;
+    [[nodiscard]] bool isBreakpointEnabled(Address addr) const;
     [[nodiscard]] const Breakpoint* getBreakpoint(Address addr) const;
     Breakpoint* getBreakpointMutable(Address addr);
     bool setBreakpointCondition(Address addr, const std::string& condition);

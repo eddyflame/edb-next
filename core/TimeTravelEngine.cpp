@@ -34,14 +34,14 @@ void TimeTravelEngine::recordFrame(Address rip, const RegisterContext& regs,
     pendingDeltas_.clear();
 
     if (timeline_.size() >= maxFrames_) {
-        timeline_.erase(timeline_.begin());
-        // Re-index remaining frames
-        for (size_t i = 0; i < timeline_.size(); ++i) {
-            timeline_[i].frameIndex = i;
-        }
+        timeline_.pop_front();
     }
 
+    frame.frameIndex = timeline_.size();
     timeline_.push_back(std::move(frame));
+    for (size_t i = 0; i < timeline_.size(); ++i) {
+        timeline_[i].frameIndex = i;
+    }
     currentCursor_ = timeline_.size() - 1;
     isReplaying_ = false;
 }

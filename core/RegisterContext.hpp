@@ -66,6 +66,8 @@ public:
     void setR13(uint64_t val) noexcept { regs_.r13 = val; }
     void setR14(uint64_t val) noexcept { regs_.r14 = val; }
     void setR15(uint64_t val) noexcept { regs_.r15 = val; }
+    void setRflags(uint64_t val) noexcept { regs_.eflags = val; }
+    void setEflags(uint64_t val) noexcept { regs_.eflags = val; }
 
     [[nodiscard]] bool flagCF() const noexcept { return (regs_.eflags & (1ULL << 0)) != 0; }
     [[nodiscard]] bool flagPF() const noexcept { return (regs_.eflags & (1ULL << 2)) != 0; }

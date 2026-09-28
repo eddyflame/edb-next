@@ -68,6 +68,13 @@
    - 6.5 ELF 全景解析与虚存-文件映射算法 (`patchFileToDisk`)
    - 6.6 C++20 纯虚契约插件体系设计
    - 6.7 项目工程数据库持久化设计 (`.edb_db`)
+   - 6.8 硬件断点多线程全域同步机制 (`syncHardwareBreakpointsToAllThreads`)
+   - 6.9 线程本地 CapstoneContext 句柄池与 LRU 反汇编指令缓存
+   - 6.10 可插拔调试引擎抽象接口 (`IDebugBackend`)
+   - 6.11 中心化多视图跨界路由总线 (`NavigationBus`)
+   - 6.12 模块化命令注册与分发引擎 (`CommandRegistry`)
+   - 6.13 Zydis x86_64 高速指令解码引擎与双引擎架构 (`ZydisContext`)
+   - 6.14 时间旅行引擎 (TimeTravelEngine) 内存一致性协议与 O(1) 淘汰队列
 7. [编译构建、安装与使用全流程指南 (Build, Installation & User Guide)](#7-编译构建安装与使用全流程指南-build-installation--user-guide)
    - 7.1 系统依赖与开发环境准备
    - 7.2 编译构建指令
@@ -1370,6 +1377,16 @@ sequenceDiagram
    - 对目标发起 `PTRACE_SINGLESTEP` 单步；
    - `EventLoopThread` 捕获单步完成事件，调用 `finishStepOver()`：重新将 `0xCC` 写入原地址；
    - 恢复目标继续运行（`PTRACE_CONT`）。
+5. **内部步过断点自销毁闭环 (`isInternal` Breakpoint Cleanup)**：
+   - 当调用 `stepOver` 跨越 `call` 或指令块时，系统在返回地址植入 `isInternal = true` 的临时断点；
+   - 目标执行命中该内部断点后，`handleBreakpointOrTrap` 自动从 `BreakpointManager` 中彻底注销并清除该临时断点，还原原机器码并向外派发 `StopReason::SingleStep`（"Step-over completed"），彻底杜绝内部断点泄漏或后续执行被幽灵断点拦截。
+6. **硬件执行断点与 x86_64 Resume Flag (RF) 协议**：
+   - 硬件指令断点（`HardwareBpType::Execute`）属于 Fault-class 陷阱（在指令执行前触发），目标暂停时 RIP 指向断点处；
+   - 若直接恢复执行（`resume` / `stepInto`），CPU 会在同一条指令再次触发 `#DB` 异常形成死循环；
+   - `DebugSession` 在单步或继续运行前，检测若命中硬件执行断点，自动通过 `RegisterContext::setRflags` 将 x86_64 `RFLAGS.RF`（Resume Flag, bit 16, `0x10000`）置 1，通知 CPU 忽略下条指令的硬件断点检测，确保目标正常越过断点。
+7. **多线程全域 Attach / Detach 拓扑完整性**：
+   - `LinuxDebugEngine::attach` 附着目标进程时，自动解析 `/proc/<pid>/task` 目录，枚举并附加其所属的所有存量轻量级线程（LWP/TID），挂载 `PTRACE_SEIZE` / `PTRACE_INTERRUPT`；
+   - `detach` 时先有序遍历所有附属线程执行 `PTRACE_DETACH`，最后释放主进程，彻底杜绝孤儿跟踪与目标进程悬挂。
 
 ### 6.3 远程系统调用注入方案 (`executeRemoteSyscall`)
 为了彻底打破 Linux 内存分页保护的束缚，edb-next 将 `ptrace` 的控制力发挥到极致：
@@ -1436,8 +1453,8 @@ sequenceDiagram
 - **精确失效机制 (Selective Invalidation)**：在目标内存被覆写（`writeMemory()`）、断点添加/移除/切换/启用/禁用（`addBreakpoint`, `removeBreakpoint`, `toggleBreakpoint`, `enableBreakpoint`, `disableBreakpoint`）时，主动触发 `invalidateDisasmCache()`，确保反汇编与实际机器指令严格一致。
 
 ### 6.10 可插拔调试引擎抽象接口 (`IDebugBackend`)
-- **架构解耦**：核心逻辑层（`DebugSession`、`EventLoopThread`、`TypeManager`）全面解除对底层具体 `LinuxDebugEngine` 实现的硬编码绑定，统一面向纯虚契约 `IDebugBackend` 进行交互。
-- **零依赖离线单元测试**：引入 `MockDebugBackend`，在无需 `root` 特权、不发起真实 `ptrace` 系统调用、不拉起外部进程的环境下，完整验证上层调试会话流转、多线程断点逻辑、结构体内存解析及 GUI 响应逻辑。
+- **全架构彻底解耦**：核心逻辑层（`DebugSession`、`EventLoopThread`、`TypeManager`、`ExpressionEvaluator`、`DapServer`）全面解除对底层具体 `LinuxDebugEngine` 实现的硬编码绑定，统一面向纯虚契约 `IDebugBackend` 进行交互，并彻底移除历史遗留的不安全 `const_cast`。
+- **零依赖离线单元测试**：引入 `MockDebugBackend`，在无需 `root` 特权、不发起真实 `ptrace` 系统调用、不拉起外部进程的环境下，完整验证上层调试会话流转、多线程断点逻辑、表达式计算、DAP 调试适配器通信、结构体内存解析及 GUI 响应逻辑。
 - **未来可扩展性**：为未来接入 GDB / LLDB Remote Serial Protocol (RSP) 远程调试桩（嵌入式、QEMU、跨平台 Windows/macOS）建立规范的后端适配标准。
 
 ### 6.11 中心化多视图跨界路由总线 (`NavigationBus`)
@@ -1457,6 +1474,12 @@ sequenceDiagram
 - **双引擎无缝互补与透明容灾**：在 `ConfigurationManager` 中提供 `DisassemblyEngine::Zydis` 与 `DisassemblyEngine::Capstone` 双引擎选型。默认优先使用 Zydis 作为 Linux x86_64 主力解码器；若遇到非 x86 架构或用户显式切换时，系统无缝且透明地回退至 Capstone，兼具极致性能与架构包容性。
 - **全格式与异常机器码容灾**：全面支持 Intel / AT&T 语法风格、大写助记符切换、RIP 相对变址寻址自动化解算与简化。遇非法或未映射机器码时自动降级输出 `db 0xXX` 单字节伪指令，杜绝解码崩溃与死循环。
 - **超轻量工程内嵌**：裁剪静态库与 Zycore 整合打包于 `third_party/zydis/`（仅 926KB），并提供独立一键源码构建脚本 [`scripts/build_zydis.sh`](../scripts/build_zydis.sh)。
+
+### 6.14 时间旅行引擎 (TimeTravelEngine) 内存一致性协议与 O(1) 淘汰队列
+- **双端队列与 $O(1)$ 时间线淘汰**：核心时间线由 `std::vector` 重构为 `std::deque<TimeFrame>`。当记录的执行帧达到预设容量上限（`maxFrames`）时，以 $O(1)$ 常数时间调用 `pop_front()` 淘汰最老快照，杜绝大容量时间线下的 $O(N)$ 连续物理内存搬移损耗。
+- **多帧连续跳转与内存增量一致性回溯**：
+  - 在跨越多帧的逆向回溯（`reverseContinue` / `seekTimeTravelFrame`）中，按逆时序依次应用各中间帧记录的 `MemoryDelta::oldBytes`，将目标内存彻底恢复至目标历史帧的精确镜像；
+  - 在正向单步前进或快进跳转时，按正时序依次重放各中间帧的 `newBytes`，确保无论在时间轴上任意拖动游标，目标进程内存物理状态始终与时间旅行快照严格一致。
 
 ---
 

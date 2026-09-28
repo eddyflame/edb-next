@@ -4,6 +4,7 @@
 #include "RegisterContext.hpp"
 #include <string>
 #include <vector>
+#include <deque>
 #include <optional>
 #include <unordered_set>
 #include <span>
@@ -50,13 +51,13 @@ public:
     [[nodiscard]] size_t frameCount() const noexcept { return timeline_.size(); }
     [[nodiscard]] size_t currentFrameIndex() const noexcept { return currentCursor_; }
     [[nodiscard]] bool isReplaying() const noexcept { return isReplaying_; }
-    [[nodiscard]] const std::vector<TimeFrame>& timeline() const noexcept { return timeline_; }
+    [[nodiscard]] const std::deque<TimeFrame>& timeline() const noexcept { return timeline_; }
 
     [[nodiscard]] static bool isHardwareBranchTracingSupported() noexcept;
 
 private:
     size_t maxFrames_{10000};
-    std::vector<TimeFrame> timeline_;
+    std::deque<TimeFrame> timeline_;
     size_t currentCursor_{0};
     bool isReplaying_{false};
     std::vector<MemoryDelta> pendingDeltas_;

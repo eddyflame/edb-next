@@ -304,6 +304,11 @@ bool BreakpointManager::hasBreakpoint(Address addr) const {
     return breakpoints_.contains(addr.value());
 }
 
+bool BreakpointManager::isBreakpointEnabled(Address addr) const {
+    const auto* bp = getBreakpoint(addr);
+    return bp && bp->enabled;
+}
+
 const Breakpoint* BreakpointManager::getBreakpoint(Address addr) const {
     auto it = breakpoints_.find(addr.value());
     if (it != breakpoints_.end()) {

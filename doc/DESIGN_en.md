@@ -707,6 +707,9 @@ To eliminate UI lockups during blocking system calls:
    - Executes `PTRACE_SINGLESTEP`;
    - Upon capturing single-step completion, `finishStepOver()` re-writes `0xCC`;
    - Resumes normal execution via `PTRACE_CONT`.
+5. **Internal Step-Over Breakpoint Self-Destruction**: When stepping over call instructions or multi-instruction blocks, internal breakpoints (`isInternal = true`) are installed at return sites. Upon hit, `handleBreakpointOrTrap` cleanly unregisters and deletes them, restoring original instruction bytes and emitting `StopReason::SingleStep` with `"Step-over completed"`, preventing ghost breakpoint retention.
+6. **Hardware Execute Breakpoint & x86_64 Resume Flag (RF)**: Hardware instruction breakpoints trap before instruction execution (Fault-class). Resuming without modifying registers causes immediate re-trapping on the same instruction. `DebugSession` sets `RFLAGS.RF` (bit 16, `0x10000`) before single-stepping or resuming, commanding the CPU to bypass debug register evaluation for that instruction cycle.
+7. **Full Multi-Thread Attach/Detach Enumeration**: `LinuxDebugEngine::attach` parses `/proc/<pid>/task` to seize all pre-existing threads. `detach` iterates and detaches all secondary threads cleanly before releasing the thread group leader, preventing orphaned or trapped threads.
 
 ### 6.3 Remote Syscall Atomic Injection (`executeRemoteSyscall`)
 Enables in-target execution of system calls:
@@ -745,8 +748,8 @@ Implements an AST-less recursive descent parser supporting:
 5. **Selective Invalidation**: `invalidateDisasmCache()` flushes cache entries upon remote memory modifications (`writeMemory()`) or breakpoint state changes (`addBreakpoint()`, `removeBreakpoint()`, `toggleBreakpoint()`, etc.).
 
 ### 6.8 Pluggable Debug Backend Abstraction (`IDebugBackend`)
-1. **Decoupling**: The headless core modules (`DebugSession`, `EventLoopThread`, `TypeManager`) are abstracted away from direct Linux ptrace calls via the pure virtual `IDebugBackend` contract.
-2. **Testability**: `MockDebugBackend` allows offline unit testing of higher-level debugging state machines, session management, and UI logic without requiring root permissions or spawning external processes.
+1. **Decoupling**: The headless core modules (`DebugSession`, `EventLoopThread`, `TypeManager`, `ExpressionEvaluator`, `DapServer`) are abstracted away from direct Linux ptrace calls via the pure virtual `IDebugBackend` contract, removing legacy unsafe `const_cast` usages.
+2. **Testability**: `MockDebugBackend` allows offline unit testing of higher-level debugging state machines, session management, expression evaluation, DAP communication, and UI logic without requiring root permissions or spawning external processes.
 3. **Future Portability**: Establishes the interface boundary for alternative backends, such as a remote GDB/LLDB Remote Serial Protocol (RSP) engine.
 
 ### 6.9 Centralized Cross-View Routing (`NavigationBus`)
@@ -766,6 +769,12 @@ Implements an AST-less recursive descent parser supporting:
 3. **Dual-Engine Architecture & Seamless Fallback**: Configurable via `DisassemblyEngine::Zydis` and `DisassemblyEngine::Capstone` in `ConfigurationManager`. Defaults to Zydis for Linux x86_64, while seamlessly and transparently falling back to Capstone for unsupported architectures or user preference.
 4. **Comprehensive Syntax & Resilience**: Natively supports Intel and AT&T syntax, uppercase mnemonic toggles, and automatic RIP-relative address simplification. Degrades gracefully to `db 0xXX` byte pseudo-instructions on illegal or unmapped opcodes, preventing crashes or infinite loops.
 5. **Lightweight In-Tree Packaging**: Bundled in `third_party/zydis/` (static library under 1MB), with reproducible automated build scripts in [`scripts/build_zydis.sh`](../scripts/build_zydis.sh).
+
+### 6.12 Time-Travel Engine Memory Rollback Consistency & O(1) Deque Buffer
+1. **O(1) Timeline Eviction**: Replaces `std::vector` with `std::deque<TimeFrame>`, allowing oldest frame eviction via `pop_front()` in $O(1)$ constant time once reaching `maxFrames`, eliminating costly $O(N)$ memory copies.
+2. **Multi-Frame Memory Delta Reversal**:
+   - When rewinding across multiple execution frames (`reverseContinue` or `seekTimeTravelFrame`), intermediate frames are unrolled in reverse chronological order applying `MemoryDelta::oldBytes`;
+   - When stepping or seeking forward, `MemoryDelta::newBytes` are reapplied in forward chronological order, guaranteeing physical target memory always remains in exact sync with the timeline frame.
 
 ---
 
