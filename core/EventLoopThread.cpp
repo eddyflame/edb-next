@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <cerrno>
 #include <iostream>
+#include <fstream>
 
 namespace edb_next {
 
@@ -229,25 +230,36 @@ void EventLoopThread::run() {
             }
 
             if (waited_pid != engine_.pid()) {
+                pid_t tgid = 0;
+                std::ifstream status_file("/proc/" + std::to_string(waited_pid) + "/status");
+                std::string line;
+                while (std::getline(status_file, line)) {
+                    if (line.compare(0, 5, "Tgid:") == 0) {
+                        tgid = std::stoi(line.substr(5));
+                        break;
+                    }
+                }
+
                 {
                     std::lock_guard<std::mutex> lock(childMutex_);
-                    if (detachedChildren_.contains(waited_pid)) {
-                        // Detached child event; ignore and clean up on exit
+                    // Check if the event belongs to a detached child (or one of its threads)
+                    if (detachedChildren_.contains(waited_pid) || (tgid > 0 && detachedChildren_.contains(tgid))) {
                         if (WIFEXITED(status) || WIFSIGNALED(status)) {
                             detachedChildren_.erase(waited_pid);
+                            if (tgid > 0) detachedChildren_.erase(tgid);
                         }
                         continue;
                     }
                 }
-                std::string task_path = "/proc/" + std::to_string(engine_.pid()) + "/task/" + std::to_string(waited_pid);
-                if (::access(task_path.c_str(), F_OK) != 0) {
-                    // Not a thread of our engine's main target. Could be child process initial stop or exit.
+
+                if (tgid != 0 && tgid != engine_.pid()) {
+                    // Not a thread of our engine's main target. It's a child process.
                     DebugEvent ev;
-                    ev.pid = waited_pid;
+                    ev.pid = tgid;
                     ev.tid = waited_pid;
                     ev.childPid = waited_pid;
                     ev.reason = StopReason::ThreadCreated;
-                    ev.message = "Child process initial stop";
+                    ev.message = "Child process event";
                     Q_EMIT eventReceived(ev);
                     continue;
                 }
