@@ -33,6 +33,10 @@ constexpr int SQLITE_OPEN_READONLY = 0x00000001;
 constexpr int SQLITE_OPEN_READWRITE = 0x00000002;
 constexpr int SQLITE_OPEN_CREATE = 0x00000004;
 
+// SQLITE_TRANSIENT tells SQLite to copy bound text/blob immediately,
+// preventing use-after-free when source strings are temporary.
+static void (*const kSqliteTransient)(void*) = reinterpret_cast<void (*)(void*)>(static_cast<intptr_t>(-1));
+
 struct SqliteLib {
     void* handle{nullptr};
     int (*open_v2)(const char*, sqlite3**, int, const char*){nullptr};
@@ -41,6 +45,9 @@ struct SqliteLib {
     int (*prepare_v2)(sqlite3*, const char*, int, sqlite3_stmt**, const char**){nullptr};
     int (*step)(sqlite3_stmt*){nullptr};
     int (*finalize)(sqlite3_stmt*){nullptr};
+    int (*reset)(sqlite3_stmt*){nullptr};
+    int (*clear_bindings)(sqlite3_stmt*){nullptr};
+    void (*free)(void*){nullptr};
     int64_t (*column_int64)(sqlite3_stmt*, int){nullptr};
     int (*column_int)(sqlite3_stmt*, int){nullptr};
     const unsigned char* (*column_text)(sqlite3_stmt*, int){nullptr};
@@ -85,6 +92,9 @@ struct SqliteLib {
         BIND_SYM(prepare_v2);
         BIND_SYM(step);
         BIND_SYM(finalize);
+        BIND_SYM(reset);
+        BIND_SYM(clear_bindings);
+        BIND_SYM(free);
         BIND_SYM(column_int64);
         BIND_SYM(column_int);
         BIND_SYM(column_text);
@@ -319,28 +329,29 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
 
     char* errMsg = nullptr;
     sql.exec(db, schema, nullptr, nullptr, &errMsg);
+    if (errMsg) {
+        sql.free(errMsg);
+        errMsg = nullptr;
+    }
 
     sql.exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
 
-    // Save metadata
+    // Save metadata — reuse a single prepared statement via reset()/clear_bindings()
     sqlite3_stmt* stmt = nullptr;
     const char* metaSql = "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);";
     if (sql.prepare_v2(db, metaSql, -1, &stmt, nullptr) == SQLITE_OK) {
         auto insertMeta = [&](const char* k, const std::string& v) {
-            sql.bind_text(stmt, 1, k, -1, nullptr);
-            sql.bind_text(stmt, 2, v.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 1, k, -1, kSqliteTransient);
+            sql.bind_text(stmt, 2, v.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            // Reset for next binding
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, metaSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         };
         insertMeta("version", "2");
         insertMeta("binary_path", project.binaryPath);
         insertMeta("notes", project.notes);
         insertMeta("base_address", std::to_string(project.baseAddress));
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save comments
@@ -349,14 +360,12 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     if (sql.prepare_v2(db, commSql, -1, &stmt, nullptr) == SQLITE_OK) {
         for (const auto& [addr, text] : project.comments) {
             sql.bind_int64(stmt, 1, static_cast<int64_t>(addr));
-            sql.bind_text(stmt, 2, text.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 2, text.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, commSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save labels
@@ -365,14 +374,12 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     if (sql.prepare_v2(db, lblSql, -1, &stmt, nullptr) == SQLITE_OK) {
         for (const auto& [addr, text] : project.labels) {
             sql.bind_int64(stmt, 1, static_cast<int64_t>(addr));
-            sql.bind_text(stmt, 2, text.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 2, text.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, lblSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save bookmarks
@@ -382,12 +389,10 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
         for (uint64_t addr : project.bookmarks) {
             sql.bind_int64(stmt, 1, static_cast<int64_t>(addr));
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, bmSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save breakpoints
@@ -396,19 +401,17 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     if (sql.prepare_v2(db, bpSql, -1, &stmt, nullptr) == SQLITE_OK) {
         for (const auto& bp : project.breakpoints) {
             sql.bind_int64(stmt, 1, static_cast<int64_t>(bp.address));
-            sql.bind_text(stmt, 2, bp.type.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 3, bp.condition.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 4, bp.logFormat.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 2, bp.type.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 3, bp.condition.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 4, bp.logFormat.c_str(), -1, kSqliteTransient);
             sql.bind_int(stmt, 5, static_cast<int>(bp.ignoreCount));
-            sql.bind_text(stmt, 6, bp.scriptCode.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 7, bp.scriptLanguage.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 6, bp.scriptCode.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 7, bp.scriptLanguage.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, bpSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save page guards
@@ -418,18 +421,16 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
         for (const auto& pg : project.pageGuards) {
             sql.bind_int64(stmt, 1, static_cast<int64_t>(pg.address));
             sql.bind_int(stmt, 2, static_cast<int>(pg.size));
-            sql.bind_text(stmt, 3, pg.access.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 4, pg.comment.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 5, pg.condition.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 6, pg.scriptCode.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 7, pg.scriptLanguage.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 3, pg.access.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 4, pg.comment.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 5, pg.condition.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 6, pg.scriptCode.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 7, pg.scriptLanguage.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, pgSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save watches
@@ -437,14 +438,12 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     const char* wSql = "INSERT INTO watches (expression) VALUES (?);";
     if (sql.prepare_v2(db, wSql, -1, &stmt, nullptr) == SQLITE_OK) {
         for (const auto& w : project.watches) {
-            sql.bind_text(stmt, 1, w.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 1, w.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, wSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save patches
@@ -453,15 +452,13 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     if (sql.prepare_v2(db, pSql, -1, &stmt, nullptr) == SQLITE_OK) {
         for (const auto& p : project.patches) {
             sql.bind_int64(stmt, 1, static_cast<int64_t>(p.address));
-            sql.bind_text(stmt, 2, p.originalHex.c_str(), -1, nullptr);
-            sql.bind_text(stmt, 3, p.patchedHex.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 2, p.originalHex.c_str(), -1, kSqliteTransient);
+            sql.bind_text(stmt, 3, p.patchedHex.c_str(), -1, kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, pSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     // Save blobs with Zstandard compression
@@ -470,16 +467,14 @@ bool DatabaseManager::saveProjectIncremental(const std::string& filepath, const 
     if (sql.prepare_v2(db, blobSql, -1, &stmt, nullptr) == SQLITE_OK) {
         for (const auto& [name, rawBytes] : project.blobs) {
             auto comp = compressBytes(rawBytes.data(), rawBytes.size());
-            sql.bind_text(stmt, 1, name.c_str(), -1, nullptr);
+            sql.bind_text(stmt, 1, name.c_str(), -1, kSqliteTransient);
             sql.bind_int64(stmt, 2, static_cast<int64_t>(rawBytes.size()));
-            sql.bind_blob(stmt, 3, comp.data(), static_cast<int>(comp.size()), nullptr);
+            sql.bind_blob(stmt, 3, comp.data(), static_cast<int>(comp.size()), kSqliteTransient);
             sql.step(stmt);
-            sqlite3_stmt* nextStmt = nullptr;
-            sql.prepare_v2(db, blobSql, -1, &nextStmt, nullptr);
-            sql.finalize(stmt);
-            stmt = nextStmt;
+            sql.reset(stmt);
+            sql.clear_bindings(stmt);
         }
-        if (stmt) sql.finalize(stmt);
+        sql.finalize(stmt);
     }
 
     sql.exec(db, "COMMIT;", nullptr, nullptr, nullptr);

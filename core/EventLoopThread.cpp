@@ -94,7 +94,9 @@ void EventLoopThread::initEpoll(pid_t target) {
         struct epoll_event ev_wake{};
         ev_wake.events = EPOLLIN;
         ev_wake.data.fd = wfd;
-        ::epoll_ctl(efd, EPOLL_CTL_ADD, wfd, &ev_wake);
+        if (::epoll_ctl(efd, EPOLL_CTL_ADD, wfd, &ev_wake) < 0) {
+            std::cerr << "[EPOLL] Failed to add wakeFd: " << strerror(errno) << std::endl;
+        }
     }
     wakeFd_.store(wfd);
     epollFd_.store(efd);
@@ -105,7 +107,9 @@ void EventLoopThread::initEpoll(pid_t target) {
             struct epoll_event ev_pid{};
             ev_pid.events = EPOLLIN;
             ev_pid.data.fd = pfd;
-            ::epoll_ctl(efd, EPOLL_CTL_ADD, pfd, &ev_pid);
+            if (::epoll_ctl(efd, EPOLL_CTL_ADD, pfd, &ev_pid) < 0) {
+                std::cerr << "[EPOLL] Failed to add pidFd: " << strerror(errno) << std::endl;
+            }
         }
         pidFd_.store(pfd);
     }

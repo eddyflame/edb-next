@@ -206,10 +206,13 @@ void DebugSession::terminate() {
     pendingPageGuardRestoreAddr_ = Address(0);
     isPageGuardStepOver_ = false;
     isPageGuardResuming_ = false;
+    isStepOverBreak_ = false;
     rendezvousMgr_.clear();
     rendezvousBrkAddr_ = Address(0);
     symbols_.clear();
     dwarfParser_.clear();
+    frozenThreads_.clear();
+    lastSignal_ = 0;
 
     setState(SessionState::Terminated);
     setState(SessionState::Stopped);
@@ -591,6 +594,7 @@ void DebugSession::handleForkEvent(const DebugEvent& event) {
         engine_.detachProcess(event.pid);
         adoptChild(child_pid);
         if (stopOnForkEvents_) {
+            refreshRegisters();
             setState(SessionState::Paused);
             Q_EMIT eventOccurred(fork_ev);
         } else {
@@ -646,20 +650,24 @@ bool DebugSession::handleInternalStep(const DebugEvent& /*event*/) {
         bpMgr_.finishStepOver();
         isStepOverBreak_ = false;
 
+        // Preserve any pending signal that was deferred during step-over
+        int sig = lastSignal_;
+        lastSignal_ = 0;
+
         auto allTids = engine_.enumerateTids();
         Tid act = engine_.activeTid();
         bool actResumed = false;
         for (Tid t : allTids) {
             if (isThreadFrozen(t)) continue;
             if (t == act) {
-                engine_.continueExecution(t, 0);
+                engine_.continueExecution(t, sig);
                 actResumed = true;
             } else {
                 engine_.resumeThread(t, 0);
             }
         }
         if (!actResumed && !isThreadFrozen(act)) {
-            engine_.continueExecution(act, 0);
+            engine_.continueExecution(act, sig);
         }
         return true;
     }
