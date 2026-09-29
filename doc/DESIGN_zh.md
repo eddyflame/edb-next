@@ -898,6 +898,35 @@ x86_64 处理器物理调试寄存器仅有 4 个（DR0~DR3），多处硬件断
 
 ---
 
+### 3.36 全链路死锁阻断、非阻塞超时屏障与线程状态防卡死体系 (`EventLoopThread`, `LinuxDebugEngine`, `DebugSession`)
+
+为了彻底根除多线程逆向调试中常见的假死、无响应和前后台死锁问题，`edb-next` 构筑了多层防御性系统工程：
+
+1. **全链路非阻塞超时屏障 (Non-Blocking Timeout Barriers)**：
+   - **全面根除阻塞式 `waitpid`**：针对调试引擎核心路径（`LinuxDebugEngine::kill()`、`attach()`、`launch()` 以及 `executeRemoteSyscall()`），全部摒弃传统的无超时全阻塞 `waitpid(..., 0)`，转为基于 `WNOHANG` 并配备微秒级严格超时时钟的轮询循环：
+     - `kill()`：最长等待 300ms（每 2ms 探测一次），随后安全注销 PID，永不阻滞主线程退出；
+     - `launch()` 与 `attach()`：设置 1000ms 严格超时界限，杜绝目标处于 D-state 睡眠或被其他调试器霸占时引发主界面永久卡死；
+     - `executeRemoteSyscall()`：设置 1000ms 超时界限，超时时自动还原被注入的机器码与寄存器状态并安全报错，防止 UI 线程在等待远程调用信号时永久挂起。
+   - **进程隔离式线程资源回收**：废弃全局危险的 `while (waitpid(-1, ...) > 0)` 盲目回收机制，精确枚举当前被调试目标所属的所有 TID 实施针对性非阻塞排出，彻底杜绝跨调试会话间的内核状态串扰。
+
+2. **事件循环挂起幂等性与有界等待握手 (Bounded Suspend Handshake & Reentrancy)**：
+   - `EventLoopThread::setSuspended` 引入幂等性状态守卫，过滤重复发起的挂起或恢复请求，杜绝自锁现象；
+   - 条件变量同步机制由无界 `suspendCv_.wait()` 升级为带 300ms 有界超时的 `suspendCv_.wait_for()`，并在事件排出循环（Drain Loop）内部嵌入即时 `suspendRequested_.load()` 中断判定，避免在前台请求挂起时后台依然滞留于大批量事件处理。
+   - `EventLoopThread::stopLoop()` 预留 1000ms 优雅退出窗口，并将 `disconnect()` 移至线程彻底退出之后，杜绝多线程信号派发与断开连接间的内部锁竞争。
+
+3. **线程创建暂停状态严格保持 (Thread Creation State Preservation)**：
+   - 在 `DebugSession::handleThreadCreatedEvent` 中增加 `state_ == SessionState::Running` 严格判定条件，防止在用户或断点已将调试器暂停（`Paused`）的状态下，后台意外唤醒或恢复新派生线程，保证逆向人员单步与断点控制的绝对决定论。
+   - 多线程暂停优化：`LinuxDebugEngine::pause(tid)` 针对次级线程使用 `SYS_tgkill` 系统调用定向投递 `SIGSTOP`，根除向非主线程误用 `kill(tid, ...)` 导致信号失效及等待超时的隐患。
+
+4. **源码单步与自动追踪零延迟返回 (Zero-Delay Step & Auto-Trace)**：
+   - 将 `stepSourceOver`、`stepSourceInto` 与 `autoTrace` 的等待流转条件重构为 `while (state_ == SessionState::Running && waitMs < 2000)`；
+   - 当目标进程发生异常终止、断点命中或状态迁移为非 Running 时，以 0ms 延迟即时跳出轮询，彻底消除了旧版本进程退出时多达 2 秒的界面顿挫感。
+
+5. **极速次级线程身份核验 (Kernel Fast-Path Thread Verification)**：
+   - `EventLoopThread` 优先采用内核极速路径 `::access("/proc/<pid>/task/<tid>", F_OK)` 核验线程归属，避免在高频断点及多线程事件下频繁解析 `/proc/<tid>/status` 产生磁盘 I/O 阻塞与内核锁竞争。
+
+---
+
 ## 4. 未实现功能与待完善规划 (Unimplemented Features & Technical Roadmap)
 
 作为一款立志独立发布至 GitHub 并长期维护的开源项目，必须对现有版本的技术边界有清晰、坦诚的认知。所有已完成的核心功能（包括 Phase P0~P5 全部 35 个子系统）已全部归档至第 3 章已实现功能清单中。本章仅保留当前版本尚未实现的远期特性，作为后续大版本（Phase P6+）的官方演进路线图。

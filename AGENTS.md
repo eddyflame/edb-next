@@ -54,4 +54,4 @@ On feature, bug fix, or code update:
 Before committing code changes (**skip for docs-only / non-code changes**):
 1. `make -C build -j12`
 2. Run relevant tests, or full suite before major code commits:
-   `QT_QPA_PLATFORM=offscreen ./build/test_core && ./build/test_dwarf && ./build/test_exit && ./build/test_scripting && ./build/test_advanced`
+   `export QT_QPA_PLATFORM=offscreen && ./build/test_core && ./build/test_dwarf && ./build/test_exit && ./build/test_scripting && ./build/test_advanced && ./build/test_comprehensive && ./build/test_nextgen && ./build/test_p4_advanced_re && ./build/test_p5_ultimate`

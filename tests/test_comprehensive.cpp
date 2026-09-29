@@ -12,6 +12,9 @@
 #include "core/RendezvousManager.hpp"
 #include "core/UserfaultFdEngine.hpp"
 #include "core/DecompilerEngine.hpp"
+#include "core/EventLoopThread.hpp"
+#include "core/LinuxDebugEngine.hpp"
+#include "core/DebugSession.hpp"
 #include "tests/MockDebugBackend.hpp"
 
 #include <iostream>
@@ -22,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cmath>
+#include <chrono>
 
 using namespace edb_next;
 
@@ -1082,6 +1086,108 @@ void test_core_hardening_and_optimizations() {
 }
 
 // ==============================================================================
+// 12. Deadlock, Hang, and Timeout Prevention Tests
+// ==============================================================================
+void test_deadlock_and_hang_prevention() {
+    std::cout << "[TEST] Running test_deadlock_and_hang_prevention..." << std::endl;
+
+    // 1. EventLoopThread suspend/resume reentrancy and timeout safety
+    {
+        MockDebugBackend mockEngine;
+        auto readMem = [](Address, void*, size_t) { return true; };
+        auto writeMem = [](Address, const void*, size_t) { return true; };
+        BreakpointManager bpMgr(readMem, writeMem);
+        EventLoopThread loop(mockEngine, bpMgr);
+
+        // A. Non-running setSuspended calls must return immediately
+        auto start = std::chrono::steady_clock::now();
+        loop.setSuspended(true);
+        loop.setSuspended(false);
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        assert(elapsedMs < 50 && "setSuspended on inactive loop should return immediately");
+
+        // B. Running loop reentrant suspend/resume
+        loop.startLoop();
+        assert(loop.isRunning());
+
+        start = std::chrono::steady_clock::now();
+        loop.setSuspended(true);
+        assert(loop.isSuspended());
+        // Reentrant call: calling suspend when already suspended must not deadlock
+        loop.setSuspended(true);
+        assert(loop.isSuspended());
+
+        loop.setSuspended(false);
+        assert(!loop.isSuspended());
+        // Reentrant call: calling resume when already resumed must not deadlock
+        loop.setSuspended(false);
+        assert(!loop.isSuspended());
+
+        elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        assert(elapsedMs < 200 && "Reentrant suspend/resume cycle must be snappy");
+
+        loop.stopLoop();
+        assert(!loop.isRunning());
+    }
+
+    // 2. LinuxDebugEngine::kill() non-blocking safety on idle/detached engine
+    {
+        LinuxDebugEngine engine;
+        auto start = std::chrono::steady_clock::now();
+        engine.kill(); // Must return immediately with 0 ms delay when pid_ <= 0
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        assert(elapsedMs < 50 && "engine.kill() on idle engine must return immediately");
+    }
+
+    // 3. DebugSession source stepping termination delay elimination
+    {
+        DebugSession session("hang_test", "Hang Test");
+
+        // When session is Stopped or Terminated, stepSourceOver/stepSourceInto must NOT wait 2000ms
+        auto start = std::chrono::steady_clock::now();
+        bool okOver = session.stepSourceOver(10);
+        assert(!okOver && "stepSourceOver on stopped session must return false");
+
+        bool okInto = session.stepSourceInto(10);
+        assert(!okInto && "stepSourceInto on stopped session must return false");
+
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        assert(elapsedMs < 50 && "Source stepping on non-running session must return immediately without 2-second freeze");
+    }
+
+    // 4. LinuxDebugEngine::pause() and attach() fail-fast safety
+    {
+        LinuxDebugEngine engine;
+        auto start = std::chrono::steady_clock::now();
+        assert(!engine.pause(0) && "pause on idle engine should return false");
+        assert(!engine.pause(999999) && "pause on non-existent TID should return false");
+        auto attachRes = engine.attach(9999999);
+        assert(!attachRes.success && "attach on non-existent PID should fail");
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        assert(elapsedMs < 200 && "attach/pause fail-fast should return promptly without hanging");
+    }
+
+    // 5. DebugSession autoTrace and double detach/terminate idempotency
+    {
+        DebugSession session("autotrace_test", "AutoTrace Test");
+        auto start = std::chrono::steady_clock::now();
+        auto res = session.autoTrace(true, 50);
+        assert(res.stepsExecuted == 0 && "autoTrace on stopped session should execute 0 steps");
+        assert(!res.message.empty());
+
+        // Idempotent terminate and detach
+        session.terminate();
+        session.terminate(); // Double terminate
+        session.detach();
+        session.detach();    // Double detach
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        assert(elapsedMs < 100 && "autoTrace and double terminate/detach must be instant and idempotent");
+    }
+
+    std::cout << "  -> test_deadlock_and_hang_prevention PASSED" << std::endl;
+}
+
+// ==============================================================================
 // Main Entry Point
 // ==============================================================================
 int main() {
@@ -1101,6 +1207,7 @@ int main() {
         test_memory_scanner_comprehensive();
         test_architecture_and_defect_fixes();
         test_core_hardening_and_optimizations();
+        test_deadlock_and_hang_prevention();
     } catch (const std::exception& e) {
         std::cerr << "\n[FATAL EXCEPTION]: " << e.what() << std::endl;
         return 1;

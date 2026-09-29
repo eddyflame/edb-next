@@ -199,8 +199,8 @@ void DebugSession::terminate() {
     if (state_ == SessionState::Stopped) return;
 
     disconnect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent);
-    engine_.kill();
     eventLoop_.stopLoop();
+    engine_.kill();
     bpMgr_.clear();
     pageGuardMgr_.clear();
     pendingPageGuardRestoreAddr_ = Address(0);
@@ -220,6 +220,7 @@ void DebugSession::terminate() {
 }
 
 void DebugSession::detach() {
+    disconnect(&eventLoop_, &EventLoopThread::eventReceived, this, &DebugSession::handleEvent);
     eventLoop_.stopLoop();
     engine_.detach();
     bpMgr_.clear();
@@ -645,8 +646,10 @@ void DebugSession::handleThreadCreatedEvent(const DebugEvent& event) {
     }
     // P1-A: propagate all existing hardware breakpoints into the new thread's DR registers
     syncHardwareBreakpointsToAllThreads();
-    // Resume thread (clone event or initial SIGSTOP) from the TRACER thread!
-    engine_.continueExecution(event.tid);
+    // Resume thread (clone event or initial SIGSTOP) from the TRACER thread only if session is running!
+    if (state_ == SessionState::Running) {
+        engine_.continueExecution(event.tid);
+    }
 }
 
 void DebugSession::restorePendingPageGuard() {
@@ -1476,8 +1479,16 @@ DebugSession::AutoTraceResult DebugSession::autoTrace(bool stepOverTarget, size_
         }
         result.stepsExecuted++;
 
-        // Process Qt events so UI updates and events are dispatched
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        int waitMs = 0;
+        while (state_ == SessionState::Running && waitMs < 2000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            waitMs += 2;
+        }
+
+        if (state_ != SessionState::Paused) {
+            break;
+        }
 
         // Break if hit a user breakpoint
         if (bpMgr_.hasBreakpoint(currentRegs_.rip())) {
@@ -1536,7 +1547,7 @@ bool DebugSession::stepSourceOver(int maxInsnSteps) {
     for (int i = 0; i < maxInsnSteps; ++i) {
         stepOver();
         int waitMs = 0;
-        while (state_ != SessionState::Paused && waitMs < 2000) {
+        while (state_ == SessionState::Running && waitMs < 2000) {
             QCoreApplication::processEvents(QEventLoop::AllEvents);
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
             waitMs += 2;
@@ -1563,7 +1574,7 @@ bool DebugSession::stepSourceInto(int maxInsnSteps) {
     for (int i = 0; i < maxInsnSteps; ++i) {
         stepInto();
         int waitMs = 0;
-        while (state_ != SessionState::Paused && waitMs < 2000) {
+        while (state_ == SessionState::Running && waitMs < 2000) {
             QCoreApplication::processEvents(QEventLoop::AllEvents);
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
             waitMs += 2;

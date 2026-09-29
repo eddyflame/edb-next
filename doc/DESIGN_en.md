@@ -521,6 +521,32 @@ High information density, semantic color differentiation, and fluid keyboard/mou
 - **ARM64 NEON Vectorization**: Extends AVX2 (256-bit) with native 128-bit ARM64 NEON SIMD algorithms (`vld1q_u8`, `vceqq_u8`, `vandq_u8`) with dual-anchor mask filtering, delivering multi-gigabyte/sec scanning on ARM64 Linux and Apple Silicon.
 - **Unified SIMD Dispatcher**: Runtime architecture detection dynamically routes to AVX2, NEON, or optimized scalar fallbacks.
 
+### 3.37 Zero-Hang Architecture & Anti-Deadlock Hardening (`EventLoopThread`, `LinuxDebugEngine`, `DebugSession`)
+To completely eliminate freezes, unresponsive UI hangs, and deadlocks in multi-threaded Linux debugging, `edb-next` incorporates a defense-in-depth reliability architecture:
+
+1. **Non-Blocking Timeout Barriers Across All Routines**:
+   - **Elimination of Blocking `waitpid` Calls**: All execution engine entry points (`LinuxDebugEngine::kill()`, `attach()`, `launch()`, and `executeRemoteSyscall()`) replace raw blocking `waitpid(..., 0)` calls with bounded `WNOHANG` polling loops:
+     - `kill()`: Timed loop capped at 300ms (2ms ticks), followed by safe PID reset, never blocking UI teardown.
+     - `launch()` & `attach()`: 1000ms bounded timeout, preventing UI deadlocks when a target is stuck in uninterruptible D-state or already traced.
+     - `executeRemoteSyscall()`: 1000ms bounded timeout with automatic instruction and register restoration on failure, preventing permanent GUI freezes during memory manipulation.
+   - **Per-TID Isolated Child Cleanup**: Replaced dangerous global `waitpid(-1)` loops with targeted reaping of threads belonging exclusively to the target PID, preventing cross-session interference.
+
+2. **Idempotent Suspension & Bounded Condition Variable Synchronization**:
+   - `EventLoopThread::setSuspended` incorporates idempotency guards (`if (isSuspended_.load() == s) return;`) preventing recursive deadlocks.
+   - Replaced unbounded `suspendCv_.wait()` with bounded `wait_for(lock, 300ms)`, coupled with an immediate break upon `suspendRequested_.load()` inside the status draining loop.
+   - `EventLoopThread::stopLoop()` provides a 1000ms graceful exit window before fallback termination, and postpones `disconnect()` until after thread exit to eliminate signal dispatch lock contention.
+
+3. **Strict Thread Creation State Preservation**:
+   - `DebugSession::handleThreadCreatedEvent` checks `if (state_ == SessionState::Running)` before resuming newly cloned threads, ensuring user-paused or breakpoint-stopped sessions never leak background thread executions.
+   - Multi-thread pause precision: `LinuxDebugEngine::pause(tid)` directs signals via `SYS_tgkill` for secondary threads, preventing signal misdirection or failures when pausing non-main threads.
+
+4. **Zero-Delay Stepping & Auto-Trace Responsiveness**:
+   - Loop continuation conditions in `stepSourceOver`, `stepSourceInto`, and `autoTrace` are refactored to `while (state_ == SessionState::Running && waitMs < 2000)`.
+   - When a tracee exits, faults, or stops, the loop breaks with 0ms latency, eliminating the 2-second UI delay.
+
+5. **Fast-Path Thread Verification**:
+   - `EventLoopThread` utilizes kernel fast-path `::access("/proc/<pid>/task/<tid>", F_OK)` to verify thread membership, avoiding high-overhead disk I/O and `/proc/<tid>/status` lock contention under high-frequency breakpoint events.
+
 ---
 
 ## 4. Unimplemented Features & Technical Roadmap

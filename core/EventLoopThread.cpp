@@ -49,16 +49,18 @@ void EventLoopThread::setSuspended(bool s) {
     if (!isRunning() || !running_.load()) return;
     std::unique_lock<std::mutex> lock(suspendMutex_);
     if (s) {
+        if (isSuspended_.load()) return; // Already suspended
         suspendRequested_.store(true);
         notifyWake();
-        suspendCv_.wait(lock, [this] {
+        suspendCv_.wait_for(lock, std::chrono::milliseconds(300), [this] {
             return isSuspended_.load() || !running_.load();
         });
     } else {
+        if (!isSuspended_.load() && !suspendRequested_.load()) return; // Already resumed
         suspendRequested_.store(false);
         notifyWake();
         suspendCv_.notify_all();
-        suspendCv_.wait(lock, [this] {
+        suspendCv_.wait_for(lock, std::chrono::milliseconds(300), [this] {
             return !isSuspended_.load() || !running_.load();
         });
     }
@@ -73,12 +75,14 @@ void EventLoopThread::stopLoop() {
             suspendCv_.notify_all();
         }
         notifyWake();
-        disconnect();
-        wait(500);
-        if (isRunning()) {
+        if (wait(1000)) {
+            // Clean exit
+        } else if (isRunning()) {
+            std::cerr << "[EventLoopThread] Thread did not exit cleanly within timeout, terminating..." << std::endl;
             terminate();
-            wait();
+            wait(500);
         }
+        disconnect();
     }
     cleanupEpoll();
 }
@@ -195,6 +199,10 @@ void EventLoopThread::run() {
 
         // Drain status events
         while (running_.load()) {
+            if (suspendRequested_.load()) {
+                break;
+            }
+
             int status = 0;
             pid_t target_pid = engine_.pid();
             if (target_pid <= 0) break;
@@ -231,25 +239,30 @@ void EventLoopThread::run() {
             }
 
             if (waited_pid != engine_.pid()) {
-                pid_t tgid = 0;
-                try {
-                    std::ifstream status_file("/proc/" + std::to_string(waited_pid) + "/status");
-                    std::string line;
-                    while (std::getline(status_file, line)) {
-                        if (line.compare(0, 5, "Tgid:") == 0) {
-                            size_t pos = line.find_first_not_of(" \t", 5);
-                            if (pos != std::string::npos) {
-                                int val = 0;
-                                auto [ptr, ec] = std::from_chars(line.data() + pos, line.data() + line.size(), val);
-                                if (ec == std::errc{}) {
-                                    tgid = val;
+                std::string task_path = "/proc/" + std::to_string(engine_.pid()) + "/task/" + std::to_string(waited_pid);
+                bool isOurThread = (::access(task_path.c_str(), F_OK) == 0);
+                pid_t tgid = isOurThread ? engine_.pid() : 0;
+
+                if (!isOurThread) {
+                    try {
+                        std::ifstream status_file("/proc/" + std::to_string(waited_pid) + "/status");
+                        std::string line;
+                        while (std::getline(status_file, line)) {
+                            if (line.compare(0, 5, "Tgid:") == 0) {
+                                size_t pos = line.find_first_not_of(" \t", 5);
+                                if (pos != std::string::npos) {
+                                    int val = 0;
+                                    auto [ptr, ec] = std::from_chars(line.data() + pos, line.data() + line.size(), val);
+                                    if (ec == std::errc{}) {
+                                        tgid = val;
+                                    }
                                 }
+                                break;
                             }
-                            break;
                         }
+                    } catch (...) {
+                        tgid = 0;
                     }
-                } catch (...) {
-                    tgid = 0;
                 }
 
                 {
