@@ -113,8 +113,13 @@ Result<Pid> LinuxDebugEngine::launch(
     }
 
     int status = 0;
-    if (::waitpid(child_pid, &status, 0) < 0) {
-        return Result<Pid>::Err("waitpid on initial stop failed: " + std::string(strerror(errno)));
+    int ret = 0;
+    int retries = 0;
+    while ((ret = ::waitpid(child_pid, &status, __WALL | WNOHANG)) == 0 && retries++ < 500) {
+        usleep(2000); // 2ms (up to 1000ms total timeout)
+    }
+    if (ret <= 0) {
+        return Result<Pid>::Err("waitpid on initial stop timed out or failed: " + std::string(strerror(errno)));
     }
 
     if (!WIFSTOPPED(status)) {
@@ -146,8 +151,13 @@ Result<void> LinuxDebugEngine::attach(Pid pid) {
     }
 
     int status = 0;
-    if (::waitpid(pid, &status, 0) < 0) {
-        return Result<void>::Err("waitpid after ATTACH failed: " + std::string(strerror(errno)));
+    int ret = 0;
+    int retries = 0;
+    while ((ret = ::waitpid(pid, &status, __WALL | WNOHANG)) == 0 && retries++ < 500) {
+        usleep(2000); // 2ms (up to 1000ms total timeout)
+    }
+    if (ret <= 0) {
+        return Result<void>::Err("waitpid after ATTACH timed out or failed: " + std::string(strerror(errno)));
     }
 
     constexpr unsigned long options =
@@ -174,7 +184,10 @@ Result<void> LinuxDebugEngine::attach(Pid pid) {
             if (endptr && *endptr == '\0' && tid_val > 0 && tid_val != pid) {
                 if (::ptrace(PTRACE_ATTACH, tid_val, nullptr, nullptr) == 0) {
                     int tstatus = 0;
-                    ::waitpid(tid_val, &tstatus, __WALL);
+                    int retries = 0;
+                    while (::waitpid(tid_val, &tstatus, __WALL | WNOHANG) == 0 && retries++ < 100) {
+                        usleep(1000); // 1ms
+                    }
                     ::ptrace(PTRACE_SETOPTIONS, tid_val, nullptr, options);
                 }
             }
@@ -204,18 +217,27 @@ void LinuxDebugEngine::detach() {
 void LinuxDebugEngine::kill() {
     if (pid_.load() > 0) {
         memFd_.reset();
-        ::kill(pid_.load(), SIGKILL);
+        Pid targetPid = pid_.load();
+        auto tids = enumerateTids();
+        ::kill(targetPid, SIGKILL);
+        for (Tid t : tids) {
+            if (t > 0 && t != targetPid) {
+                ::syscall(SYS_tgkill, targetPid, t, SIGKILL);
+            }
+        }
         int status = 0;
         int ret = 0;
         int retries = 0;
-        while ((ret = ::waitpid(pid_.load(), &status, __WALL | WNOHANG)) == 0 && retries++ < 50) {
-            usleep(2000); // 2ms
+        while ((ret = ::waitpid(targetPid, &status, __WALL | WNOHANG)) == 0 && retries++ < 150) {
+            usleep(2000); // 2ms (up to 300ms total)
         }
-        if (ret == 0) {
-            ::waitpid(pid_.load(), &status, __WALL);
+        // Drain any leftover child threads of this targetPid without using waitpid(-1)
+        for (Tid t : tids) {
+            if (t > 0 && t != targetPid) {
+                int tStatus = 0;
+                ::waitpid(t, &tStatus, __WALL | WNOHANG);
+            }
         }
-        // Drain any leftover child threads
-        while (::waitpid(-1, &status, __WALL | WNOHANG) > 0) {}
         pid_.store(0);
         mainTid_.store(0);
         activeTid_.store(0);
@@ -233,8 +255,11 @@ bool LinuxDebugEngine::continueExecution(Tid tid, int signal) {
 }
 
 bool LinuxDebugEngine::pause(Tid tid) {
-    if (tid <= 0) tid = mainTid_.load();
-    return ::kill(tid, SIGSTOP) == 0;
+    if (pid_.load() <= 0) return false;
+    if (tid <= 0 || tid == pid_.load()) {
+        return ::kill(pid_.load(), SIGSTOP) == 0;
+    }
+    return ::syscall(SYS_tgkill, pid_.load(), tid, SIGSTOP) == 0;
 }
 
 bool LinuxDebugEngine::pauseThread(Tid tid) {
@@ -632,10 +657,16 @@ Result<uint64_t> LinuxDebugEngine::executeRemoteSyscall(Tid tid, uint64_t sys_no
     }
 
     int status = 0;
-    if (::waitpid(tid, &status, __WALL) < 0) {
+    int waitRet = 0;
+    int retries = 0;
+    while ((waitRet = ::waitpid(tid, &status, __WALL | WNOHANG)) == 0 && retries++ < 1000) {
+        usleep(1000); // 1ms (up to 1000ms total timeout)
+    }
+
+    if (waitRet <= 0) {
         writeMemory(origRegs.rip(), origBytes, 2);
         setRegisters(tid, origRegs);
-        return Result<uint64_t>::Err("waitpid failed after remote syscall");
+        return Result<uint64_t>::Err("waitpid timed out or failed after remote syscall");
     }
 
     // 6. Get return value from RAX

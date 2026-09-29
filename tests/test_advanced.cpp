@@ -2076,7 +2076,7 @@ void test_titlebar_double_click_maximize() {
     std::cout << "\n[TEST] Starting Title Bar & Menu Bar Double-Click Maximize/Restore test..." << std::endl;
 
     MainWindow w;
-    w.show();
+    w.showNormal();
     QCoreApplication::processEvents();
 
     assert(!w.isMaximized() && "Window should start in normal non-maximized state");

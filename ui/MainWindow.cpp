@@ -1371,17 +1371,20 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         auto* mouseEvent = static_cast<QMouseEvent*>(event);
         if (mouseEvent->button() == Qt::LeftButton) {
             if (auto* bar = qobject_cast<QMenuBar*>(watched)) {
-                if (!bar->actionAt(mouseEvent->pos())) {
-                    toggleMaximized();
-                    return true;
+                QPoint pt = mouseEvent->position().toPoint();
+                if (bar->actionAt(pt)) return false;
+                for (auto* act : bar->actions()) {
+                    if (bar->actionGeometry(act).contains(pt)) return false;
                 }
+                toggleMaximized();
+                return true;
             } else if (auto* tb = qobject_cast<QToolBar*>(watched)) {
-                if (!tb->actionAt(mouseEvent->pos())) {
+                if (!tb->actionAt(mouseEvent->position().toPoint())) {
                     toggleMaximized();
                     return true;
                 }
             } else if (auto* tabBar = qobject_cast<QTabBar*>(watched)) {
-                if (tabBar->tabAt(mouseEvent->pos()) == -1) {
+                if (tabBar->tabAt(mouseEvent->position().toPoint()) == -1) {
                     toggleMaximized();
                     return true;
                 }
