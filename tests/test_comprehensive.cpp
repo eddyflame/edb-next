@@ -9,6 +9,9 @@
 #include "core/DatabaseManager.hpp"
 #include "core/MemoryScanner.hpp"
 #include "core/PageGuardManager.hpp"
+#include "core/RendezvousManager.hpp"
+#include "core/UserfaultFdEngine.hpp"
+#include "core/DecompilerEngine.hpp"
 #include "tests/MockDebugBackend.hpp"
 
 #include <iostream>
@@ -874,6 +877,211 @@ static void test_architecture_and_defect_fixes() {
 }
 
 // ==============================================================================
+// 11. Core Hardening and Optimization Unit Tests
+// ==============================================================================
+void test_core_hardening_and_optimizations() {
+    std::cout << "[TEST] Running test_core_hardening_and_optimizations..." << std::endl;
+
+    // 1. Test RegisterContext getByName and setByName
+    {
+        RegisterContext regs;
+        assert(regs.setByName("rax", 0x1122334455667788ULL));
+        assert(regs.getByName("RAX") == 0x1122334455667788ULL);
+        assert(regs.getByName("rax") == 0x1122334455667788ULL);
+
+        // 32-bit zero-extension (x86_64 ABI)
+        assert(regs.setByName("eax", 0xabcdef01ULL));
+        assert(regs.rax() == 0x00000000abcdef01ULL);
+        assert(regs.getByName("eax") == 0xabcdef01ULL);
+
+        // 16-bit upper preservation
+        assert(regs.setByName("ax", 0x1234ULL));
+        assert(regs.rax() == 0x00000000abcd1234ULL);
+        assert(regs.getByName("ax") == 0x1234ULL);
+
+        // 8-bit low byte preservation
+        assert(regs.setByName("al", 0x99ULL));
+        assert(regs.rax() == 0x00000000abcd1299ULL);
+        assert(regs.getByName("al") == 0x99ULL);
+
+        // 8-bit high byte (ah) preservation
+        assert(regs.setByName("ah", 0x77ULL));
+        assert(regs.rax() == 0x00000000abcd7799ULL);
+        assert(regs.getByName("ah") == 0x77ULL);
+
+        // R8-R15 registers
+        assert(regs.setByName("r12", 0xfeedfacecafebeefULL));
+        assert(regs.getByName("r12") == 0xfeedfacecafebeefULL);
+        assert(regs.setByName("r12d", 0x12345678ULL));
+        assert(regs.r12() == 0x12345678ULL);
+        assert(regs.setByName("r12b", 0x55ULL));
+        assert(regs.r12() == 0x12345655ULL);
+
+        // Flags
+        assert(regs.setByName("cf", 1));
+        assert(regs.flagCF());
+        assert(regs.getByName("CF") == 1);
+        assert(regs.setByName("cf", 0));
+        assert(!regs.flagCF());
+        assert(regs.getByName("cf") == 0);
+
+        // Unknown registers
+        assert(!regs.setByName("invalid_reg", 123));
+        assert(!regs.getByName("invalid_reg").has_value());
+    }
+
+    // 2. Test BreakpointManager PageGuard fallback cleanup and step-over re-entry
+    {
+        std::unordered_map<uint64_t, uint8_t> simMem;
+        auto readMem = [&](Address a, void* buf, size_t sz) {
+            for (size_t i = 0; i < sz; ++i) {
+                reinterpret_cast<uint8_t*>(buf)[i] = simMem[a.value() + i];
+            }
+            return true;
+        };
+        auto writeMem = [&](Address a, const void* buf, size_t sz) {
+            for (size_t i = 0; i < sz; ++i) {
+                simMem[a.value() + i] = reinterpret_cast<const uint8_t*>(buf)[i];
+            }
+            return true;
+        };
+
+        std::array<bool, 4> hwSlots{false, false, false, false};
+        auto setHw = [&](int slot, Address, HardwareBpType, HardwareBpSize) {
+            if (slot >= 0 && slot < 4) {
+                hwSlots[slot] = true;
+                return true;
+            }
+            return false;
+        };
+        auto clearHw = [&](int slot) {
+            if (slot >= 0 && slot < 4) {
+                hwSlots[slot] = false;
+                return true;
+            }
+            return false;
+        };
+
+        PageGuardManager pgMgr([](Address, size_t, int) { return true; });
+        BreakpointManager bpMgr(readMem, writeMem, setHw, clearHw);
+        bpMgr.setPageGuardManager(&pgMgr);
+
+        // Fill all 4 HW slots
+        assert(bpMgr.addHardwareBreakpoint(Address(0x1000), HardwareBpType::Execute));
+        assert(bpMgr.addHardwareBreakpoint(Address(0x2000), HardwareBpType::Execute));
+        assert(bpMgr.addHardwareBreakpoint(Address(0x3000), HardwareBpType::Execute));
+        assert(bpMgr.addHardwareBreakpoint(Address(0x4000), HardwareBpType::Execute));
+
+        // 5th HW breakpoint should transparently fallback to PageGuard
+        assert(bpMgr.addHardwareBreakpoint(Address(0x5000), HardwareBpType::Execute));
+        assert(pgMgr.hasGuard(Address(0x5000)));
+
+        // Verify clear() cleans up PageGuard fallbacks as well as HW registers
+        bpMgr.clear();
+        assert(!pgMgr.hasGuard(Address(0x5000)) && "clear() must remove PageGuard fallback breakpoints");
+        for (int i = 0; i < 4; ++i) {
+            assert(!hwSlots[i]);
+        }
+
+        // Test step-over re-entrancy resilience
+        simMem[0x100] = 0x90; // NOP
+        simMem[0x200] = 0x90; // NOP
+        assert(bpMgr.addBreakpoint(Address(0x100)));
+        assert(bpMgr.addBreakpoint(Address(0x200)));
+        assert(simMem[0x100] == 0xCC);
+        assert(simMem[0x200] == 0xCC);
+
+        // Prepare step over 0x100
+        assert(bpMgr.prepareStepOver(Address(0x100)));
+        assert(simMem[0x100] == 0x90);
+
+        // Before finishStepOver, another prepareStepOver occurs at 0x200
+        assert(bpMgr.prepareStepOver(Address(0x200)));
+        // 0x100 must have been safely finished (0xCC restored)
+        assert(simMem[0x100] == 0xCC && "Prior breakpoint must be restored on re-entrant prepareStepOver");
+        assert(simMem[0x200] == 0x90);
+
+        bpMgr.finishStepOver();
+        assert(simMem[0x200] == 0xCC);
+    }
+
+    // 3. Test RendezvousManager readStringFromTarget across page boundary
+    {
+        std::string testStr = "libc.so.6";
+        Address strAddr(0x1000 - testStr.size() - 1);
+        auto pageSafeRead = [&](Address a, void* buf, size_t sz) -> bool {
+            if (a.value() >= 0x1000) return false;
+            if (a.value() + sz > 0x1000) return false;
+            if (a == strAddr) {
+                std::memcpy(buf, testStr.c_str(), testStr.size() + 1);
+                return true;
+            }
+            return false;
+        };
+
+        RendezvousManager rzMgr(pageSafeRead);
+        std::string readResult;
+        bool ok = rzMgr.readStringFromTarget(strAddr, readResult, 512);
+        assert(ok && "readStringFromTarget must succeed for page-boundary string");
+        assert(readResult == testStr);
+    }
+
+    // 4. Test UserfaultFdEngine unaligned range span calculation and lookup
+    {
+        UserfaultFdEngine uffd;
+        uffd.initialize();
+        assert(uffd.registerRange(Address(0x1800), 4096));
+        auto regOpt = uffd.findWatchedRegion(Address(0x1800));
+        assert(regOpt.has_value());
+        assert(regOpt->size == 8192 && "Unaligned range must cover both spanning pages");
+        assert(uffd.isAddressWatched(Address(0x1800)));
+        assert(uffd.isAddressWatched(Address(0x27ff)));
+
+        // Unregister using internal address
+        assert(uffd.unregisterRange(Address(0x1900)));
+        assert(!uffd.isAddressWatched(Address(0x1800)));
+    }
+
+    // 5. Test DecompilerEngine comparison scoping across basic blocks
+    {
+        IRFunction func;
+        func.name = "test_cmp_scope";
+        func.entryAddr = Address(0x401000);
+
+        // Block 0: cmp rdi, 10; jmp loc_401010
+        IRBlock b0;
+        b0.startAddr = Address(0x401000);
+        IRInstruction cmpInsn;
+        cmpInsn.op = IROp::Cmp;
+        cmpInsn.src1 = IROperand::Reg("rdi", 8);
+        cmpInsn.src2 = IROperand::Imm(10, 8);
+        b0.instructions.push_back(cmpInsn);
+
+        IRInstruction jmpInsn;
+        jmpInsn.op = IROp::Jmp;
+        jmpInsn.dst = IROperand::Imm(0x401010, 8);
+        b0.instructions.push_back(jmpInsn);
+        func.blocks.push_back(b0);
+
+        // Block 1: cjmp loc_401020, "e" (no cmp inside Block 1!)
+        IRBlock b1;
+        b1.startAddr = Address(0x401010);
+        IRInstruction cjmpInsn;
+        cjmpInsn.op = IROp::CJmp;
+        cjmpInsn.cond = "e";
+        cjmpInsn.dst = IROperand::Imm(0x401020, 8);
+        b1.instructions.push_back(cjmpInsn);
+        func.blocks.push_back(b1);
+
+        auto decompiled = DecompilerEngine::decompile(func);
+        // Block 1 must NOT bleed "rdi == 10" from Block 0!
+        assert(decompiled.pseudoCode.find("loc_0000000000401010:\n    if (rdi == 10)") == std::string::npos);
+    }
+
+    std::cout << "  -> test_core_hardening_and_optimizations PASSED" << std::endl;
+}
+
+// ==============================================================================
 // Main Entry Point
 // ==============================================================================
 int main() {
@@ -892,6 +1100,7 @@ int main() {
         test_database_manager_comprehensive();
         test_memory_scanner_comprehensive();
         test_architecture_and_defect_fixes();
+        test_core_hardening_and_optimizations();
     } catch (const std::exception& e) {
         std::cerr << "\n[FATAL EXCEPTION]: " << e.what() << std::endl;
         return 1;

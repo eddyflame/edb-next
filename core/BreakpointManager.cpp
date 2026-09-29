@@ -400,7 +400,11 @@ bool BreakpointManager::removePendingBreakpoint(const std::string& symbol) {
 
 void BreakpointManager::clear() {
     for (auto& [_, bp] : breakpoints_) {
-        if (bp.type != BreakpointType::Software) {
+        if (bp.isPageGuardFallback) {
+            if (pageGuardMgr_) {
+                pageGuardMgr_->removeGuard(bp.address);
+            }
+        } else if (bp.type != BreakpointType::Software) {
             if (bp.hardwareSlot >= 0 && clearHwBp_) {
                 clearHwBp_(bp.hardwareSlot);
             }
@@ -417,6 +421,10 @@ void BreakpointManager::clear() {
 }
 
 bool BreakpointManager::prepareStepOver(Address addr) {
+    if (pendingReenableAddr_.has_value()) {
+        finishStepOver();
+    }
+
     auto it = breakpoints_.find(addr.value());
     if (it != breakpoints_.end() && it->second.enabled && it->second.type == BreakpointType::Software) {
         // Temporarily put original byte back so single step executes original instruction

@@ -447,25 +447,8 @@ void RegisterView::handleFpDoubleClicked(int row, int /*col*/) {
 namespace {
 
 static void setNamedGpr(RegisterContext& regs, const QString& regName, uint64_t newVal) {
-    if (regName == "RAX") regs.raw().rax = newVal;
-    else if (regName == "RBX") regs.raw().rbx = newVal;
-    else if (regName == "RCX") regs.raw().rcx = newVal;
-    else if (regName == "RDX") regs.raw().rdx = newVal;
-    else if (regName == "RSI") regs.raw().rsi = newVal;
-    else if (regName == "RDI") regs.raw().rdi = newVal;
-    else if (regName == "RBP") regs.raw().rbp = newVal;
-    else if (regName == "RSP") regs.raw().rsp = newVal;
-    else if (regName == "RIP") regs.raw().rip = newVal;
-    else if (regName == "R8")  regs.raw().r8 = newVal;
-    else if (regName == "R9")  regs.raw().r9 = newVal;
-    else if (regName == "R10") regs.raw().r10 = newVal;
-    else if (regName == "R11") regs.raw().r11 = newVal;
-    else if (regName == "R12") regs.raw().r12 = newVal;
-    else if (regName == "R13") regs.raw().r13 = newVal;
-    else if (regName == "R14") regs.raw().r14 = newVal;
-    else if (regName == "R15") regs.raw().r15 = newVal;
+    regs.setByName(regName.toStdString(), newVal);
 }
-
 } // namespace
 
 void RegisterView::adjustSelectedGpr(int row, int64_t delta) {

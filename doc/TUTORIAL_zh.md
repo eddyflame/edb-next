@@ -1045,7 +1045,7 @@ VS Code 可直接下发断点、单步步进、查看局部变量与调用栈，
 | `bc <addr>` | `bc` | 清除指定地址上的断点。例：`bc 0x401000` |
 | `bd <addr>` | `bd` | 禁用指定地址上的断点。例：`bd 0x401000` |
 | `be <addr>` | `be` | 启用指定地址上的断点。例：`be 0x401000` |
-| `r <reg> <val>` | `r` | 修改指定寄存器的数值。例：`r rax 0x1337`、`r rdi 0` |
+| `r <reg> <val>` / `reg <reg>=<val>` | `r` / `reg` | 修改寄存器数值（支持 64/32/16/8 位及标志位，32 位自动高位清零）。例：`r rax 0x1337`、`reg eax=0x10`、`reg al=0xff` |
 | `d <addr>` | `d` | 让当前活动 Dump 标签页跳转至指定地址。例：`d 0x7fffffffd7d0` |
 | `u <addr \| symbol>` | `u` | 让反汇编视图跳转至指定地址或函数。例：`u calculate_fib` |
 | `step` | `s` / `sti` | 单步步入（等同于 F7，支持 x64dbg 常用 `sti` 别名） |

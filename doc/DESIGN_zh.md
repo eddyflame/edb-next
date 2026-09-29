@@ -1387,19 +1387,31 @@ sequenceDiagram
 7. **多线程全域 Attach / Detach 拓扑完整性**：
    - `LinuxDebugEngine::attach` 附着目标进程时，自动解析 `/proc/<pid>/task` 目录，枚举并附加其所属的所有存量轻量级线程（LWP/TID），挂载 `PTRACE_SEIZE` / `PTRACE_INTERRUPT`；
    - `detach` 时先有序遍历所有附属线程执行 `PTRACE_DETACH`，最后释放主进程，彻底杜绝孤儿跟踪与目标进程悬挂。
+8. **PageGuard 回退断点全生命周期回收 (PageGuard Fallback Reclamation)**：
+   - 当 4 个 x86_64 硬件调试寄存器耗尽时，硬件断点自动降级回退至 PageGuard 内存页保护模式；
+   - 在调用 `BreakpointManager::clear()` 时，系统自动遍历并识别所有 `isPageGuardFallback == true` 的断点，协同 `PageGuardManager::removeGuard()` 完整撤销底层 `mprotect` 页保护并恢复原生访问权限，彻底杜绝会话重置后的内存访问保护冲突与资源泄露。
+9. **单步越过状态机重入守护 (Step-Over Re-entrancy Guard)**：
+   - 若在先前的 `prepareStepOver()` 尚未收尾（`pendingReenableAddr_` 仍处于挂起重装状态）时再次触发步过准备，管理器自动前置触发 `finishStepOver()` 完整回写前序 `0xCC` 机器码，确保在复杂信号拦截或异常跳转场景下，前置软件断点绝不因状态覆盖而永久丢失。
+10. **动态链接器跨页安全读取与栈回溯调用点精准归属**：
+   - `RendezvousManager` 读取目标共享库路径与符号时，采用 4KB 页面边界对齐分段读取协议，杜绝由于未映射虚存页导致的越界探测崩溃；
+   - `CallStackUnwinder` 在处理返回地址帧（`idx > 0 && !isActivation`）时，采用 `ip - 1` 定位符号与行号，解决调用 `noreturn` 函数时返回地址恰好落入下一相邻函数而导致反向归属错误的工业级边界难题。
 
 ### 6.3 远程系统调用注入方案 (`executeRemoteSyscall`)
 为了彻底打破 Linux 内存分页保护的束缚，edb-next 将 `ptrace` 的控制力发挥到极致：
 - **原理**：Linux x86_64 架构下，`syscall` 指令对应的机器码固定为 2 字节：`0x0F 0x05`；其系统调用传参规范遵循 AMD64 System V ABI（`RAX`=调用号, `RDI`=Arg1, `RSI`=Arg2, `RDX`=Arg3, `R10`=Arg4, `R8`=Arg5, `R9`=Arg6，内核返回值写入 `RAX`）。
 - **原子恢复与安全性**：整个注入过程完全在被调试进程当前执行点实施，执行完毕后原原本本恢复原内存指令与全部寄存器。由于 `EventLoopThread` 在此期间被原子挂起，保证不会发生重入或错误拦截。
 
-### 6.4 工业级表达式求值引擎 (`ExpressionEvaluator`)
-支持复杂断点条件与动态 Watch 表达式计算：
+### 6.4 工业级表达式求值与统一寄存器访问抽象 (`ExpressionEvaluator` / `RegisterContext`)
+支持复杂断点条件、动态 Watch 表达式计算以及多级子寄存器零扩展：
 - **文法规范**：采用自顶向下的递归下降（Recursive Descent）解析器，支持：
   - **终结符**：十六进制立即数（`0x401000`）、十进制数（`100`）、寄存器符号（`rax`, `rip`, `rbp`, `r12` 等）；
   - **多级内存解引用**：`[addr]` 或 `[rbp - 0x18]`，引擎自动通过 `readMemory` 读取 8 字节目标值；
   - **算术运算符**：`+`, `-`, `*`, `/`（遵循标准乘除优先于加减的优先级）；
   - **关系比较符**：`==`, `!=`, `<`, `>`, `<=`, `>=`，返回布尔逻辑结果。
+- **统一寄存器命名访问与零扩展**：
+  - `RegisterContext::getByName()` 与 `setByName()` 统一承载大小写不敏感的寄存器名读写；
+  - 全面支持 64 位（`rax`）、32 位（`eax`，写入时遵循 AMD64 规范自动高 32 位清零）、16 位（`ax`）、低 8 位（`al`）、高 8 位（`ah/bh/ch/dh`）及标志位（`cf/zf/sf/of/pf/af/df/if`）；
+  - 彻底解耦 `ExpressionEvaluator`、`RegisterView` 与底栏 CommandBar，消灭重复的寄存器映射代码。
 
 ### 6.5 ELF 全景解析与虚存-文件映射算法 (`patchFileToDisk`)
 实现将内存中的修改写回磁盘 ELF 文件的物理算法：

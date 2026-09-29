@@ -213,6 +213,7 @@ void DebugSession::terminate() {
     dwarfParser_.clear();
     frozenThreads_.clear();
     lastSignal_ = 0;
+    tempRunToBp_.reset();
 
     setState(SessionState::Terminated);
     setState(SessionState::Stopped);
@@ -231,6 +232,7 @@ void DebugSession::detach() {
     symbols_.clear();
     dwarfParser_.clear();
     frozenThreads_.clear();
+    tempRunToBp_.reset();
     setState(SessionState::Stopped);
 }
 

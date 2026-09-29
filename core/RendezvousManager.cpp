@@ -23,21 +23,28 @@ void RendezvousManager::clear() {
 
 bool RendezvousManager::readStringFromTarget(Address addr, std::string& outStr, size_t maxLen) {
     outStr.clear();
-    if (addr.value() == 0 || !readMem_) return false;
+    if (addr.value() == 0 || !readMem_ || maxLen == 0) return false;
 
-    std::vector<char> buf(maxLen, 0);
-    // Read in chunks or full maxLen
-    if (!readMem_(addr, buf.data(), maxLen)) {
-        return false;
-    }
+    size_t totalRead = 0;
+    while (totalRead < maxLen) {
+        Address curAddr = addr + totalRead;
+        // Do not read past the current 4KB page boundary in a single read call
+        size_t bytesUntilPageEnd = 4096 - (curAddr.value() & 0xFFFULL);
+        size_t chunkSize = std::min(maxLen - totalRead, bytesUntilPageEnd);
 
-    for (size_t i = 0; i < maxLen; ++i) {
-        if (buf[i] == '\0') {
-            outStr.assign(buf.data(), i);
-            return true;
+        std::vector<char> buf(chunkSize, 0);
+        if (!readMem_(curAddr, buf.data(), chunkSize)) {
+            return !outStr.empty();
+        }
+
+        for (size_t i = 0; i < chunkSize; ++i) {
+            if (buf[i] == '\0') {
+                return true;
+            }
+            outStr.push_back(buf[i]);
+            totalRead++;
         }
     }
-    outStr.assign(buf.data(), maxLen);
     return true;
 }
 

@@ -185,12 +185,13 @@ std::vector<StackFrame> unwindViaDwarfCfi(
     for (size_t idx = 0; idx < ctx.frames.size(); ++idx) {
         Address ip = ctx.frames[idx].pc;
         Address frameBase = (idx == 0) ? session.registers().rbp() : ctx.frames[idx].cfa;
+        Address symAddr = (idx > 0 && !ctx.frames[idx].isActivation && ip.value() > 0) ? (ip - 1) : ip;
 
         frames.push_back(StackFrame{
             .frameIndex = idx,
             .ip = ip,
             .frameBase = frameBase,
-            .functionSymbol = formatSymbol(session.symbols().findNearestSymbol(ip)),
+            .functionSymbol = formatSymbol(session.symbols().findNearestSymbol(symAddr)),
             .moduleName = findModuleName(ip, regions)
         });
     }
@@ -243,11 +244,12 @@ std::vector<StackFrame> unwindViaRbpChain(
         }
         if (!valid_return_addr) break;
 
+        Address symAddr = (return_addr.value() > 0) ? (return_addr - 1) : return_addr;
         frames.push_back(StackFrame{
             .frameIndex = depth,
             .ip = return_addr,
             .frameBase = saved_rbp,
-            .functionSymbol = formatSymbol(session.symbols().findNearestSymbol(return_addr)),
+            .functionSymbol = formatSymbol(session.symbols().findNearestSymbol(symAddr)),
             .moduleName = findModuleName(return_addr, regions)
         });
 
