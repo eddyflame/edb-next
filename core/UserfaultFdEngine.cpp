@@ -80,7 +80,9 @@ bool UserfaultFdEngine::registerRange(Address addr, size_t size, UffdFaultMode m
 
     // Align to 4KB page boundary
     uint64_t start = addr.value() & ~0xFFFULL;
-    size_t aligned_size = (size + 0xFFFULL) & ~0xFFFULL;
+    uint64_t end = addr.value() + (size > 0 ? size : 1);
+    uint64_t pageEnd = (end + 0xFFFULL) & ~0xFFFULL;
+    size_t aligned_size = static_cast<size_t>(pageEnd - start);
     if (aligned_size == 0) aligned_size = 4096;
 
     if (!isSimulated_ && uffd_.isValid()) {
@@ -119,7 +121,16 @@ bool UserfaultFdEngine::unregisterRange(Address addr) {
     uint64_t start = addr.value() & ~0xFFFULL;
     auto it = watchedRanges_.find(start);
     if (it == watchedRanges_.end()) {
-        return false;
+        for (auto iter = watchedRanges_.begin(); iter != watchedRanges_.end(); ++iter) {
+            if (addr.value() >= iter->first && addr.value() < (iter->first + iter->second.size)) {
+                it = iter;
+                start = iter->first;
+                break;
+            }
+        }
+        if (it == watchedRanges_.end()) {
+            return false;
+        }
     }
 
     if (!isSimulated_ && uffd_.isValid()) {

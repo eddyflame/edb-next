@@ -721,7 +721,7 @@ flowchart LR
 | `bp <addr \| sym>` | Set software breakpoint. Ex: `bp main`, `bp 0x401000` |
 | `bph <addr>` | Set hardware execution breakpoint. Ex: `bph 0x401000` |
 | `bc <addr>` / `bd <addr>` / `be <addr>` | Clear / Disable / Enable breakpoint |
-| `r <reg> <val>` | Set register value. Ex: `r rax 0x1337` |
+| `r <reg> <val>` / `reg <reg>=<val>` | Set register value (supports 64/32/16/8-bit & flags; 32-bit zero-extends). Ex: `r rax 0x1337`, `reg eax=0x10`, `reg al=0xff` |
 | `d <addr>` | Follow address in active hex dump. Ex: `d 0x7fffffffd7d0` |
 | `u <addr \| sym>` | Follow address in disassembly. Ex: `u calculate_fib` |
 | `step` / `stepo` / `ret` / `run` | Step into (`s`, `sti`) / Step over (`so`, `sto`) / Step out (`rtr`, `rto`) / Run (`g`) |

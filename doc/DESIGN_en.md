@@ -710,6 +710,11 @@ To eliminate UI lockups during blocking system calls:
 5. **Internal Step-Over Breakpoint Self-Destruction**: When stepping over call instructions or multi-instruction blocks, internal breakpoints (`isInternal = true`) are installed at return sites. Upon hit, `handleBreakpointOrTrap` cleanly unregisters and deletes them, restoring original instruction bytes and emitting `StopReason::SingleStep` with `"Step-over completed"`, preventing ghost breakpoint retention.
 6. **Hardware Execute Breakpoint & x86_64 Resume Flag (RF)**: Hardware instruction breakpoints trap before instruction execution (Fault-class). Resuming without modifying registers causes immediate re-trapping on the same instruction. `DebugSession` sets `RFLAGS.RF` (bit 16, `0x10000`) before single-stepping or resuming, commanding the CPU to bypass debug register evaluation for that instruction cycle.
 7. **Full Multi-Thread Attach/Detach Enumeration**: `LinuxDebugEngine::attach` parses `/proc/<pid>/task` to seize all pre-existing threads. `detach` iterates and detaches all secondary threads cleanly before releasing the thread group leader, preventing orphaned or trapped threads.
+8. **PageGuard Fallback Reclamation**: When hardware debug registers (DR0-DR3) are exhausted, hardware breakpoints degrade to PageGuard mode. Upon calling `BreakpointManager::clear()`, all breakpoints with `isPageGuardFallback == true` are identified, and `PageGuardManager::removeGuard()` is invoked to restore original memory page protection, eliminating dangling access faults and memory leaks across debugging sessions.
+9. **Step-Over Re-entrancy Guard**: If a subsequent `prepareStepOver()` is invoked while a previous step-over is still awaiting re-arming (`pendingReenableAddr_` active), the manager automatically invokes `finishStepOver()` beforehand to re-write the prior `0xCC` opcode, ensuring software breakpoints are never permanently lost across signal interruptions or abnormal jumps.
+10. **Safe Page-Boundary Dynamic Linker Traversal & Return Address Attribution**:
+   - `RendezvousManager` segments string reads across 4KB page boundaries to safely stop at null-terminators without crossing into unmapped pages;
+   - `CallStackUnwinder` utilizes `ip - 1` for return-address frames (`idx > 0 && !isActivation`), accurately resolving callers of `noreturn` functions whose return addresses correspond to the entry of adjacent downstream functions.
 
 ### 6.3 Remote Syscall Atomic Injection (`executeRemoteSyscall`)
 Enables in-target execution of system calls:
@@ -720,12 +725,16 @@ Enables in-target execution of system calls:
 5. Reads result from `RAX`.
 6. Restores original 2 instruction bytes and original register context.
 
-### 6.4 Recursive Descent Expression Evaluator (`ExpressionEvaluator`)
+### 6.4 Recursive Descent Expression Evaluator & Unified Register Context (`ExpressionEvaluator` / `RegisterContext`)
 Implements an AST-less recursive descent parser supporting:
 - Registers (`rax`, `rip`, `rdi`), immediate hex values (`0x401000`), decimal integers (`100`);
 - Pointer dereferences (`[expr]` or `[rbp - 8]`);
 - Arithmetic operations (`+`, `-`, `*`, `/`);
 - Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`).
+- **Unified Register Context Access & Zero-Extension**:
+  - `RegisterContext::getByName()` and `setByName()` provide unified case-insensitive register access;
+  - Full support for 64-bit, 32-bit (automatically zero-extending upper 32 bits per AMD64 ABI), 16-bit, 8-bit low (`al`), 8-bit high (`ah/bh/ch/dh`), and CPU status flags (`cf/zf/sf/of/pf/af/df/if`);
+  - Decouples `ExpressionEvaluator`, `RegisterView`, and the CommandBar CLI, unifying register manipulation across the entire IDE.
 
 ### 6.5 ELF Physical Disk Patching Algorithm (`patchFileToDisk`)
 1. Reads input binary's ELF64 headers and segments (`Program Headers`).

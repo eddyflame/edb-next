@@ -76,6 +76,8 @@ public:
     [[nodiscard]] const std::vector<SharedLibraryInfo>& loadedLibraries() const noexcept { return libraries_; }
     [[nodiscard]] bool isInitialized() const noexcept { return rBrkAddr_.value() != 0; }
 
+    bool readStringFromTarget(Address addr, std::string& outStr, size_t maxLen = 512);
+
     void clear();
 
 private:
@@ -89,7 +91,6 @@ private:
     LinkerState state_{LinkerState::Consistent};
     std::vector<SharedLibraryInfo> libraries_;
 
-    bool readStringFromTarget(Address addr, std::string& outStr, size_t maxLen = 512);
     Address findRDebugFromDynamic(Address dynamicAddr);
 };
 

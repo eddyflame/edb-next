@@ -1258,22 +1258,29 @@ void CommandRegistry::registerSystemCommands() {
             }
 
             std::string regName = ctx.args[0];
-            if (ctx.args.size() >= 3 && ctx.args[1] == "=") {
-                Address val = ctx.parseAddress(ctx.args[2]);
-                RegisterContext newRegs = regs;
-                bool matched = true;
-                if (regName == "rax") newRegs.setRax(val.value());
-                else if (regName == "rbx") newRegs.setRbx(val.value());
-                else if (regName == "rcx") newRegs.setRcx(val.value());
-                else if (regName == "rdx") newRegs.setRdx(val.value());
-                else if (regName == "rsi") newRegs.setRsi(val.value());
-                else if (regName == "rdi") newRegs.setRdi(val.value());
-                else if (regName == "rbp") newRegs.setRbp(val);
-                else if (regName == "rsp") newRegs.setRsp(val);
-                else if (regName == "rip") newRegs.setRip(val);
-                else matched = false;
+            std::string valStr;
+            bool isAssignment = false;
 
-                if (matched) {
+            if (ctx.args.size() >= 3 && ctx.args[1] == "=") {
+                isAssignment = true;
+                valStr = ctx.args[2];
+            } else if (auto eqPos = regName.find('='); eqPos != std::string::npos) {
+                valStr = regName.substr(eqPos + 1);
+                regName = regName.substr(0, eqPos);
+                if (valStr.empty() && ctx.args.size() >= 2) {
+                    valStr = ctx.args[1];
+                }
+                isAssignment = !valStr.empty();
+            } else if (ctx.args.size() >= 2 && ctx.args[0].ends_with('=')) {
+                regName.pop_back();
+                valStr = ctx.args[1];
+                isAssignment = true;
+            }
+
+            if (isAssignment) {
+                Address val = ctx.parseAddress(valStr);
+                RegisterContext newRegs = regs;
+                if (newRegs.setByName(regName, val.value())) {
                     ctx.session->setRegisters(newRegs);
                     ctx.log(QString("%1 set to %2").arg(QString::fromStdString(regName), val.toQString()), false);
                 } else {

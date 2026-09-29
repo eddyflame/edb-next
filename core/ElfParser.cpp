@@ -348,8 +348,15 @@ std::optional<std::pair<SymbolInfo, uint64_t>> ElfParser::findNearestSymbol(Addr
 
     --it;
     uint64_t offset = addr.value() - it->address.value();
-    if (it->size > 0 && offset >= it->size) {
-        return std::nullopt;
+    if (it->size > 0) {
+        if (offset >= it->size) {
+            return std::nullopt;
+        }
+    } else {
+        constexpr uint64_t kMaxZeroSizeSymbolOffset = 0x10000;
+        if (offset >= kMaxZeroSizeSymbolOffset) {
+            return std::nullopt;
+        }
     }
 
     return std::make_pair(*it, offset);

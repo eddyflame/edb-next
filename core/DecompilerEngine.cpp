@@ -138,6 +138,7 @@ DecompiledFunction DecompilerEngine::decompile(const IRFunction& irFunc) {
 
     for (size_t bIdx = 0; bIdx < irFunc.blocks.size(); ++bIdx) {
         const auto& blk = irFunc.blocks[bIdx];
+        lastCmpOperands = std::nullopt;
         if (bIdx > 0) {
             emitLine("");
         }
