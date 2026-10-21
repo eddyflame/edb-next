@@ -1464,7 +1464,7 @@ sequenceDiagram
 - **数据结构模型**：
   ```json
   {
-    "binary_path": "/home/user/target",
+    "binary_path": "/path/to/target",
     "notes": "# Reverse engineering draft\nFound secret key at 0x401234",
     "comments": [
       { "address": 4198965, "comment": "Decryption loop begins here" }
